@@ -793,26 +793,17 @@ const migrarDadosParaNuvem = async () => {
     <>
       <PrintStyles />
 
-      {/* --- ÁREA DE IMPRESSÃO (Mantida Igual) --- */}
+      {/* --- ÁREA DE IMPRESSÃO --- */}
       <div id="printable-area">
-        <div className="page-title">
-          PROGRAMAÇÃO - {formatarDataBR(dataFiltroImpressao)}
-        </div>
+        <div className="page-title">PROGRAMAÇÃO - {formatarDataBR(dataFiltroImpressao)}</div>
         {filaProducao
           .filter((r) => String(r.data) === dataFiltroImpressao)
           .sort((a, b) => a.cliente.localeCompare(b.cliente))
           .map((r) => (
             <div key={r.sysId} className="romaneio-container">
-              <div className="client-header">
-                <span>{r.cliente}</span>
-                <span>ROM: {r.id}</span>
-              </div>
+              <div className="client-header"><span>{r.cliente}</span><span>ROM: {r.id}</span></div>
               <table className="simple-table">
-                <thead>
-                  <tr>
-                    <th>COD</th><th>DESC / MEDIDA</th><th>QTD</th><th>PESO</th><th>CHK</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>COD</th><th>DESC / MEDIDA</th><th>QTD</th><th>PESO</th><th>CHK</th></tr></thead>
                 <tbody>
                   {r.itens.map((i, k) => (
                     <tr key={k}>
@@ -825,42 +816,36 @@ const migrarDadosParaNuvem = async () => {
                   ))}
                 </tbody>
               </table>
-              <div className="block-footer">
-                <span>TOTAL: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg</span>
-              </div>
+              <div className="block-footer"><span>TOTAL: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg</span></div>
             </div>
           ))}
       </div>
 
-      {/* --- APP PRINCIPAL (Agora Responsivo) --- 
-          Mudança: flex-col no celular (vertical), flex-row no PC (lado a lado)
-      */}
+      {/* --- APP CONTAINER --- */}
       <div className="app-container flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
         
-        {/* --- NAVEGAÇÃO (HÍBRIDA) --- 
-            Celular: Barra fixa embaixo.
-            PC: Barra lateral esquerda.
-        */}
+        {/* --- MENU DE NAVEGAÇÃO (CORRIGIDO COM OEE) --- */}
         <nav className="
             bg-[#09090b] border-t md:border-t-0 md:border-r border-white/10 z-50 shrink-0
             fixed bottom-0 w-full h-16 flex flex-row justify-around items-center px-2
             md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0
         ">
-          <div className="hidden md:flex mb-8 p-2 bg-blue-600 rounded-lg shadow-lg">
-            <Layout className="text-white" size={24} />
-          </div>
+          <div className="hidden md:flex mb-8 p-2 bg-blue-600 rounded-lg shadow-lg"><Layout className="text-white" size={24} /></div>
           
-          {/* Botões do Menu adaptados */}
           <div className="flex flex-row w-full justify-around md:flex-col md:gap-6 md:px-2">
             <BotaoMenu ativo={abaAtiva === 'agenda'} onClick={() => setAbaAtiva('agenda')} icon={<CalendarDays size={20} />} label="Agenda" />
             <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
             <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
             <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
+            
+            {/* --- OEE ESTÁ DE VOLTA AQUI --- */}
+            <BotaoMenu ativo={abaAtiva === 'oee'} onClick={() => setAbaAtiva('oee')} icon={<Activity size={20} />} label="OEE" />
+            
             <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
           </div>
         </nav>
 
-        {/* --- CONTEÚDO (Com padding no mobile para não esconder atrás do menu) --- */}
+        {/* --- CONTEÚDO --- */}
         <div className="flex-1 flex overflow-hidden bg-[#09090b] pb-16 md:pb-0">
           
           {/* ABA AGENDA */}
@@ -874,7 +859,6 @@ const migrarDadosParaNuvem = async () => {
                   <button onClick={abrirModalNovo} className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2 items-center flex-1 md:flex-none justify-center"><Plus size={20} /> Novo</button>
                 </div>
               </header>
-              {/* Grid vira 1 coluna no mobile */}
               <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 overflow-y-auto pb-4">
                 <ColunaKanban titulo="HOJE" data={hoje} cor="emerald" lista={colunasAgenda.hoje} resumo={calcResumo(colunasAgenda.hoje)} onEdit={abrirModalEdicao} />
                 <ColunaKanban titulo="AMANHÃ" data={amanha} cor="blue" lista={colunasAgenda.amanha} resumo={calcResumo(colunasAgenda.amanha)} onEdit={abrirModalEdicao} />
@@ -890,126 +874,119 @@ const migrarDadosParaNuvem = async () => {
 
           {/* ABA PCP */}
           {abaAtiva === 'planejamento' && (
-            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
-              <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
-                <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                  <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
-                  <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
-                  <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
-                </div>
-              </header>
-              {/* Tabela com scroll horizontal */}
-              <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[600px]">
-                  <thead>
-                    <tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
-                      <th className="p-4">ID</th><th className="p-4">Data</th><th className="p-4">Cliente</th><th className="p-4 text-center">Peso</th><th className="p-4 text-right">#</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filaProducao.map((r) => (
-                      <tr key={r.sysId} className="hover:bg-white/5">
-                        <td className="p-4 text-blue-400 font-mono">#{r.id}</td>
-                        <td className="p-4 text-zinc-300">{formatarDataBR(r.data)}</td>
-                        <td className="p-4">{r.cliente}</td>
-                        <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
-                        <td className="p-4 text-right"><button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500"><Trash2 size={16} /></button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ABA PRODUÇÃO (APONTAMENTO) */}
-          {abaAtiva === 'producao' && (
-            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
-              <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><Factory className="text-emerald-500" size={32} /> Apontamento</h1></header>
-              {/* Vira coluna no mobile */}
-              <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
-                <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-emerald-500/20 p-4 md:p-6 shrink-0">
-                  <h3 className="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2"><Box size={20} /> Registrar Peça</h3>
-                  <div className="space-y-4">
-                    <input type="date" value={formApontProdData} onChange={(e) => setFormApontProdData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
-                    <select value={formApontProdCod} onChange={handleSelectProdApontamento} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
-                      <option value="">Selecione...</option>
-                      {CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}
-                    </select>
-                    <div className="grid grid-cols-2 gap-4">
-                      <input type="number" placeholder="Qtd" value={formApontProdQtd} onChange={(e) => setFormApontProdQtd(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-right font-bold text-lg" />
-                      <select value={formApontProdDestino} onChange={(e) => setFormApontProdDestino(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
-                        <option value="Estoque">Estoque</option><option value="Cometa 04">Cometa 04</option><option value="Serra 06">Serra 06</option>
-                      </select>
-                    </div>
-                    <button onClick={salvarApontamentoProducao} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"><CheckCircle2 size={20} /> Confirmar</button>
-                  </div>
-                </div>
-                <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
-                  <div className="p-4 border-b border-white/10 bg-white/5"><h3 className="font-bold text-white flex gap-2"><History size={18} /> Histórico Hoje</h3></div>
-                  <div className="flex-1 overflow-y-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur"><tr><th className="p-4">Item</th><th className="p-4 text-center">Qtd</th><th className="p-4 text-right">#</th></tr></thead>
+             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                   <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
+                   <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                      <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
+                      <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
+                      <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
+                   </div>
+                </header>
+                <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
+                   <table className="w-full text-left text-sm min-w-[600px]">
+                      <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10"><th className="p-4">ID</th><th className="p-4">Data</th><th className="p-4">Cliente</th><th className="p-4 text-center">Peso</th><th className="p-4 text-right">#</th></tr></thead>
                       <tbody className="divide-y divide-white/5">
-                        {historicoProducaoReal.filter(p => p.data === formApontProdData).map((p) => (
-                          <tr key={p.id}>
-                            <td className="p-4"><div className="font-mono text-emerald-400">{p.cod}</div><div className="text-zinc-400 text-xs">{p.desc}</div></td>
-                            <td className="p-4 text-center font-bold">{p.qtd}</td>
-                            <td className="p-4 text-right"><button onClick={() => deletarProducaoReal(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
-                          </tr>
+                        {filaProducao.map((r) => (
+                           <tr key={r.sysId} className="hover:bg-white/5">
+                              <td className="p-4 text-blue-400 font-mono">#{r.id}</td>
+                              <td className="p-4 text-zinc-300">{formatarDataBR(r.data)}</td>
+                              <td className="p-4">{r.cliente}</td>
+                              <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
+                              <td className="p-4 text-right"><button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                           </tr>
                         ))}
                       </tbody>
-                    </table>
-                  </div>
+                   </table>
                 </div>
-              </div>
-            </div>
+             </div>
+          )}
+
+          {/* ABA PRODUÇÃO */}
+          {abaAtiva === 'producao' && (
+             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
+                <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><Factory className="text-emerald-500" size={32} /> Apontamento</h1></header>
+                <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
+                   <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-emerald-500/20 p-4 md:p-6 shrink-0">
+                      <h3 className="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2"><Box size={20} /> Registrar Peça</h3>
+                      <div className="space-y-4">
+                         <input type="date" value={formApontProdData} onChange={(e) => setFormApontProdData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
+                         <select value={formApontProdCod} onChange={handleSelectProdApontamento} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
+                            <option value="">Selecione...</option>{CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}
+                         </select>
+                         <div className="grid grid-cols-2 gap-4">
+                            <input type="number" placeholder="Qtd" value={formApontProdQtd} onChange={(e) => setFormApontProdQtd(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-right font-bold text-lg" />
+                            <select value={formApontProdDestino} onChange={(e) => setFormApontProdDestino(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
+                               <option value="Estoque">Estoque</option><option value="Cometa 04">Cometa 04</option><option value="Serra 06">Serra 06</option>
+                            </select>
+                         </div>
+                         <button onClick={salvarApontamentoProducao} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"><CheckCircle2 size={20} /> Confirmar</button>
+                      </div>
+                   </div>
+                   <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
+                      <div className="p-4 border-b border-white/10 bg-white/5"><h3 className="font-bold text-white flex gap-2"><History size={18} /> Histórico Hoje</h3></div>
+                      <div className="flex-1 overflow-y-auto">
+                         <table className="w-full text-left text-sm">
+                            <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur"><tr><th className="p-4">Item</th><th className="p-4 text-center">Qtd</th><th className="p-4 text-right">#</th></tr></thead>
+                            <tbody className="divide-y divide-white/5">
+                               {historicoProducaoReal.filter(p => p.data === formApontProdData).map((p) => (
+                                  <tr key={p.id}>
+                                     <td className="p-4"><div className="font-mono text-emerald-400">{p.cod}</div><div className="text-zinc-400 text-xs">{p.desc}</div></td>
+                                     <td className="p-4 text-center font-bold">{p.qtd}</td>
+                                     <td className="p-4 text-right"><button onClick={() => deletarProducaoReal(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
+                                  </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                      </div>
+                   </div>
+                </div>
+             </div>
           )}
 
           {/* ABA PARADAS */}
           {abaAtiva === 'apontamento' && (
-            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
-              <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><AlertOctagon className="text-red-500" size={32} /> Paradas</h1></header>
-              <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
-                <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-red-500/20 p-4 md:p-6 shrink-0">
-                  <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2"><Clock size={20} /> Registrar</h3>
-                  <div className="space-y-4">
-                    <input type="date" value={formParadaData} onChange={(e) => setFormParadaData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
-                    <div className="grid grid-cols-2 gap-4">
-                      <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
-                      <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
-                    </div>
-                    <select value={formParadaMotivoCod} onChange={(e) => setFormParadaMotivoCod(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
-                      <option value="">Motivo...</option>
-                      {dicionarioLocal.map((p) => <option key={p.codigo} value={p.codigo}>{p.evento}</option>)}
-                    </select>
-                    <button onClick={salvarApontamentoParada} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg">Confirmar</button>
-                  </div>
+             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
+                <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><AlertOctagon className="text-red-500" size={32} /> Paradas</h1></header>
+                <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
+                   <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-red-500/20 p-4 md:p-6 shrink-0">
+                      <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2"><Clock size={20} /> Registrar</h3>
+                      <div className="space-y-4">
+                         <input type="date" value={formParadaData} onChange={(e) => setFormParadaData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
+                         <div className="grid grid-cols-2 gap-4">
+                            <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
+                            <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
+                         </div>
+                         <select value={formParadaMotivoCod} onChange={(e) => setFormParadaMotivoCod(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
+                            <option value="">Motivo...</option>{dicionarioLocal.map((p) => <option key={p.codigo} value={p.codigo}>{p.evento}</option>)}
+                         </select>
+                         <button onClick={salvarApontamentoParada} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg">Confirmar</button>
+                      </div>
+                   </div>
+                   <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
+                      <div className="flex-1 overflow-y-auto">
+                         <table className="w-full text-left text-sm">
+                            <thead className="bg-black/20 sticky top-0 text-xs uppercase text-zinc-500"><tr><th className="p-4">Horário</th><th className="p-4">Motivo</th><th className="p-4 text-right">#</th></tr></thead>
+                            <tbody className="divide-y divide-white/5">
+                               {historicoParadas.filter(p => p.data === formParadaData).map((p) => (
+                                  <tr key={p.id}>
+                                     <td className="p-4 font-mono text-zinc-300">{p.inicio} - {p.fim} ({p.duracao}min)</td>
+                                     <td className="p-4">{p.descMotivo}</td>
+                                     <td className="p-4 text-right"><button onClick={() => deletarParada(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
+                                  </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                      </div>
+                   </div>
                 </div>
-                <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
-                  <div className="flex-1 overflow-y-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-black/20 sticky top-0 text-xs uppercase text-zinc-500"><tr><th className="p-4">Horário</th><th className="p-4">Motivo</th><th className="p-4 text-right">#</th></tr></thead>
-                      <tbody className="divide-y divide-white/5">
-                        {historicoParadas.filter(p => p.data === formParadaData).map((p) => (
-                          <tr key={p.id}>
-                            <td className="p-4 font-mono text-zinc-300">{p.inicio} - {p.fim} ({p.duracao}min)</td>
-                            <td className="p-4">{p.descMotivo}</td>
-                            <td className="p-4 text-right"><button onClick={() => deletarParada(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
+             </div>
           )}
 
-          {/* ABA OEE */}
+          {/* ABA OEE (AQUI ESTÁ ELA!) */}
           {abaAtiva === "oee" && (
             <div className="flex-1 p-4 md:p-8 overflow-y-auto">
+              {/* Certifique-se de que o componente OeeDashboard existe e é importado */}
               <OeeDashboard
                 historicoProducaoReal={historicoProducaoReal}
                 historicoParadas={historicoParadas}
@@ -1021,10 +998,10 @@ const migrarDadosParaNuvem = async () => {
             </div>
           )}
 
-          {/* ABA INDICADORES (CARGA) - RESPONSIVO */}
+          {/* ABA CARGA MÁQUINA */}
           {abaAtiva === 'indicadores' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto flex flex-col">
-              {/* Header com 2 colunas no mobile */}
+              
               <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
                 <h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white items-center">
                   <TrendingUp className="text-pink-500" size={28} /> 
@@ -1046,7 +1023,7 @@ const migrarDadosParaNuvem = async () => {
                 </div>
               </header>
 
-              {/* Grid 1: KPIs Básicos (Grid 2 col mobile, 4 col PC) */}
+              {/* Cards KPIs (1) */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <CardIndicador label="Planejado (Ton)" valor={(dadosIndicadores.totalPesoPlanejado / 1000).toFixed(1)} icon={<Scale size={24} className="text-zinc-400" />} />
                 <CardIndicador label="Executado (Ton)" valor={(dadosIndicadores.totalPesoExecutado / 1000).toFixed(1)} icon={<CheckCircle2 size={24} className="text-blue-500" />} />
@@ -1061,7 +1038,7 @@ const migrarDadosParaNuvem = async () => {
                 </div>
               </div>
 
-              {/* Grid 2: Cards Avançados (Grid 1 col mobile, 3 col PC) */}
+              {/* Cards Avançados (2) */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className={`p-4 rounded-xl border flex items-center gap-4 ${dadosIndicadores.saldoTotal >= 0 ? 'bg-emerald-950/20 border-emerald-500/20' : 'bg-red-950/20 border-red-500/20'}`}>
                   <div className={`p-3 rounded-lg border ${dadosIndicadores.saldoTotal >= 0 ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}>
@@ -1082,7 +1059,7 @@ const migrarDadosParaNuvem = async () => {
                 </div>
               </div>
 
-              {/* GRÁFICO (Side-by-Side) */}
+              {/* Gráfico Side-by-Side */}
               <div className="flex-1 bg-zinc-900/40 rounded-2xl border border-white/10 p-4 md:p-6 relative flex flex-col min-h-[400px]">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-bold text-zinc-400 flex items-center gap-2"><BarChart3 size={16} /> Evolução Diária</h3>
@@ -1127,14 +1104,12 @@ const migrarDadosParaNuvem = async () => {
       {showModalNovaOrdem && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-2xl w-full md:max-w-4xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-            {/* Header Modal */}
             <div className="flex justify-between items-center p-4 md:p-6 border-b border-white/10 bg-white/5">
               <h3 className="text-lg md:text-xl font-bold text-white">{romaneioEmEdicaoId ? 'Editar Romaneio' : 'Novo Romaneio'}</h3>
               <button onClick={() => setShowModalNovaOrdem(false)} className="text-zinc-400 hover:text-white"><X /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                {/* FORMS: Grid Responsivo */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-3">
                         <label className="text-xs font-bold text-blue-400 block mb-1">Romaneio</label>
@@ -1161,10 +1136,7 @@ const migrarDadosParaNuvem = async () => {
                 
                 <div className="bg-zinc-800/30 p-4 rounded-xl border border-white/5 space-y-4">
                     <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1">
-                            <label className="text-[10px] font-bold text-zinc-500 block mb-1">Produto</label>
-                            <select value={formCod} onChange={handleSelectProduto} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm"><option value="">Manual...</option>{CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}</select>
-                        </div>
+                        <div className="flex-1"><label className="text-[10px] font-bold text-zinc-500 block mb-1">Produto</label><select value={formCod} onChange={handleSelectProduto} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm"><option value="">Manual...</option>{CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}</select></div>
                         <div className="flex gap-4">
                             <div className="w-[100px]"><label className="text-[10px] font-bold text-zinc-500 block mb-1">Comp (m)</label><input type="number" step="0.01" value={formComp} onChange={(e) => setFormComp(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm" /></div>
                             <div className="w-[80px]"><label className="text-[10px] font-bold text-zinc-500 block mb-1">Qtd</label><input type="number" value={formQtd} onChange={(e) => setFormQtd(e.target.value)} className="w-full bg-black border border-blue-500/50 rounded p-2 text-white text-sm text-right" /></div>
@@ -1199,14 +1171,12 @@ const migrarDadosParaNuvem = async () => {
         </div>
       )}
 
-      {/* --- MODAL PARADA (Mantido) --- */}
+      {/* --- MODAL PARADA --- */}
       {showModalParada && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-2xl w-full max-w-lg border border-red-500/30 shadow-2xl flex flex-col p-6">
-            {/* ... Conteúdo do modal de parada (igual ao seu) ... */}
             <h3 className="text-xl font-bold text-red-400 mb-4">Apontar Parada</h3>
             <div className="space-y-4">
-               {/* ... inputs de parada ... */}
                <div className="grid grid-cols-2 gap-4">
                   <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-2 text-white" />
                   <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-2 text-white" />
