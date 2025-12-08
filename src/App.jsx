@@ -998,7 +998,7 @@ const migrarDadosParaNuvem = async () => {
           )}
 
           {/* OEE */}
-          {abaAtiva === 'oee' && (
+          {abaAtiva === "oee" && (
   <OeeDashboard
     historicoProducaoReal={historicoProducaoReal}
     historicoParadas={historicoParadas}
