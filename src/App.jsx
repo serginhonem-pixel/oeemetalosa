@@ -19,7 +19,7 @@ import {
 import { 
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
   Tooltip, Legend, ResponsiveContainer, AreaChart, Area, 
-  PieChart, Pie, Cell 
+  PieChart, Pie, Cell, ComposedChart, ReferenceLine, Brush // <--- Adicione ComposedChart e ReferenceLine
 } from 'recharts';
 
 // --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
@@ -205,7 +205,7 @@ export default function App() {
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(hoje);
   const [dataFimInd, setDataFimInd] = useState(new Date(new Date().setDate(new Date().getDate() + 7)).toISOString().split('T')[0]);
-  const [capacidadeDiaria, setCapacidadeDiaria] = useState(20000); 
+  const [capacidadeDiaria, setCapacidadeDiaria] = useState(16000); 
   const [turnoHoras, setTurnoHoras] = useState(9);
 
   // Modal Manual (COMPLETO)
@@ -656,30 +656,87 @@ const handleDownloadModeloParadas = () => {
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
 
   // --- DASHBOARD E OEE ---
+  // --- DASHBOARD E OEE (Lógica Atualizada) ---
+  // --- DASHBOARD E OEE (Lógica Atualizada com Filtros) ---
+  // --- SUBSTITUA O SEU 'const dadosIndicadores' ATUAL POR ESTE INTEIRO ---
   const dadosIndicadores = useMemo(() => {
-    const filtrados = filaProducao.filter(r => r.data >= dataInicioInd && r.data <= dataFimInd);
     const agrupadoPorDia = {};
-    let currDate = new Date(dataInicioInd);
-    const lastDate = new Date(dataFimInd);
+    
+    // Ajuste de datas
+    let currDate = new Date(dataInicioInd + 'T12:00:00');
+    const lastDate = new Date(dataFimInd + 'T12:00:00');
+    
+    // 1. Cria chaves
     while (currDate <= lastDate) {
         const dStr = currDate.toISOString().split('T')[0];
-        agrupadoPorDia[dStr] = { peso: 0, itens: 0, romaneios: 0 };
+        agrupadoPorDia[dStr] = { pesoPlanejado: 0, itensPlanejados: 0, pesoExecutado: 0, itensExecutados: 0 };
         currDate.setDate(currDate.getDate() + 1);
     }
-    filtrados.forEach(r => {
+
+    // 2. Soma Planejado
+    const romaneiosNoPeriodo = filaProducao.filter(r => r.data >= dataInicioInd && r.data <= dataFimInd);
+    romaneiosNoPeriodo.forEach(r => {
         const d = String(r.data);
-        if (!agrupadoPorDia[d]) agrupadoPorDia[d] = { peso: 0, itens: 0, romaneios: 0 };
-        const pesoR = r.itens.reduce((acc, i) => acc + parseFloat(i.pesoTotal || 0), 0);
-        const itensR = r.itens.reduce((acc, i) => acc + parseInt(i.qtd || 0), 0);
-        agrupadoPorDia[d].peso += pesoR;
-        agrupadoPorDia[d].itens += itensR;
-        agrupadoPorDia[d].romaneios += 1;
+        if (agrupadoPorDia[d]) {
+            const pesoR = r.itens.reduce((acc, i) => acc + parseFloat(i.pesoTotal || 0), 0);
+            agrupadoPorDia[d].pesoPlanejado += pesoR;
+        }
     });
-    const arrayGrafico = Object.keys(agrupadoPorDia).sort().map(data => ({ data, ...agrupadoPorDia[data] }));
-    const totalPeso = filtrados.reduce((acc, r) => acc + r.itens.reduce((sum, i) => sum + parseFloat(i.pesoTotal || 0), 0), 0);
-    const totalItens = filtrados.reduce((acc, r) => acc + r.itens.length, 0);
-    return { filtrados, arrayGrafico, totalPeso, totalItens };
-  }, [filaProducao, dataInicioInd, dataFimInd]);
+
+    // 3. Soma Executado
+    const producaoNoPeriodo = historicoProducaoReal.filter(p => p.data >= dataInicioInd && p.data <= dataFimInd);
+    producaoNoPeriodo.forEach(p => {
+        const d = String(p.data);
+        if (agrupadoPorDia[d]) {
+            let pesoItem = 0;
+            if (CATALOGO_PRODUTOS) {
+                const prodCatalogo = CATALOGO_PRODUTOS.find(cat => cat.cod === p.cod);
+                if (prodCatalogo) pesoItem = (prodCatalogo.pesoUnit || 0) * p.qtd;
+            }
+            agrupadoPorDia[d].pesoExecutado += pesoItem;
+        }
+    });
+
+    // 4. Filtra array gráfico (tira FDS e Vazios)
+    const arrayGrafico = Object.keys(agrupadoPorDia)
+        .sort()
+        .map(data => ({ data, ...agrupadoPorDia[data] }))
+        .filter(dia => {
+            const dataObj = new Date(dia.data + 'T12:00:00');
+            const diaSemana = dataObj.getDay(); 
+            const isFimDeSemana = diaSemana === 0 || diaSemana === 6;
+            const isVazio = dia.pesoPlanejado === 0 && dia.pesoExecutado === 0;
+            return !(isFimDeSemana || isVazio);
+        });
+    
+    // 5. Totais Gerais
+    const totalPesoPlanejado = romaneiosNoPeriodo.reduce((acc, r) => acc + r.itens.reduce((sum, i) => sum + parseFloat(i.pesoTotal || 0), 0), 0);
+    const totalPesoExecutado = producaoNoPeriodo.reduce((acc, p) => {
+         const prod = CATALOGO_PRODUTOS?.find(c => c.cod === p.cod);
+         return acc + ((prod?.pesoUnit || 0) * p.qtd);
+    }, 0);
+
+    // --- CÁLCULOS DOS NOVOS CARDS ---
+    const saldoTotal = totalPesoExecutado - totalPesoPlanejado;
+    
+    const diasPassados = arrayGrafico.filter(d => d.pesoExecutado > 0).length;
+    const diasRestantes = arrayGrafico.length - diasPassados;
+    
+    // Ritmo necessário para recuperar
+    let ritmoNecessario = 0;
+    if (diasRestantes > 0 && saldoTotal < 0) {
+        ritmoNecessario = (totalPesoPlanejado - totalPesoExecutado) / diasRestantes;
+    }
+
+    // Projeção final baseada na média atual
+    const mediaAtual = diasPassados > 0 ? (totalPesoExecutado / diasPassados) : 0;
+    const projecaoFinal = totalPesoExecutado + (mediaAtual * diasRestantes);
+
+    return { 
+        arrayGrafico, totalPesoPlanejado, totalPesoExecutado,
+        saldoTotal, ritmoNecessario, projecaoFinal
+    };
+  }, [filaProducao, historicoProducaoReal, dataInicioInd, dataFimInd]);
 
   const dadosOEE = useMemo(() => {
       const paradasDoDia = historicoParadas.filter(p => p.data === hoje);
@@ -736,7 +793,7 @@ const migrarDadosParaNuvem = async () => {
     <>
       <PrintStyles />
 
-      {/* ÁREA DE IMPRESSÃO */}
+      {/* --- ÁREA DE IMPRESSÃO (Mantida Igual) --- */}
       <div id="printable-area">
         <div className="page-title">
           PROGRAMAÇÃO - {formatarDataBR(dataFiltroImpressao)}
@@ -753,21 +810,14 @@ const migrarDadosParaNuvem = async () => {
               <table className="simple-table">
                 <thead>
                   <tr>
-                    <th>COD</th>
-                    <th>DESCRIÇÃO / MEDIDA</th>
-                    <th>QTD</th>
-                    <th>PESO</th>
-                    <th>CHK</th>
+                    <th>COD</th><th>DESC / MEDIDA</th><th>QTD</th><th>PESO</th><th>CHK</th>
                   </tr>
                 </thead>
                 <tbody>
                   {r.itens.map((i, k) => (
                     <tr key={k}>
                       <td>{i.cod}</td>
-                      <td>
-                        <strong>{i.comp.toFixed(2)}m</strong> - {i.desc}{' '}
-                        {i.perfil && `(${i.perfil})`}
-                      </td>
+                      <td><strong>{i.comp.toFixed(2)}m</strong> - {i.desc} {i.perfil && `(${i.perfil})`}</td>
                       <td align="center">{i.qtd}</td>
                       <td align="center">{i.pesoTotal}</td>
                       <td align="center">[ ]</td>
@@ -776,220 +826,95 @@ const migrarDadosParaNuvem = async () => {
                 </tbody>
               </table>
               <div className="block-footer">
-                <span>
-                  PESO TOTAL:{' '}
-                  {r.itens
-                    .reduce(
-                      (a, b) => a + parseFloat(b.pesoTotal || 0),
-                      0
-                    )
-                    .toFixed(1)}{' '}
-                  kg
-                </span>
+                <span>TOTAL: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg</span>
               </div>
             </div>
           ))}
       </div>
 
-      {/* APP */}
-      <div className="app-container flex h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
-        <nav className="w-20 bg-[#09090b] flex flex-col items-center py-6 border-r border-white/10 z-20 shrink-0">
-          <div className="mb-8 p-2 bg-blue-600 rounded-lg shadow-lg">
+      {/* --- APP PRINCIPAL (Agora Responsivo) --- 
+          Mudança: flex-col no celular (vertical), flex-row no PC (lado a lado)
+      */}
+      <div className="app-container flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
+        
+        {/* --- NAVEGAÇÃO (HÍBRIDA) --- 
+            Celular: Barra fixa embaixo.
+            PC: Barra lateral esquerda.
+        */}
+        <nav className="
+            bg-[#09090b] border-t md:border-t-0 md:border-r border-white/10 z-50 shrink-0
+            fixed bottom-0 w-full h-16 flex flex-row justify-around items-center px-2
+            md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0
+        ">
+          <div className="hidden md:flex mb-8 p-2 bg-blue-600 rounded-lg shadow-lg">
             <Layout className="text-white" size={24} />
           </div>
-          <div className="flex flex-col gap-6 w-full px-2">
-            <BotaoMenu
-              ativo={abaAtiva === 'agenda'}
-              onClick={() => setAbaAtiva('agenda')}
-              icon={<CalendarDays size={24} />}
-              label="Agenda"
-            />
-
-{/* //MIGRA DADOS, BOTÃO !!!  */}
-
-            {/* <button 
-  onClick={migrarDadosParaNuvem}
-  className="mb-4 w-full bg-orange-600 text-white text-xs font-bold py-2 rounded animate-pulse"
->
-  CLOUD SYNC ☁️
-</button> */}
-
-
-{/* //MIGRA DADOS, BOTÃO !!!  */}
-
-            <BotaoMenu
-              ativo={abaAtiva === 'planejamento'}
-              onClick={() => setAbaAtiva('planejamento')}
-              icon={<ClipboardList size={24} />}
-              label="PCP"
-            />
-            <BotaoMenu
-              ativo={abaAtiva === 'producao'}
-              onClick={() => setAbaAtiva('producao')}
-              icon={<Factory size={24} />}
-              label="Apont. Prod"
-            />
-            <BotaoMenu
-              ativo={abaAtiva === 'apontamento'}
-              onClick={() => setAbaAtiva('apontamento')}
-              icon={<AlertOctagon size={24} />}
-              label="Paradas"
-            />
-            <BotaoMenu
-              ativo={abaAtiva === 'oee'}
-              onClick={() => setAbaAtiva('oee')}
-              icon={<Activity size={24} />}
-              label="OEE"
-            />
-            <BotaoMenu
-              ativo={abaAtiva === 'indicadores'}
-              onClick={() => setAbaAtiva('indicadores')}
-              icon={<BarChart3 size={24} />}
-              label="Carga"
-            />
+          
+          {/* Botões do Menu adaptados */}
+          <div className="flex flex-row w-full justify-around md:flex-col md:gap-6 md:px-2">
+            <BotaoMenu ativo={abaAtiva === 'agenda'} onClick={() => setAbaAtiva('agenda')} icon={<CalendarDays size={20} />} label="Agenda" />
+            <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
+            <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
+            <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
+            <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
           </div>
         </nav>
 
-        <div className="flex-1 flex overflow-hidden bg-[#09090b]">
-          {/* AGENDA */}
+        {/* --- CONTEÚDO (Com padding no mobile para não esconder atrás do menu) --- */}
+        <div className="flex-1 flex overflow-hidden bg-[#09090b] pb-16 md:pb-0">
+          
+          {/* ABA AGENDA */}
           {abaAtiva === 'agenda' && (
-            <div className="flex-1 bg-[#09090b] p-6 overflow-hidden flex flex-col">
-              <header className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold flex gap-3">
-                  <Layers className="text-purple-500" size={32} /> Gestão da
-                  Semana
-                </h1>
-                <div className="flex gap-3">                  
-                  <input
-                    type="date"
-                    value={dataFiltroImpressao}
-                    onChange={(e) => setDataFiltroImpressao(e.target.value)}
-                    className="bg-zinc-800 border border-white/10 rounded p-1.5 text-white text-xs"
-                  />
-                  <button
-                    onClick={handlePrint}
-                    className="p-1.5 bg-zinc-700 rounded text-white"
-                  >
-                    <FileText size={16} />
-                  </button>                  
-                  <button
-                    onClick={abrirModalNovo}
-                    className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2"
-                  >
-                    <Plus size={20} /> Novo
-                  </button>
+            <div className="flex-1 bg-[#09090b] p-4 md:p-6 overflow-hidden flex flex-col">
+              <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
+                <h1 className="text-2xl font-bold flex gap-3"><Layers className="text-purple-500" size={28} /> Gestão</h1>
+                <div className="flex gap-3 w-full md:w-auto">
+                  <input type="date" value={dataFiltroImpressao} onChange={(e) => setDataFiltroImpressao(e.target.value)} className="bg-zinc-800 border border-white/10 rounded p-2 text-white text-xs flex-1 md:flex-none" />
+                  <button onClick={handlePrint} className="p-2 bg-zinc-700 rounded text-white"><FileText size={20} /></button>
+                  <button onClick={abrirModalNovo} className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2 items-center flex-1 md:flex-none justify-center"><Plus size={20} /> Novo</button>
                 </div>
               </header>
-              <div className="flex-1 grid grid-cols-3 gap-6 overflow-hidden min-h-0">
-                <ColunaKanban
-                  titulo="HOJE"
-                  data={hoje}
-                  cor="emerald"
-                  lista={colunasAgenda.hoje}
-                  resumo={calcResumo(colunasAgenda.hoje)}
-                  onEdit={abrirModalEdicao}
-                />
-                <ColunaKanban
-                  titulo="AMANHÃ"
-                  data={amanha}
-                  cor="blue"
-                  lista={colunasAgenda.amanha}
-                  resumo={calcResumo(colunasAgenda.amanha)}
-                  onEdit={abrirModalEdicao}
-                />
-                <div className="flex flex-col h-full bg-zinc-900/30 rounded-2xl border border-white/5 overflow-hidden">
-                  <div className="p-4 border-b border-white/5 bg-zinc-900/80">
-                    <h2 className="text-lg font-black text-zinc-400">
-                      PRÓXIMOS
-                    </h2>
-                  </div>
+              {/* Grid vira 1 coluna no mobile */}
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 overflow-y-auto pb-4">
+                <ColunaKanban titulo="HOJE" data={hoje} cor="emerald" lista={colunasAgenda.hoje} resumo={calcResumo(colunasAgenda.hoje)} onEdit={abrirModalEdicao} />
+                <ColunaKanban titulo="AMANHÃ" data={amanha} cor="blue" lista={colunasAgenda.amanha} resumo={calcResumo(colunasAgenda.amanha)} onEdit={abrirModalEdicao} />
+                <div className="flex flex-col h-full bg-zinc-900/30 rounded-2xl border border-white/5 overflow-hidden min-h-[300px]">
+                  <div className="p-4 border-b border-white/5 bg-zinc-900/80"><h2 className="text-lg font-black text-zinc-400">PRÓXIMOS</h2></div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {colunasAgenda.futuro.map((r) => (
-                      <CardRomaneio
-                        key={r.sysId}
-                        romaneio={r}
-                        onEdit={() => abrirModalEdicao(r)}
-                      />
-                    ))}
+                    {colunasAgenda.futuro.map((r) => <CardRomaneio key={r.sysId} romaneio={r} onEdit={() => abrirModalEdicao(r)} />)}
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* PCP */}
+          {/* ABA PCP */}
           {abaAtiva === 'planejamento' && (
-            <div className="flex-1 bg-[#09090b] p-8 overflow-y-auto">
-              <header className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold flex gap-3">
-                  <ClipboardList className="text-blue-500" size={32} /> PCP -
-                  Lista Geral
-                </h1>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleDownloadModelo}
-                    className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2"
-                  >
-                    <Download size={16} /> Modelo
-                  </button>
-                  <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer">
-                    <Upload size={16} /> Importar
-                    <input
-                      type="file"
-                      onChange={handleFileUpload}
-                      accept=".xlsx,.xls,.csv"
-                      className="hidden"
-                    />
-                  </label>
-                  <button
-                    onClick={abrirModalNovo}
-                    className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2"
-                  >
-                    <Plus size={16} /> Novo
-                  </button>
+            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
+              <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
+                <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                  <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
+                  <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
+                  <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
                 </div>
               </header>
-              <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-hidden">
-                <table className="w-full text-left text-sm">
+              {/* Tabela com scroll horizontal */}
+              <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[600px]">
                   <thead>
                     <tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
-                      <th className="p-4">ID</th>
-                      <th className="p-4">Data</th>
-                      <th className="p-4">Cliente</th>
-                      <th className="p-4 text-center">Peso</th>
-                      <th className="p-4 text-right">#</th>
+                      <th className="p-4">ID</th><th className="p-4">Data</th><th className="p-4">Cliente</th><th className="p-4 text-center">Peso</th><th className="p-4 text-right">#</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {filaProducao.map((r) => (
-                      <tr
-                        key={r.sysId}
-                        className="hover:bg-white/5"
-                      >
-                        <td className="p-4 text-blue-400 font-mono">
-                          #{r.id}
-                        </td>
-                        <td className="p-4 text-zinc-300">
-                          {formatarDataBR(r.data)}
-                        </td>
+                      <tr key={r.sysId} className="hover:bg-white/5">
+                        <td className="p-4 text-blue-400 font-mono">#{r.id}</td>
+                        <td className="p-4 text-zinc-300">{formatarDataBR(r.data)}</td>
                         <td className="p-4">{r.cliente}</td>
-                        <td className="p-4 text-center">
-                          {r.itens
-                            .reduce(
-                              (a, b) =>
-                                a + parseFloat(b.pesoTotal || 0),
-                              0
-                            )
-                            .toFixed(1)}
-                        </td>
-                        <td className="p-4 text-right">
-                          <button
-                            onClick={() => deletarRomaneio(r.sysId)}
-                            className="p-2 text-zinc-400 hover:text-red-500"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
+                        <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
+                        <td className="p-4 text-right"><button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500"><Trash2 size={16} /></button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -998,217 +923,42 @@ const migrarDadosParaNuvem = async () => {
             </div>
           )}
 
-          {/* OEE */}
-          {abaAtiva === "oee" && (
-  <OeeDashboard
-    historicoProducaoReal={historicoProducaoReal}
-    historicoParadas={historicoParadas}
-    dataInicioInd={dataInicioInd}
-    dataFimInd={dataFimInd}
-    capacidadeDiaria={capacidadeDiaria}
-    turnoHoras={turnoHoras}
-  />
-)}
-
-
-
-          {/* PRODUÇÃO */}
+          {/* ABA PRODUÇÃO (APONTAMENTO) */}
           {abaAtiva === 'producao' && (
-            <div className="flex-1 bg-[#09090b] p-8 overflow-hidden flex flex-col">
-              <header className="flex justify-between items-center mb-8 shrink-0">
-                <h1 className="text-3xl font-bold flex gap-3 text-white">
-                  <Factory className="text-emerald-500" size={32} /> Apontamento
-                  de Produção
-                </h1>
-              </header>
-              <div className="flex gap-6 h-full min-h-0">
-                {/* LADO ESQUERDO – FORMULÁRIO */}
-                <div className="w-1/3 bg-zinc-900 rounded-2xl border border-emerald-500/20 p-6 flex flex-col overflow-y-auto">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
-                      <Box size={20} /> Registrar Peça
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleDownloadModeloApontProd}
-                        className="px-2 py-1 text-[10px] border border-emerald-500/40 rounded uppercase tracking-wide text-emerald-300 hover:bg-emerald-500/10"
-                      >
-                        Modelo
-                      </button>
-                      <label className="text-[10px] text-blue-400 cursor-pointer flex items-center gap-1 hover:underline">
-                        <Upload size={12} />
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={handleUploadApontamentoProducao}
-                          accept=".xlsx,.xls,.csv"
-                        />
-                        Importar
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div>
-                      <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                        Data
-                      </label>
-                      <input
-                        type="date"
-                        value={formApontProdData}
-                        onChange={(e) =>
-                          setFormApontProdData(e.target.value)
-                        }
-                        className="w-full bg-black border border-white/10 rounded p-3 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                        Código
-                      </label>
-                      <select
-                        value={formApontProdCod}
-                        onChange={handleSelectProdApontamento}
-                        className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm"
-                      >
-                        <option value="">Selecione...</option>
-                        {CATALOGO_PRODUTOS.map((p) => (
-                          <option key={p.cod} value={p.cod}>
-                            {p.cod} - {p.desc}
-                          </option>
-                        ))}
+            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
+              <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><Factory className="text-emerald-500" size={32} /> Apontamento</h1></header>
+              {/* Vira coluna no mobile */}
+              <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
+                <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-emerald-500/20 p-4 md:p-6 shrink-0">
+                  <h3 className="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2"><Box size={20} /> Registrar Peça</h3>
+                  <div className="space-y-4">
+                    <input type="date" value={formApontProdData} onChange={(e) => setFormApontProdData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
+                    <select value={formApontProdCod} onChange={handleSelectProdApontamento} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
+                      <option value="">Selecione...</option>
+                      {CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}
+                    </select>
+                    <div className="grid grid-cols-2 gap-4">
+                      <input type="number" placeholder="Qtd" value={formApontProdQtd} onChange={(e) => setFormApontProdQtd(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-right font-bold text-lg" />
+                      <select value={formApontProdDestino} onChange={(e) => setFormApontProdDestino(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
+                        <option value="Estoque">Estoque</option><option value="Cometa 04">Cometa 04</option><option value="Serra 06">Serra 06</option>
                       </select>
                     </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                        Descrição
-                      </label>
-                      <input
-                        value={formApontProdDesc}
-                        readOnly
-                        className="w-full bg-zinc-950 border border-white/5 rounded p-3 text-zinc-400 cursor-not-allowed"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                          Qtd
-                        </label>
-                        <input
-                          type="number"
-                          value={formApontProdQtd}
-                          onChange={(e) =>
-                            setFormApontProdQtd(e.target.value)
-                          }
-                          className="w-full bg-black border border-white/10 rounded p-3 text-white text-right font-bold text-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                          Destino
-                        </label>
-                        <select
-                          value={formApontProdDestino}
-                          onChange={(e) =>
-                            setFormApontProdDestino(e.target.value)
-                          }
-                          className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm"
-                        >
-                          <option value="Estoque">Estoque</option>
-                          <option value="Cometa 04">Cometa 04</option>
-                          <option value="Serra 06">Serra 06</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={salvarApontamentoProducao}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg transition-colors flex items-center justify-center gap-2 mt-4"
-                    >
-                      <CheckCircle2 size={20} /> Confirmar Produção
-                    </button>
+                    <button onClick={salvarApontamentoProducao} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"><CheckCircle2 size={20} /> Confirmar</button>
                   </div>
                 </div>
-
-                {/* LADO DIREITO – TABELA */}
-                <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden">
-                  <div className="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
-                    <h3 className="font-bold text-white flex items-center gap-2">
-                      <History size={18} /> Produzido Hoje
-                    </h3>
-                    <span className="text-xs text-zinc-400">
-                      Itens:{' '}
-                      <strong className="text-white">
-                        {
-                          historicoProducaoReal.filter(
-                            (i) => i.data === formApontProdData
-                          ).length
-                        }
-                      </strong>
-                    </span>
-                  </div>
+                <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
+                  <div className="p-4 border-b border-white/10 bg-white/5"><h3 className="font-bold text-white flex gap-2"><History size={18} /> Histórico Hoje</h3></div>
                   <div className="flex-1 overflow-y-auto">
                     <table className="w-full text-left text-sm">
-                      <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur">
-                        <tr>
-                          <th className="p-4">Código</th>
-                          <th className="p-4">Descrição</th>
-                          <th className="p-4 text-center">Qtd</th>
-                          <th className="p-4">Destino</th>
-                          <th className="p-4 text-right">#</th>
-                        </tr>
-                      </thead>
+                      <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur"><tr><th className="p-4">Item</th><th className="p-4 text-center">Qtd</th><th className="p-4 text-right">#</th></tr></thead>
                       <tbody className="divide-y divide-white/5">
-                        {historicoProducaoReal.filter(
-                          (p) => p.data === formApontProdData
-                        ).length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan="5"
-                              className="p-8 text-center text-zinc-600 italic"
-                            >
-                              Nenhum apontamento nesta data.
-                            </td>
+                        {historicoProducaoReal.filter(p => p.data === formApontProdData).map((p) => (
+                          <tr key={p.id}>
+                            <td className="p-4"><div className="font-mono text-emerald-400">{p.cod}</div><div className="text-zinc-400 text-xs">{p.desc}</div></td>
+                            <td className="p-4 text-center font-bold">{p.qtd}</td>
+                            <td className="p-4 text-right"><button onClick={() => deletarProducaoReal(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
                           </tr>
-                        ) : (
-                          historicoProducaoReal
-                            .filter((p) => p.data === formApontProdData)
-                            .map((p) => (
-                              <tr
-                                key={p.id}
-                                className="hover:bg-white/5"
-                              >
-                                <td className="p-4 font-mono text-emerald-400">
-                                  {p.cod}
-                                </td>
-                                <td className="p-4 text-zinc-300">
-                                  {p.desc}
-                                </td>
-                                <td className="p-4 text-center font-bold text-white">
-                                  {p.qtd}
-                                </td>
-                                <td className="p-4">
-                                  <span className="text-[10px] uppercase font-bold text-zinc-500 border border-white/10 px-2 py-1 rounded">
-                                    {p.destino}
-                                  </span>
-                                </td>
-                                <td className="p-4 text-right">
-                                  <button
-                                    onClick={() =>
-                                      deletarProducaoReal(p.id)
-                                    }
-                                    className="text-zinc-600 hover:text-red-500"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                        )}
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1217,170 +967,38 @@ const migrarDadosParaNuvem = async () => {
             </div>
           )}
 
-          {/* APONTAMENTO PARADAS */}
+          {/* ABA PARADAS */}
           {abaAtiva === 'apontamento' && (
-            <div className="flex-1 bg-[#09090b] p-8 overflow-hidden flex flex-col">
-              <header className="flex justify-between items-center mb-8 shrink-0">
-                <h1 className="text-3xl font-bold flex gap-3 text-white">
-                  <AlertOctagon className="text-red-500" size={32} /> Apontamento
-                  de Paradas
-                </h1>
-              </header>
-              <div className="flex gap-6 h-full min-h-0">
-                {/* Lado esquerdo – formulário */}
-                <div className="w-1/3 bg-zinc-900 rounded-2xl border border-red-500/20 p-6 flex flex-col overflow-y-auto">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-bold text-red-400 flex items-center gap-2">
-                      <Clock size={20} /> Registrar Evento
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleDownloadModeloParadas}
-                        className="px-2 py-1 text-[10px] border border-red-500/40 rounded uppercase tracking-wide text-red-300 hover:bg-red-500/10"
-                      >
-                        Modelo
-                      </button>
-                      <label className="text-[10px] text-blue-400 cursor-pointer flex items-center gap-1 hover:underline">
-                        <Upload size={12} />
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={handleUploadApontamentoParadas}
-                          accept=".xlsx,.xls,.csv"
-                        />
-                        Importar
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div>
-                      <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                        Data do Evento
-                      </label>
-                      <input
-                        type="date"
-                        value={formParadaData}
-                        onChange={(e) => setFormParadaData(e.target.value)}
-                        className="w-full bg-black border border-white/10 rounded p-3 text-white"
-                      />
-                    </div>
-
+            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
+              <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><AlertOctagon className="text-red-500" size={32} /> Paradas</h1></header>
+              <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
+                <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-red-500/20 p-4 md:p-6 shrink-0">
+                  <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2"><Clock size={20} /> Registrar</h3>
+                  <div className="space-y-4">
+                    <input type="date" value={formParadaData} onChange={(e) => setFormParadaData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                          Início
-                        </label>
-                        <input
-                          type="time"
-                          value={formParadaInicio}
-                          onChange={(e) =>
-                            setFormParadaInicio(e.target.value)
-                          }
-                          className="w-full bg-black border border-white/10 rounded p-3 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                          Fim
-                        </label>
-                        <input
-                          type="time"
-                          value={formParadaFim}
-                          onChange={(e) =>
-                            setFormParadaFim(e.target.value)
-                          }
-                          className="w-full bg-black border border-white/10 rounded p-3 text-white"
-                        />
-                      </div>
+                      <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
+                      <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
                     </div>
-
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <label className="text-xs font-bold text-zinc-500 uppercase">
-                          Motivo
-                        </label>
-                        <label className="text-[10px] text-blue-400 cursor-pointer flex items-center gap-1 hover:underline">
-                          <Upload size={10} />
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={handleUploadDicionario}
-                            accept=".xlsx,.csv"
-                          />
-                          Atualizar Lista
-                        </label>
-                      </div>
-                      <select
-                        value={formParadaMotivoCod}
-                        onChange={(e) =>
-                          setFormParadaMotivoCod(e.target.value)
-                        }
-                        className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm"
-                      >
-                        <option value="">Selecione...</option>
-                        {dicionarioLocal.map((p) => (
-                          <option key={p.codigo} value={p.codigo}>
-                            {p.codigo} - {p.evento}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                        Obs
-                      </label>
-                      <textarea
-                        value={formParadaObs}
-                        onChange={(e) => setFormParadaObs(e.target.value)}
-                        className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm h-24"
-                      ></textarea>
-                    </div>
-
-                    <button
-                      onClick={salvarApontamentoParada}
-                      className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"
-                    >
-                      Confirmar
-                    </button>
+                    <select value={formParadaMotivoCod} onChange={(e) => setFormParadaMotivoCod(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
+                      <option value="">Motivo...</option>
+                      {dicionarioLocal.map((p) => <option key={p.codigo} value={p.codigo}>{p.evento}</option>)}
+                    </select>
+                    <button onClick={salvarApontamentoParada} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg">Confirmar</button>
                   </div>
                 </div>
-
-                {/* Lado direito – tabela */}
-                <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+                <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
                   <div className="flex-1 overflow-y-auto">
                     <table className="w-full text-left text-sm">
-                      <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur">
-                        <tr>
-                          <th className="p-4">Horário</th>
-                          <th className="p-4">Motivo</th>
-                          <th className="p-4 text-right">#</th>
-                        </tr>
-                      </thead>
+                      <thead className="bg-black/20 sticky top-0 text-xs uppercase text-zinc-500"><tr><th className="p-4">Horário</th><th className="p-4">Motivo</th><th className="p-4 text-right">#</th></tr></thead>
                       <tbody className="divide-y divide-white/5">
-                        {historicoParadas
-                          .filter((p) => p.data === formParadaData)
-                          .map((p) => (
-                            <tr
-                              key={p.id}
-                              className="hover:bg-white/5"
-                            >
-                              <td className="p-4 font-mono text-zinc-300">
-                                {p.inicio} - {p.fim} ({p.duracao}min)
-                              </td>
-                              <td className="p-4">{p.descMotivo}</td>
-                              <td className="p-4 text-right">
-                                <button
-                                  onClick={() => deletarParada(p.id)}
-                                  className="text-zinc-600 hover:text-red-500"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                        {historicoParadas.filter(p => p.data === formParadaData).map((p) => (
+                          <tr key={p.id}>
+                            <td className="p-4 font-mono text-zinc-300">{p.inicio} - {p.fim} ({p.duracao}min)</td>
+                            <td className="p-4">{p.descMotivo}</td>
+                            <td className="p-4 text-right"><button onClick={() => deletarParada(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1389,135 +1007,114 @@ const migrarDadosParaNuvem = async () => {
             </div>
           )}
 
-          {/* INDICADORES (CARGA) */}
+          {/* ABA OEE */}
+          {abaAtiva === "oee" && (
+            <div className="flex-1 p-4 md:p-8 overflow-y-auto">
+              <OeeDashboard
+                historicoProducaoReal={historicoProducaoReal}
+                historicoParadas={historicoParadas}
+                dataInicioInd={dataInicioInd}
+                dataFimInd={dataFimInd}
+                capacidadeDiaria={capacidadeDiaria}
+                turnoHoras={turnoHoras}
+              />
+            </div>
+          )}
+
+          {/* ABA INDICADORES (CARGA) - RESPONSIVO */}
           {abaAtiva === 'indicadores' && (
-            <div className="flex-1 bg-[#09090b] p-8 overflow-y-auto">
-              <header className="flex justify-between items-end mb-8">
-                <h1 className="text-3xl font-bold flex gap-3">
-                  <TrendingUp className="text-pink-500" size={32} /> Carga de
-                  Máquina
+            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto flex flex-col">
+              {/* Header com 2 colunas no mobile */}
+              <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
+                <h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white items-center">
+                  <TrendingUp className="text-pink-500" size={28} /> 
+                  <span className="truncate">Carga Máquina</span>
                 </h1>
-                <div className="flex gap-4 bg-zinc-900 p-4 rounded-xl border border-white/10">
-                  <div>
-                    <label className="text-[10px] text-zinc-500 block">
-                      Início
-                    </label>
-                    <input
-                      type="date"
-                      value={dataInicioInd}
-                      onChange={(e) => setDataInicioInd(e.target.value)}
-                      className="bg-black border border-white/10 rounded p-1 text-white text-sm"
-                    />
+                <div className="w-full md:w-auto grid grid-cols-2 md:flex gap-3 bg-zinc-900/50 p-3 rounded-xl border border-white/10 shadow-xl">
+                  <div className="col-span-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Início</label>
+                    <input type="date" value={dataInicioInd} onChange={(e) => setDataInicioInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
                   </div>
-                  <div>
-                    <label className="text-[10px] text-zinc-500 block">
-                      Fim
-                    </label>
-                    <input
-                      type="date"
-                      value={dataFimInd}
-                      onChange={(e) => setDataFimInd(e.target.value)}
-                      className="bg-black border border-white/10 rounded p-1 text-white text-sm"
-                    />
+                  <div className="col-span-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Fim</label>
+                    <input type="date" value={dataFimInd} onChange={(e) => setDataFimInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
                   </div>
-                  <div>
-                    <label className="text-[10px] text-pink-500 block">
-                      Meta/Dia
-                    </label>
-                    <input
-                      type="number"
-                      value={capacidadeDiaria}
-                      onChange={(e) => setCapacidadeDiaria(e.target.value)}
-                      className="bg-black border border-pink-500/30 rounded p-1 text-white text-sm w-24 text-right"
-                    />
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="text-[10px] text-pink-500 font-bold uppercase block mb-1">Meta/Dia</label>
+                    <input type="number" value={capacidadeDiaria} onChange={(e) => setCapacidadeDiaria(e.target.value)} className="w-full bg-black/50 border border-pink-500/30 rounded p-1.5 text-white text-xs font-mono" />
                   </div>
                 </div>
               </header>
 
-              <div className="grid grid-cols-4 gap-6 mb-8">
-                <CardIndicador
-                  label="Total Ton"
-                  valor={(dadosIndicadores.totalPeso / 1000).toFixed(1)}
-                  icon={<Scale size={24} className="text-emerald-500" />}
-                />
-                <CardIndicador
-                  label="Itens"
-                  valor={dadosIndicadores.totalItens}
-                  icon={<Box size={24} className="text-purple-500" />}
-                />
+              {/* Grid 1: KPIs Básicos (Grid 2 col mobile, 4 col PC) */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <CardIndicador label="Planejado (Ton)" valor={(dadosIndicadores.totalPesoPlanejado / 1000).toFixed(1)} icon={<Scale size={24} className="text-zinc-400" />} />
+                <CardIndicador label="Executado (Ton)" valor={(dadosIndicadores.totalPesoExecutado / 1000).toFixed(1)} icon={<CheckCircle2 size={24} className="text-blue-500" />} />
+                <div className="bg-zinc-900/50 border border-white/10 p-4 rounded-xl flex items-center gap-4 relative overflow-hidden">
+                  <div className={`absolute right-0 top-0 bottom-0 w-1 ${dadosIndicadores.totalPesoExecutado >= dadosIndicadores.totalPesoPlanejado ? 'bg-emerald-500' : 'bg-yellow-500'}`}></div>
+                  <div className="p-3 bg-zinc-950 rounded-lg border border-white/5"><Activity size={24} className={dadosIndicadores.totalPesoExecutado >= dadosIndicadores.totalPesoPlanejado ? "text-emerald-500" : "text-yellow-500"} /></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Aderência</div><div className="text-2xl font-black text-white">{dadosIndicadores.totalPesoPlanejado > 0 ? ((dadosIndicadores.totalPesoExecutado / dadosIndicadores.totalPesoPlanejado) * 100).toFixed(0) : 0}%</div></div>
+                </div>
+                <div className="bg-zinc-900/50 border border-white/10 p-4 rounded-xl flex flex-col justify-center">
+                  <div className="flex justify-between items-center mb-2"><span className="text-[10px] text-zinc-500 font-bold uppercase">Meta Global</span><span className="text-xs font-mono text-pink-400">{(capacidadeDiaria/1000).toFixed(1)}t/dia</span></div>
+                  <div className="w-full bg-zinc-800 rounded-full h-1.5"><div className="bg-gradient-to-r from-pink-600 to-purple-600 h-1.5 rounded-full" style={{ width: '65%' }}></div></div>
+                </div>
               </div>
 
-              <div className="bg-zinc-900 rounded-xl border border-white/10 p-6 h-[400px] flex items-end justify-between gap-2 mb-8">
-                {dadosIndicadores.arrayGrafico.map((dia, idx) => {
-                  const isOverload = dia.peso > capacidadeDiaria;
-                  return (
-                    <div
-                      key={idx}
-                      className="flex-1 flex flex-col items-center justify-end h-full group relative"
-                    >
-                      <span
-                        className={`text-[10px] font-bold mb-2 ${
-                          isOverload ? 'text-red-400' : 'text-zinc-400'
-                        }`}
-                      >
-                        {dia.peso > 0
-                          ? `${(dia.peso / 1000).toFixed(1)}t`
-                          : ''}
-                      </span>
-                      <div
-                        className={`w-full rounded-t transition-all hover:brightness-110 ${
-                          isOverload ? 'bg-red-500' : 'bg-emerald-600'
-                        }`}
-                        style={{
-                          height: `${Math.max(
-                            (dia.peso / (capacidadeDiaria * 1.5)) * 100,
-                            2
-                          )}%`,
-                        }}
-                      ></div>
-                      <span className="text-[10px] text-zinc-500 mt-2">
-                        {formatarDataBR(dia.data).slice(0, 5)}
-                      </span>
-                    </div>
-                  );
-                })}
+              {/* Grid 2: Cards Avançados (Grid 1 col mobile, 3 col PC) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className={`p-4 rounded-xl border flex items-center gap-4 ${dadosIndicadores.saldoTotal >= 0 ? 'bg-emerald-950/20 border-emerald-500/20' : 'bg-red-950/20 border-red-500/20'}`}>
+                  <div className={`p-3 rounded-lg border ${dadosIndicadores.saldoTotal >= 0 ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}>
+                    {dadosIndicadores.saldoTotal >= 0 ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
+                  </div>
+                  <div><div className="text-zinc-400 text-[10px] uppercase font-bold">Saldo</div><div className={`text-2xl font-black ${dadosIndicadores.saldoTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{dadosIndicadores.saldoTotal > 0 ? '+' : ''}{(dadosIndicadores.saldoTotal / 1000).toFixed(1)} t</div></div>
+                </div>
+                <div className="bg-zinc-900 p-4 rounded-xl border border-white/10 flex items-center gap-4">
+                  <div className="p-3 bg-zinc-950 rounded-lg border border-white/5 text-amber-500"><Activity size={24} /></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Ritmo Necessário</div><div className="text-2xl font-black text-white">{(dadosIndicadores.ritmoNecessario / 1000).toFixed(1)} <span className="text-sm font-normal text-zinc-500">t/dia</span></div></div>
+                </div>
+                <div className="bg-zinc-900 p-4 rounded-xl border border-white/10 flex flex-col justify-center gap-2">
+                  <div className="flex justify-between items-end">
+                    <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Projeção</div><div className={`text-xl font-black ${dadosIndicadores.projecaoFinal >= dadosIndicadores.totalPesoPlanejado ? 'text-emerald-400' : 'text-zinc-200'}`}>{(dadosIndicadores.projecaoFinal / 1000).toFixed(0)} t</div></div>
+                    <div className="text-right"><div className="text-[10px] text-zinc-500">Meta</div><div className="text-sm font-bold text-zinc-400">{(dadosIndicadores.totalPesoPlanejado / 1000).toFixed(0)} t</div></div>
+                  </div>
+                  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex"><div className="h-full bg-zinc-500" style={{ width: `${Math.min(((dadosIndicadores.totalPesoPlanejado / (dadosIndicadores.projecaoFinal || 1)) * 100), 100)}%` }}></div></div>
+                </div>
+              </div>
+
+              {/* GRÁFICO (Side-by-Side) */}
+              <div className="flex-1 bg-zinc-900/40 rounded-2xl border border-white/10 p-4 md:p-6 relative flex flex-col min-h-[400px]">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-sm font-bold text-zinc-400 flex items-center gap-2"><BarChart3 size={16} /> Evolução Diária</h3>
+                </div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={dadosIndicadores.arrayGrafico} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barGap={2}>
+                    <defs>
+                      <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={1}/><stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.8}/></linearGradient>
+                      <linearGradient id="grayArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#52525b" stopOpacity={0.4}/><stop offset="90%" stopColor="#52525b" stopOpacity={0.05}/></linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                    <XAxis dataKey="data" tickFormatter={(val) => formatarDataBR(val).slice(0, 5)} stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                    <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val/1000).toFixed(0)}`} />
+                    <Tooltip cursor={{ fill: '#ffffff05' }} content={<CustomTooltip />} />
+                    <ReferenceLine y={capacidadeDiaria} stroke="#be185d" strokeDasharray="3 3" strokeOpacity={0.6} />
+                    <Area type="monotone" dataKey="pesoPlanejado" fill="url(#grayArea)" stroke="#71717a" strokeWidth={2} dot={{ r: 3, fill: "#3f3f46", strokeWidth: 0 }} />
+                    <Bar dataKey="pesoExecutado" barSize={30} fill="url(#blueGradient)" radius={[4, 4, 0, 0]} />
+                  </ComposedChart>
+                </ResponsiveContainer>
               </div>
             </div>
           )}
 
-          {/* PRODUTOS */}
+          {/* ABA PRODUTOS */}
           {abaAtiva === 'produtos' && (
-            <div className="flex-1 bg-[#09090b] p-8 overflow-y-auto">
-              <h1 className="text-3xl font-bold mb-8 text-white">Catálogo</h1>
-              <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-hidden">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
-                      <th className="p-4">Código</th>
-                      <th className="p-4">Descrição</th>
-                    </tr>
-                  </thead>
+            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
+              <h1 className="text-2xl font-bold mb-8 text-white">Catálogo</h1>
+              <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[300px]">
+                  <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10"><th className="p-4">Código</th><th className="p-4">Descrição</th></tr></thead>
                   <tbody className="divide-y divide-white/5">
-                    {CATALOGO_PRODUTOS &&
-                    CATALOGO_PRODUTOS.length > 0 ? (
-                      CATALOGO_PRODUTOS.map((p) => (
-                        <tr key={p.cod}>
-                          <td className="p-4 text-emerald-400 font-mono">
-                            {p.cod}
-                          </td>
-                          <td className="p-4 text-white">{p.desc}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan="2"
-                          className="p-8 text-center text-zinc-500"
-                        >
-                          Nenhum produto.
-                        </td>
-                      </tr>
-                    )}
+                    {CATALOGO_PRODUTOS && CATALOGO_PRODUTOS.map((p) => (<tr key={p.cod}><td className="p-4 text-emerald-400 font-mono">{p.cod}</td><td className="p-4 text-white">{p.desc}</td></tr>))}
                   </tbody>
                 </table>
               </div>
@@ -1526,274 +1123,99 @@ const migrarDadosParaNuvem = async () => {
         </div>
       </div>
 
-      {/* MODAL NOVA ORDEM (COMPLETO) */}
+      {/* --- MODAL ORDEM --- */}
       {showModalNovaOrdem && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 rounded-2xl w-full max-w-4xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center p-6 border-b border-white/10 bg-white/5">
-              <h3 className="text-xl font-bold text-white">
-                {romaneioEmEdicaoId ? 'Editar Romaneio' : 'Novo Romaneio'}
-              </h3>
-              <button
-                onClick={() => setShowModalNovaOrdem(false)}
-                className="text-zinc-400 hover:text-white"
-              >
-                <X />
-              </button>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-zinc-900 rounded-2xl w-full md:max-w-4xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Header Modal */}
+            <div className="flex justify-between items-center p-4 md:p-6 border-b border-white/10 bg-white/5">
+              <h3 className="text-lg md:text-xl font-bold text-white">{romaneioEmEdicaoId ? 'Editar Romaneio' : 'Novo Romaneio'}</h3>
+              <button onClick={() => setShowModalNovaOrdem(false)} className="text-zinc-400 hover:text-white"><X /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="grid grid-cols-12 gap-4">
-                <div className="col-span-3">
-                  <label className="text-xs font-bold text-blue-400 block mb-1">
-                    Nº Romaneio
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      value={formRomaneioId}
-                      onChange={(e) => setFormRomaneioId(e.target.value)}
-                      className="w-full bg-black/50 border border-blue-500/30 rounded p-2 text-white outline-none focus:border-blue-500 font-mono font-bold"
-                      readOnly={isEstoque}
-                    />
-                    <button
-                      type="button"
-                      onClick={toggleEstoque}
-                      className="px-2 border rounded text-xs"
-                    >
-                      {isEstoque ? 'EST' : 'PED'}
-                    </button>
-                  </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                {/* FORMS: Grid Responsivo */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-3">
+                        <label className="text-xs font-bold text-blue-400 block mb-1">Romaneio</label>
+                        <div className="flex gap-2">
+                            <input value={formRomaneioId} onChange={(e) => setFormRomaneioId(e.target.value)} className="w-full bg-black/50 border border-blue-500/30 rounded p-2 text-white font-bold" readOnly={isEstoque} />
+                            <button type="button" onClick={toggleEstoque} className="px-2 border rounded text-xs">{isEstoque ? 'EST' : 'PED'}</button>
+                        </div>
+                    </div>
+                    <div className="md:col-span-3">
+                        <label className="text-xs font-bold text-zinc-500 block mb-1">Data</label>
+                        <input type="date" value={formDataProducao} onChange={(e) => setFormDataProducao(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" />
+                    </div>
+                    <div className="md:col-span-4">
+                        <label className="text-xs font-bold text-zinc-500 block mb-1">Cliente</label>
+                        <input value={formCliente} onChange={(e) => setFormCliente(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" readOnly={isEstoque} />
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="text-xs font-bold text-zinc-500 block mb-1">TOTVS</label>
+                        <input value={formTotvs} onChange={(e) => setFormTotvs(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" readOnly={isEstoque} />
+                    </div>
                 </div>
-                <div className="col-span-3">
-                  <label className="text-xs font-bold text-zinc-500 block mb-1">
-                    Data Produção
-                  </label>
-                  <input
-                    type="date"
-                    value={formDataProducao}
-                    onChange={(e) =>
-                      setFormDataProducao(e.target.value)
-                    }
-                    className="w-full bg-black/50 border border-white/10 rounded p-2 text-white outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div className="col-span-4">
-                  <label className="text-xs font-bold text-zinc-500 block mb-1">
-                    Cliente
-                  </label>
-                  <input
-                    value={formCliente}
-                    onChange={(e) => setFormCliente(e.target.value)}
-                    className="w-full bg-black/50 border border-white/10 rounded p-2 text-white outline-none focus:border-blue-500"
-                    readOnly={isEstoque}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs font-bold text-zinc-500 block mb-1">
-                    TOTVS
-                  </label>
-                  <input
-                    value={formTotvs}
-                    onChange={(e) => setFormTotvs(e.target.value)}
-                    className="w-full bg-black/50 border border-white/10 rounded p-2 text-white outline-none focus:border-blue-500"
-                    readOnly={isEstoque}
-                  />
-                </div>
-              </div>
-
-              <div className="w-full h-px bg-white/10 my-2"></div>
-
-              <div className="bg-zinc-800/30 p-4 rounded-xl border border-white/5 space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-bold text-zinc-500 block mb-1">
-                      Produto
-                    </label>
-                    <select
-                      value={formCod}
-                      onChange={handleSelectProduto}
-                      className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm"
-                    >
-                      <option value="">Manual...</option>
-                      {CATALOGO_PRODUTOS.map((p) => (
-                        <option key={p.cod} value={p.cod}>
-                          {p.cod} - {p.desc}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-[120px]">
-                    <label className="text-[10px] font-bold text-zinc-500 block mb-1">
-                      Comp (m)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formComp}
-                      onChange={(e) => setFormComp(e.target.value)}
-                      className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm"
-                    />
-                  </div>
-                  <div className="w-[100px]">
-                    <label className="text-[10px] font-bold text-zinc-500 block mb-1">
-                      Qtd
-                    </label>
-                    <input
-                      type="number"
-                      value={formQtd}
-                      onChange={(e) => setFormQtd(e.target.value)}
-                      className="w-full bg-black border border-blue-500/50 rounded p-2 text-white text-sm text-right"
-                    />
-                  </div>
+                
+                <div className="w-full h-px bg-white/10 my-2"></div>
+                
+                <div className="bg-zinc-800/30 p-4 rounded-xl border border-white/5 space-y-4">
+                    <div className="flex flex-col md:flex-row gap-4">
+                        <div className="flex-1">
+                            <label className="text-[10px] font-bold text-zinc-500 block mb-1">Produto</label>
+                            <select value={formCod} onChange={handleSelectProduto} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm"><option value="">Manual...</option>{CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}</select>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="w-[100px]"><label className="text-[10px] font-bold text-zinc-500 block mb-1">Comp (m)</label><input type="number" step="0.01" value={formComp} onChange={(e) => setFormComp(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm" /></div>
+                            <div className="w-[80px]"><label className="text-[10px] font-bold text-zinc-500 block mb-1">Qtd</label><input type="number" value={formQtd} onChange={(e) => setFormQtd(e.target.value)} className="w-full bg-black border border-blue-500/50 rounded p-2 text-white text-sm text-right" /></div>
+                        </div>
+                    </div>
+                    <div><label className="text-[10px] font-bold text-zinc-500 block mb-1">Descrição</label><input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm" /></div>
+                    <div className="flex justify-end"><button onClick={adicionarItemNaLista} className="px-6 py-2 bg-emerald-600 text-white rounded font-bold flex items-center gap-2"><PlusCircle size={18} /> Add</button></div>
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-bold text-zinc-500 block mb-1">
-                    Descrição
-                  </label>
-                  <input
-                    value={formDesc}
-                    onChange={(e) => setFormDesc(e.target.value)}
-                    className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm"
-                  />
+                <div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden min-h-[100px]">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-white/5 text-xs text-zinc-500"><tr><th className="p-3">Item</th><th className="text-center">Qtd</th><th className="text-right">Peso</th><th className="text-right">#</th></tr></thead>
+                        <tbody className="divide-y divide-white/5">
+                            {itensNoPedido.map((i) => (
+                                <tr key={i.tempId}>
+                                    <td className="p-3 text-zinc-300"><b>{i.desc}</b><div className="text-[10px]">{i.cod}</div></td>
+                                    <td className="p-3 text-center font-bold text-white">{i.qtd}</td>
+                                    <td className="p-3 text-right">{i.pesoTotal}</td>
+                                    <td className="p-3 text-right"><button onClick={() => removerItemDaLista(i.tempId)} className="text-zinc-500 hover:text-red-400"><Trash2 size={16} /></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={adicionarItemNaLista}
-                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold flex items-center gap-2"
-                  >
-                    <PlusCircle size={18} /> Adicionar Item
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden min-h-[100px]">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-white/5 text-xs text-zinc-500">
-                      <th>Item</th>
-                      <th className="text-center">Med</th>
-                      <th className="text-center">Qtd</th>
-                      <th className="text-right">Peso Total</th>
-                      <th className="text-right">#</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {itensNoPedido.map((i) => (
-                      <tr key={i.tempId}>
-                        <td className="p-3 text-zinc-300">
-                          <b>{i.desc}</b>
-                          <div className="text-[10px]">{i.cod}</div>
-                        </td>
-                        <td className="p-3 text-center">{i.comp}</td>
-                        <td className="p-3 text-center font-bold text-white">
-                          {i.qtd}
-                        </td>
-                        <td className="p-3 text-right">{i.pesoTotal}</td>
-                        <td className="p-3 text-right">
-                          <button
-                            onClick={() => removerItemDaLista(i.tempId)}
-                            className="text-zinc-500 hover:text-red-400"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {itensNoPedido.length > 0 && (
-                <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex justify-end gap-8 items-center">
-                  <div className="text-zinc-400 text-sm">
-                    Peças:{' '}
-                    <strong className="text-white">
-                      {qtdTotalAcumuladaModal}
-                    </strong>
-                  </div>
-                  <div className="text-zinc-400 flex items-center gap-2 text-lg">
-                    <Scale
-                      size={20}
-                      className="text-emerald-500"
-                    />{' '}
-                    Peso Total:{' '}
-                    <strong className="text-emerald-400 text-xl">
-                      {pesoTotalAcumuladoModal.toFixed(2)} kg
-                    </strong>
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowModalNovaOrdem(false)}
-                className="px-6 py-3 bg-zinc-800 text-white rounded-lg font-bold border border-white/10"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={salvarRomaneio}
-                className="px-8 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg flex items-center gap-2"
-              >
-                <ArrowRight size={20} /> Salvar Romaneio
-              </button>
+            <div className="p-4 md:p-6 border-t border-white/10 bg-white/5 flex gap-3 justify-end">
+                <button onClick={() => setShowModalNovaOrdem(false)} className="px-6 py-3 bg-zinc-800 text-white rounded-lg font-bold border border-white/10">Cancelar</button>
+                <button onClick={salvarRomaneio} className="px-8 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg flex items-center gap-2"><ArrowRight size={20} /> Salvar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL PARADA RÁPIDA */}
+      {/* --- MODAL PARADA (Mantido) --- */}
       {showModalParada && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-2xl w-full max-w-lg border border-red-500/30 shadow-2xl flex flex-col p-6">
-            <h3 className="text-xl font-bold text-red-400 mb-4">
-              Apontar Parada
-            </h3>
+            {/* ... Conteúdo do modal de parada (igual ao seu) ... */}
+            <h3 className="text-xl font-bold text-red-400 mb-4">Apontar Parada</h3>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="time"
-                  value={formParadaInicio}
-                  onChange={(e) => setFormParadaInicio(e.target.value)}
-                  className="bg-black border border-white/10 rounded p-2 text-white"
-                />
-                <input
-                  type="time"
-                  value={formParadaFim}
-                  onChange={(e) => setFormParadaFim(e.target.value)}
-                  className="bg-black border border-white/10 rounded p-2 text-white"
-                />
-              </div>
-              <select
-                value={formParadaMotivoCod}
-                onChange={(e) =>
-                  setFormParadaMotivoCod(e.target.value)
-                }
-                className="w-full bg-black border border-white/10 rounded p-2 text-white"
-              >
-                <option value="">Motivo...</option>
-                {dicionarioLocal.map((p) => (
-                  <option key={p.codigo} value={p.codigo}>
-                    {p.evento}
-                  </option>
-                ))}
-              </select>
+               {/* ... inputs de parada ... */}
+               <div className="grid grid-cols-2 gap-4">
+                  <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-2 text-white" />
+                  <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-2 text-white" />
+               </div>
+               <select value={formParadaMotivoCod} onChange={(e) => setFormParadaMotivoCod(e.target.value)} className="w-full bg-black border border-white/10 rounded p-2 text-white"><option value="">Motivo...</option>{dicionarioLocal.map(p=><option key={p.codigo} value={p.codigo}>{p.evento}</option>)}</select>
             </div>
             <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setShowModalParada(false)}
-                className="px-4 py-2 bg-zinc-800 text-white rounded"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={salvarApontamentoParada}
-                className="px-6 py-2 bg-red-600 text-white rounded"
-              >
-                Salvar
-              </button>
+               <button onClick={() => setShowModalParada(false)} className="px-4 py-2 bg-zinc-800 text-white rounded">Cancelar</button>
+               <button onClick={salvarApontamentoParada} className="px-6 py-2 bg-red-600 text-white rounded">Salvar</button>
             </div>
           </div>
         </div>
@@ -1901,3 +1323,44 @@ const BotaoMenu = ({ ativo, onClick, icon, label }) => (
   </button>
 );
 
+// --- COMPONENTE DE TOOLTIP CUSTOMIZADO ---
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const plan = payload.find(p => p.dataKey === 'pesoPlanejado')?.value || 0;
+    const exec = payload.find(p => p.dataKey === 'pesoExecutado')?.value || 0;
+    const diferenca = exec - plan;
+    const isPositive = diferenca >= 0;
+
+    return (
+      <div className="bg-zinc-950 border border-white/10 p-4 rounded-xl shadow-2xl backdrop-blur-xl">
+        <p className="text-zinc-400 text-xs mb-2 font-mono">{formatarDataBR(label)}</p>
+        
+        <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-8">
+                <span className="text-zinc-500 text-xs font-bold uppercase flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-zinc-600"></div> Planejado
+                </span>
+                <span className="text-zinc-200 font-mono font-bold">{(plan/1000).toFixed(2)}t</span>
+            </div>
+            
+            <div className="flex items-center justify-between gap-8">
+                <span className="text-blue-500 text-xs font-bold uppercase flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div> Executado
+                </span>
+                <span className="text-blue-400 font-mono font-bold">{(exec/1000).toFixed(2)}t</span>
+            </div>
+
+            <div className="w-full h-px bg-white/10 my-1"></div>
+            
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] text-zinc-500">Saldo</span>
+                <span className={`font-mono font-bold text-xs ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {isPositive ? '+' : ''}{(diferenca/1000).toFixed(2)}t
+                </span>
+            </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
