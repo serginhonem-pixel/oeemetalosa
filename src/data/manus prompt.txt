@@ -1,37 +1,53 @@
-import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+Contexto: Estou desenvolvendo um sistema de gestão industrial (Metalosa) usando React + Vite + Tailwind CSS. Preciso criar um componente de Dashboard OEE Avançado para substituir minha visualização atual na aba "OEE". O design deve ser "Dark Mode" profissional (bg-[#09090b]), utilizando cores como Emerald (Sucesso), Red (Paradas) e Blue (Info).
 
-// --- FIREBASE ---
-import { addDoc, collection, getDocs } from "firebase/firestore";
-import { db } from "./firebaseConfig";
+Requisitos do Painel (O que eu quero renderizado):
 
-// --- ÍCONES (Adicionei o CheckSquare que faltava) ---
-import {
-  Activity, AlertOctagon, ArrowRight, BarChart3, Box,
-  CalendarDays, CheckCircle2, CheckSquare, ClipboardList, Clock, // <--- CheckSquare AQUI
-  Download, Factory, FileText, History, Layers, Layout,
-  Pencil, Plus, PlusCircle, Scale, Trash2, TrendingUp,
-  Upload, X, AlertCircle, TrendingDown // Adicionei alguns extras úteis
+Cabeçalho de KPIs (Gauges/Cards):
+
+OEE Global: (Disponibilidade x Performance x Qualidade).
+
+Disponibilidade: ((Tempo Turno - Tempo Parado) / Tempo Turno).
+
+Performance: (Produção Real / Meta).
+
+Qualidade: (Itens Bons / Total Produzido).
+
+Gráfico de Linha Histórica (Produção Hora a Hora):
+
+Gráfico de Área ou Linha (use Recharts) mostrando a produção acumulada por hora do dia (07:00 as 17:00).
+
+Diferencial: Destaque visualmente os momentos onde ocorreram paradas.
+
+Pareto de Perdas:
+
+Gráfico de barras horizontal com os "Top 5 Motivos de Parada", ordenado do maior para o menor tempo acumulado.
+
+Instruções Técnicas:
+
+Analise o meu código abaixo para identificar exatamente os nomes dos estados (historicoProducaoReal, historicoParadas, etc) e a estrutura dos objetos.
+
+Crie o componente de forma que eu possa apenas copiar e colar dentro da aba abaAtiva === 'oee'.
+
+Use lucide-react para ícones e recharts para os gráficos.
+
+MEU CÓDIGO ATUAL (Baseie-se nisso):
+import React, { useState, useMemo, useEffect } from 'react';
+import * as XLSX from 'xlsx'; 
+import { db } from './firebaseConfig';
+import { 
+  Layout, ClipboardList, Plus, CalendarDays, Package, X, 
+  Database, Trash2, Printer, Pencil, PlusCircle, Layers, Scale, 
+  ArrowRight, Calendar, Box, FileText, Upload, Download,
+  BarChart3, TrendingUp, AlertOctagon, Clock, CheckCircle2, 
+  Factory, History, Activity, PieChart, CheckSquare
 } from 'lucide-react';
 
-// --- GRÁFICOS (RECHARTS) ---
-import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, ResponsiveContainer, AreaChart, Area, 
-  PieChart, Pie, Cell 
-} from 'recharts';
+// --- SEUS IMPORTS (VERIFIQUE SE OS ARQUIVOS EXISTEM NESSAS PASTAS) ---
+import { CATALOGO_PRODUTOS } from './data/catalogoProdutos'; 
+import { DICIONARIO_PARADAS } from './data/dicionarioParadas'; // <--- CAMINHO CORRIGIDO
 
-// --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
+// --- FUNÇÕES AUXILIARES ---
 
-// --- SEU NOVO DASHBOARD ---
-// ⚠️ Certifique-se de que criou o arquivo na pasta 'components'
-import OeeDashboard from './components/OeeDashboard';
-
-// --- DADOS ---
-import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
-import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
-
-  
 const formatarDataBR = (dataISO) => {
   if (!dataISO) return '-';
   if (typeof dataISO !== 'string') return String(dataISO);
@@ -158,6 +174,21 @@ const encontrarValorNaLinha = (row, possiveisNomes) => {
   return undefined;
 };
 
+const GaugeChart = ({ value, label, color }) => {
+    const radius = 35;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (value / 100) * circumference;
+    return (
+        <div className="flex flex-col items-center justify-center relative">
+            <svg width="100" height="100" className="rotate-[-90deg]">
+                <circle cx="50" cy="50" r={radius} stroke="#27272a" strokeWidth="8" fill="transparent" />
+                <circle cx="50" cy="50" r={radius} stroke={color} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+            </svg>
+            <div className="absolute flex flex-col items-center"><span className="text-xl font-bold text-white">{value.toFixed(0)}%</span></div>
+            <span className="text-xs text-zinc-400 mt-2 uppercase font-bold">{label}</span>
+        </div>
+    );
+};
 
 // --- ESTILOS COMPLETO (RESTAURADO) ---
 const PrintStyles = () => (
@@ -237,49 +268,6 @@ export default function App() {
 
   const pesoTotalAcumuladoModal = itensNoPedido.reduce((acc, item) => acc + parseFloat(item.pesoTotal), 0);
   const qtdTotalAcumuladaModal = itensNoPedido.reduce((acc, item) => acc + parseInt(item.qtd), 0);
-
-// ... seus useStates estão aqui em cima ...
-
-  // --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
-  useEffect(() => {
-    const carregarDados = async () => {
-      try {
-        console.log("🔄 Buscando dados do Firebase...");
-
-        // 1. Buscar Romaneios (PCP)
-        const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
-        const listaRomaneios = romaneiosSnapshot.docs.map(doc => ({
-          sysId: doc.id, // O Firebase gera um ID estranho, guardamos ele aqui
-          ...doc.data()
-        }));
-        if (listaRomaneios.length > 0) setFilaProducao(listaRomaneios);
-
-        // 2. Buscar Produção Real
-        const producaoSnapshot = await getDocs(collection(db, "producao"));
-        const listaProducao = producaoSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        if (listaProducao.length > 0) setHistoricoProducaoReal(listaProducao);
-
-        // 3. Buscar Paradas
-        const paradasSnapshot = await getDocs(collection(db, "paradas"));
-        const listaParadas = paradasSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        if (listaParadas.length > 0) setHistoricoParadas(listaParadas);
-
-        console.log("✅ Dados carregados com sucesso!");
-
-      } catch (erro) {
-        console.error("❌ Erro ao buscar dados:", erro);
-      }
-    };
-
-    carregarDados();
-  }, []); // Esse [] vazio no final significa "Rode apenas 1 vez quando abrir a tela"
-
 
   // --- IMPORTAÇÃO EXCEL ---
   const handleFileUpload = (e) => {
@@ -697,40 +685,6 @@ const handleDownloadModeloParadas = () => {
       return { disponibilidade, performance, qualidade, oee, tempoProduzindo, tempoParadoTotal, listaPareto };
   }, [historicoParadas, turnoHoras, hoje]);
 
-
-const migrarDadosParaNuvem = async () => {
-    if (!confirm("Isso vai enviar todos os dados locais para o Firebase. Continuar?")) return;
-
-    try {
-      console.log("Iniciando migração...");
-
-      // 1. Subir Romaneios (PCP)
-      console.log("Subindo Romaneios...");
-      for (const item of filaProducao) {
-        // removemos o sysId local para o Firebase criar o ID dele automático
-        const { sysId, ...dados } = item; 
-        await addDoc(collection(db, "romaneios"), dados);
-      }
-
-      // 2. Subir Histórico de Produção
-      console.log("Subindo Produção...");
-      for (const item of historicoProducaoReal) {
-        await addDoc(collection(db, "producao"), item);
-      }
-
-      // 3. Subir Paradas
-      console.log("Subindo Paradas...");
-      for (const item of historicoParadas) {
-        await addDoc(collection(db, "paradas"), item);
-      }
-
-      alert("SUCESSO! Todos os dados estão no Firebase agora. 🚀");
-    } catch (erro) {
-      console.error("Erro na migração:", erro);
-      alert("Erro ao subir dados. Veja o console (F12).");
-    }
-  };
-
     return (
     <>
       <PrintStyles />
@@ -803,19 +757,6 @@ const migrarDadosParaNuvem = async () => {
               icon={<CalendarDays size={24} />}
               label="Agenda"
             />
-
-{/* //MIGRA DADOS, BOTÃO !!!  */}
-
-            {/* <button 
-  onClick={migrarDadosParaNuvem}
-  className="mb-4 w-full bg-orange-600 text-white text-xs font-bold py-2 rounded animate-pulse"
->
-  CLOUD SYNC ☁️
-</button> */}
-
-
-{/* //MIGRA DADOS, BOTÃO !!!  */}
-
             <BotaoMenu
               ativo={abaAtiva === 'planejamento'}
               onClick={() => setAbaAtiva('planejamento')}
@@ -858,7 +799,14 @@ const migrarDadosParaNuvem = async () => {
                   <Layers className="text-purple-500" size={32} /> Gestão da
                   Semana
                 </h1>
-                <div className="flex gap-3">                  
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowModalParada(true)}
+                    className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg animate-pulse"
+                  >
+                    <AlertOctagon size={20} /> Parada
+                  </button>
+                  <div className="w-px bg-white/10 mx-2"></div>
                   <input
                     type="date"
                     value={dataFiltroImpressao}
@@ -870,7 +818,7 @@ const migrarDadosParaNuvem = async () => {
                     className="p-1.5 bg-zinc-700 rounded text-white"
                   >
                     <FileText size={16} />
-                  </button>                  
+                  </button>
                   <button
                     onClick={abrirModalNovo}
                     className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2"
@@ -999,17 +947,124 @@ const migrarDadosParaNuvem = async () => {
 
           {/* OEE */}
           {abaAtiva === 'oee' && (
-  <OeeDashboard
-    historicoProducaoReal={historicoProducaoReal}
-    historicoParadas={historicoParadas}
-    dataInicioInd={dataInicioInd}
-    dataFimInd={dataFimInd}
-    capacidadeDiaria={capacidadeDiaria}
-    turnoHoras={turnoHoras}
-  />
-)}
-
-
+            <div className="flex-1 bg-[#09090b] p-8 overflow-y-auto">
+              <header className="flex justify-between items-center mb-8">
+                <h1 className="text-3xl font-bold flex gap-3 text-white">
+                  <Activity className="text-emerald-500" size={32} /> Indicadores
+                  OEE
+                </h1>
+                <div className="flex items-center gap-4 bg-zinc-900 px-4 py-2 rounded-lg border border-white/10">
+                  <span className="text-xs text-zinc-500 uppercase font-bold">
+                    Turno:
+                  </span>
+                  <input
+                    type="number"
+                    value={turnoHoras}
+                    onChange={(e) => setTurnoHoras(e.target.value)}
+                    className="bg-black border border-white/10 rounded w-16 p-1 text-center text-white"
+                  />
+                  <span className="text-xs text-zinc-500">Horas</span>
+                </div>
+              </header>
+              <div className="grid grid-cols-4 gap-6 mb-8">
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 flex flex-col items-center">
+                  <GaugeChart
+                    value={dadosOEE.oee}
+                    color="#10b981"
+                    label="OEE Global"
+                  />
+                </div>
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 flex flex-col items-center">
+                  <GaugeChart
+                    value={dadosOEE.disponibilidade}
+                    color="#3b82f6"
+                    label="Disponibilidade"
+                  />
+                  <div className="text-[10px] text-zinc-500 mt-2">
+                    {dadosOEE.tempoProduzindo} min rodando
+                  </div>
+                </div>
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 flex flex-col items-center">
+                  <GaugeChart
+                    value={dadosOEE.performance}
+                    color="#f59e0b"
+                    label="Performance"
+                  />
+                </div>
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 flex flex-col items-center">
+                  <GaugeChart
+                    value={dadosOEE.qualidade}
+                    color="#ec4899"
+                    label="Qualidade"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6">
+                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <PieChart size={20} /> Motivos de Parada
+                  </h3>
+                  <div className="space-y-3">
+                    {dadosOEE.listaPareto.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-3"
+                      >
+                        <span className="text-xs font-mono text-zinc-500 w-6">
+                          #{idx + 1}
+                        </span>
+                        <div className="flex-1">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-zinc-300">
+                              {item.motivo}
+                            </span>
+                            <span className="text-red-400 font-bold">
+                              {item.tempo} min
+                            </span>
+                          </div>
+                          <div className="w-full bg-black h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-red-500 h-full"
+                              style={{
+                                width: `${
+                                  (item.tempo /
+                                    dadosOEE.tempoParadoTotal) *
+                                  100
+                                }%`,
+                              }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 flex flex-col justify-center items-center text-center">
+                  <div className="text-4xl font-black text-white mb-2">
+                    {dadosOEE.tempoParadoTotal}{' '}
+                    <span className="text-lg text-zinc-500 font-normal">
+                      minutos
+                    </span>
+                  </div>
+                  <p className="text-zinc-400 text-sm uppercase font-bold tracking-widest">
+                    Tempo Total Parado
+                  </p>
+                  <div className="mt-6 w-full h-4 bg-black rounded-full overflow-hidden flex">
+                    <div
+                      className="bg-emerald-500 h-full"
+                      style={{ width: `${dadosOEE.disponibilidade}%` }}
+                    ></div>
+                    <div
+                      className="bg-red-500 h-full"
+                      style={{
+                        width: `${100 - dadosOEE.disponibilidade}%`,
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* PRODUÇÃO */}
           {abaAtiva === 'producao' && (
@@ -1899,4 +1954,5 @@ const BotaoMenu = ({ ativo, onClick, icon, label }) => (
     <span className="text-[10px] font-bold uppercase">{label}</span>
   </button>
 );
+
 
