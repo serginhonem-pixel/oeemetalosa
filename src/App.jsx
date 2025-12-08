@@ -859,15 +859,39 @@ const migrarDadosParaNuvem = async () => {
                   <button onClick={abrirModalNovo} className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2 items-center flex-1 md:flex-none justify-center"><Plus size={20} /> Novo</button>
                 </div>
               </header>
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 overflow-y-auto pb-4">
-                <ColunaKanban titulo="HOJE" data={hoje} cor="emerald" lista={colunasAgenda.hoje} resumo={calcResumo(colunasAgenda.hoje)} onEdit={abrirModalEdicao} />
-                <ColunaKanban titulo="AMANHÃ" data={amanha} cor="blue" lista={colunasAgenda.amanha} resumo={calcResumo(colunasAgenda.amanha)} onEdit={abrirModalEdicao} />
-                <div className="flex flex-col h-full bg-zinc-900/30 rounded-2xl border border-white/5 overflow-hidden min-h-[300px]">
-                  <div className="p-4 border-b border-white/5 bg-zinc-900/80"><h2 className="text-lg font-black text-zinc-400">PRÓXIMOS</h2></div>
+              {/* Grid Agenda: 1 coluna no mobile (com scroll) */}
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-y-auto pb-20 md:pb-4">
+                
+                <ColunaKanban 
+                    titulo="HOJE" 
+                    data={hoje} 
+                    cor="emerald" 
+                    lista={colunasAgenda.hoje} 
+                    resumo={calcResumo(colunasAgenda.hoje)} 
+                    onEdit={abrirModalEdicao} 
+                />
+                
+                <ColunaKanban 
+                    titulo="AMANHÃ" 
+                    data={amanha} 
+                    cor="blue" 
+                    lista={colunasAgenda.amanha} 
+                    resumo={calcResumo(colunasAgenda.amanha)} 
+                    onEdit={abrirModalEdicao} 
+                />
+                
+                {/* Coluna PRÓXIMOS com altura mínima corrigida */}
+                <div className="flex flex-col min-h-[400px] md:h-full bg-zinc-900/30 rounded-2xl border border-white/5 overflow-hidden">
+                  <div className="p-4 border-b border-white/5 bg-zinc-900/80">
+                    <h2 className="text-lg font-black text-zinc-400">PRÓXIMOS</h2>
+                  </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {colunasAgenda.futuro.map((r) => <CardRomaneio key={r.sysId} romaneio={r} onEdit={() => abrirModalEdicao(r)} />)}
+                    {colunasAgenda.futuro.map((r) => (
+                        <CardRomaneio key={r.sysId} romaneio={r} onEdit={() => abrirModalEdicao(r)} />
+                    ))}
                   </div>
                 </div>
+
               </div>
             </div>
           )}
@@ -1212,7 +1236,7 @@ const CardIndicador = ({ label, valor, icon }) => (
 );
 
 const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => (
-  <div className="flex flex-col h-full bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden shadow-lg">
+  <div className="flex flex-col min-h-[500px] md:h-full bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden shadow-lg shrink-0">
     <div className="p-4 border-b border-white/5 bg-zinc-900/80">
       <div className="flex justify-between mb-1">
         <h2
