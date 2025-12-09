@@ -1,23 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-
-
-
-// --- FIREBASE ---
-import { addDoc, collection, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  doc,
+  setDoc,
+  deleteDoc,
+  updateDoc,
+} from 'firebase/firestore';
 
 import { db } from "./firebaseConfig";
 
-// --- ÍCONES (Adicionei o CheckSquare que faltava) ---
+
 import {
   Activity, AlertOctagon, ArrowRight, BarChart3, Box,
   CalendarDays, CheckCircle2,
-  ClipboardList, Clock, // <--- CheckSquare AQUI
+  ClipboardList, Clock,
   Download, Factory, FileText, History, Layers, Layout,
   Pencil, Plus, PlusCircle, Scale, Trash2,
-  TrendingDown // Adicionei alguns extras úteis
-  ,
-  TrendingUp,
+  TrendingDown, TrendingUp,
   Upload, X
 } from 'lucide-react';
 
@@ -34,9 +39,10 @@ import {
 
 // --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
 
-// --- SEU NOVO DASHBOARD ---
+
 // ⚠️ Certifique-se de que criou o arquivo na pasta 'components'
 import OeeDashboard from './components/OeeDashboard';
+import { ColunaKanban } from "./components/ColunaKanban";
 
 // --- DADOS ---
 import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
@@ -96,35 +102,54 @@ const normalizarHoraExcel = (valorBruto) => {
 };
 
 
+// Data local em YYYY-MM-DD (sem gambiarra de UTC)
+const getLocalISODate = (baseDate = new Date()) => {
+  const d = baseDate instanceof Date ? baseDate : new Date(baseDate);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 const processarDataExcel = (valorBruto) => {
-  // Data de hoje no formato YYYY-MM-DD
-  const hojeISO = new Date().toISOString().split('T')[0];
+  const hojeISO = getLocalISODate(); // hoje no fuso local
 
   if (!valorBruto) return hojeISO;
 
   try {
     if (typeof valorBruto === 'string') {
       const limpa = valorBruto.trim();
-      if (limpa.match(/^\d{4}-\d{2}-\d{2}$/)) return limpa; 
+
+      // já vem em YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(limpa)) return limpa;
+
+      // formato BR  dd/mm/aaaa
       if (limpa.includes('/')) {
-         const partes = limpa.split('/');
-         if (partes.length === 3) return `${partes[2]}-${partes[1]}-${partes[0]}`; 
+        const partes = limpa.split('/');
+        if (partes.length === 3) {
+          return `${partes[2]}-${partes[1]}-${partes[0]}`;
+        }
       }
     }
+
+    // Date nativo
     if (valorBruto instanceof Date) {
-      const offset = valorBruto.getTimezoneOffset() * 60000; 
-      const dataLocal = new Date(valorBruto.getTime() - offset);
-      return dataLocal.toISOString().split('T')[0];
+      return getLocalISODate(valorBruto);
     }
+
+    // Número Excel (serial de data)
     if (typeof valorBruto === 'number') {
-      const dataBase = new Date(1899, 11, 30); 
+      const dataBase = new Date(1899, 11, 30); // 30/12/1899
       const dataFinal = new Date(dataBase.getTime() + valorBruto * 86400000);
-      dataFinal.setHours(dataFinal.getHours() + 12);
-      return dataFinal.toISOString().split('T')[0];
+      return getLocalISODate(dataFinal);
     }
-  } catch (e) { console.error("Erro data:", valorBruto); }
+  } catch (e) {
+    console.error("Erro data:", valorBruto, e);
+  }
+
   return hojeISO;
 };
+
 
 const processarHoraExcel = (valorBruto) => {
   if (!valorBruto) return '';
@@ -194,12 +219,22 @@ const PrintStyles = () => (
 
 
 export default function App() {
-  const [abaAtiva, setAbaAtiva] = useState('agenda'); 
-// Data de hoje no formato YYYY-MM-DD
-  const hojeISO = new Date().toISOString().split('T')[0];
-  const d_amanha = new Date(); d_amanha.setDate(d_amanha.getDate() + 1);
-  const amanha = d_amanha.toISOString().split('T')[0];
-  const hoje = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+  // datas base do app, agora 100% fuso local
+  const hoje = getLocalISODate();
+  const amanha = getLocalISODate(
+    new Date(Date.now() + 24 * 60 * 60 * 1000)
+  );
+  const hojeISO = hoje;
+
+  const [abaAtiva, setAbaAtiva] = useState('agenda');
+
+  const toggleItemSelecionado = (id) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+
   const [dataFiltroImpressao, setDataFiltroImpressao] = useState(hoje);
   const [filaProducao, setFilaProducao] = useState([]);
   
@@ -218,12 +253,29 @@ export default function App() {
 
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(hoje);
-  const [dataFimInd, setDataFimInd] = useState(new Date(new Date().setDate(new Date().getDate() + 7)).toISOString().split('T')[0]);
-  const [capacidadeDiaria, setCapacidadeDiaria] = useState(15000); 
+const [dataFimInd, setDataFimInd] = useState(
+  getLocalISODate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+);  const [capacidadeDiaria, setCapacidadeDiaria] = useState(15000); 
   const [turnoHoras, setTurnoHoras] = useState(9);
 
   // Modal Manual (COMPLETO)
+  
   const [showModalNovaOrdem, setShowModalNovaOrdem] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState([]);
+  const [novaDataReprogramacao, setNovaDataReprogramacao] = useState('');
+const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
+
+
+    useEffect(() => {
+    if (showModalNovaOrdem) {
+      // ao abrir o modal, limpa a seleção
+      setSelectedItemIds([]);
+      setNovaDataReprogramacao('');
+    }
+  }, [showModalNovaOrdem]);
+
+
+
   const [romaneioEmEdicaoId, setRomaneioEmEdicaoId] = useState(null);
   const [formRomaneioId, setFormRomaneioId] = useState(''); 
   const [formCliente, setFormCliente] = useState('');
@@ -255,7 +307,7 @@ export default function App() {
   const [apontamentoEmEdicaoId, setApontamentoEmEdicaoId] = useState(null);
 
   const [dataInicioOEE, setDataInicioOEE] = useState(hojeISO);
-  const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
+const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);   
 
 
 // ... seus useStates estão aqui em cima ...
@@ -334,55 +386,48 @@ export default function App() {
   };
 
 
+  
+useEffect(() => {
+  const carregarDados = async () => {
+    try {
+      console.log("🔄 Buscando dados do Firebase...");
 
+      // 1. Romaneios
+      const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
+      const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
+        sysId: docSnap.id,
+        ...docSnap.data(),
+      }));
+      setFilaProducao(listaRomaneios);
 
-  useEffect(() => {
-    const carregarDados = async () => {
-      try {
-        console.log("🔄 Buscando dados do Firebase...");
+      // 2. Produção Real
+      const producaoSnapshot = await getDocs(collection(db, "producao"));
+      const listaProducao = producaoSnapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const { id, ...rest } = data; // ignora qualquer campo "id" dentro do doc
+        return {
+          id: docSnap.id, // id REAL do Firestore
+          ...rest,
+        };
+      });
+      setHistoricoProducaoReal(listaProducao);
 
-        // 1. Buscar Romaneios (PCP)
-        const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
-        const listaRomaneios = romaneiosSnapshot.docs.map(doc => ({
-          sysId: doc.id, // O Firebase gera um ID estranho, guardamos ele aqui
-          ...doc.data()
-        }));
-        if (listaRomaneios.length > 0) setFilaProducao(listaRomaneios);
+      // 3. Paradas
+      const paradasSnapshot = await getDocs(collection(db, "paradas"));
+      const listaParadas = paradasSnapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
+      setHistoricoParadas(listaParadas);
 
-        // 2. Buscar Produção Real
-        // 2. Buscar Produção Real
-// 2. Buscar Produção Real
-const producaoSnapshot = await getDocs(collection(db, "producao"));
-const listaProducao = producaoSnapshot.docs.map((docSnap) => {
-  const data = docSnap.data();
-  const { id, ...rest } = data;   // ignora qualquer campo "id" salvo no documento
-  return {
-    id: docSnap.id,               // esse é o id REAL do Firestore
-    ...rest,
+      console.log("✅ Dados carregados com sucesso!");
+    } catch (erro) {
+      console.error("❌ Erro ao buscar dados:", erro);
+    }
   };
-});
-if (listaProducao.length > 0) setHistoricoProducaoReal(listaProducao);
 
-
-
-        // 3. Buscar Paradas
-        const paradasSnapshot = await getDocs(collection(db, "paradas"));
-        const listaParadas = paradasSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        if (listaParadas.length > 0) setHistoricoParadas(listaParadas);
-
-        console.log("✅ Dados carregados com sucesso!");
-
-      } catch (erro) {
-        console.error("❌ Erro ao buscar dados:", erro);
-      }
-    };
-    
-
-    carregarDados();
-  }, []); // Esse [] vazio no final significa "Rode apenas 1 vez quando abrir a tela"
+  carregarDados();
+}, []); // roda só uma vez na montagem
 
 
   // --- IMPORTAÇÃO EXCEL ---
@@ -492,7 +537,7 @@ const handleDownloadModeloApontProd = () => {
 
 // Modelo de APONTAMENTO DE PARADAS
 const handleDownloadModeloParadas = () => {
-  const hojeISO = new Date().toISOString().split('T')[0];
+  const hojeISO = getLocalISODate();
 
   const exemplo = [
     {
@@ -534,62 +579,117 @@ const handleDownloadModeloParadas = () => {
   };
   const removerItemDaLista = (id) => setItensNoPedido(itensNoPedido.filter(i => i.tempId !== id));
   
-  const salvarRomaneio = async (e) => {
-  e.preventDefault();
-
-  const base = {
-    id: formRomaneioId || '',        // ID que você mostra na tela (#13, ESTOQUE etc.)
-    cliente: formCliente,
-    totvs: formTotvs,
-    data: formDataProducao,
-    status: 'PENDENTE',
-    itens: itensNoPedido,
-  };
-
+  const salvarRomaneio = async () => {
   try {
-    if (romaneioEmEdicaoId) {
-      // EDITAR – usa sempre o sysId (id do doc no Firebase)
-     const docRef = await addDoc(collection(db, "producao"), obj);
-setHistoricoProducaoReal((prev) => [
-  { id: docRef.id, ...obj },     // id vem do Firestore
-  ...prev,
-]);
-
-
-      setFilaProducao((prev) =>
-        prev.map((r) =>
-          r.sysId === romaneioEmEdicaoId ? { ...r, ...base } : r
-        )
-      );
-    } else {
-      // NOVO
-      const docRef = await addDoc(collection(db, "romaneios"), base);
-
-      setFilaProducao((prev) => [
-        ...prev,
-        { ...base, sysId: docRef.id },   // sysId = id do Firebase
-      ]);
+    if (!formRomaneioId || !formDataProducao) {
+      alert("Preencha o Romaneio e a Data.");
+      return;
     }
 
+    if (!formCliente && !isEstoque) {
+      alert("Preencha o Cliente.");
+      return;
+    }
+
+    const agoraISO = new Date().toISOString();
+
+    // 1) ROMANEIO DO DIA ATUAL (já sem os itens reprogramados)
+    const objAtual = {
+      // 🔹 padroniza o nome dos campos
+      id: formRomaneioId,
+      romaneioId: formRomaneioId,          // mantém espelho pra não quebrar nada
+      data: formDataProducao,
+      dataProducao: formDataProducao,      // idem
+
+      cliente: formCliente || "",
+      totvs: formTotvs || "",
+      tipo: isEstoque ? "EST" : "PED",
+      itens: itensNoPedido,
+      updatedAt: agoraISO,
+    };
+
+    console.log(">>> Salvando romaneio atual...", {
+      romaneioEmEdicaoId,
+      objAtual,
+      itensReprogramados,
+      novaDataReprogramacao,
+    });
+
+    // 2) GRAVA / ATUALIZA ROMANEIO ATUAL
+    let sysIdAtual = romaneioEmEdicaoId || null;
+
+    if (romaneioEmEdicaoId) {
+      await setDoc(doc(db, "romaneios", romaneioEmEdicaoId), objAtual, {
+        merge: true,
+      });
+    } else {
+      const docRef = await addDoc(collection(db, "romaneios"), objAtual);
+      sysIdAtual = docRef.id;
+    }
+
+    // 3) SE TIVER ITENS REPROGRAMADOS + DATA NOVA, CRIA ROMANEIO DO OUTRO DIA
+    if (
+      itensReprogramados &&
+      itensReprogramados.length > 0 &&
+      novaDataReprogramacao
+    ) {
+      const objReprogramado = {
+        id: formRomaneioId,
+        romaneioId: formRomaneioId,
+        data: novaDataReprogramacao,
+        dataProducao: novaDataReprogramacao,
+
+        cliente: formCliente || "",
+        totvs: formTotvs || "",
+        tipo: isEstoque ? "EST" : "PED",
+        itens: itensReprogramados,
+        origemReprogramacao: sysIdAtual,
+        createdFromReprogramacao: true,
+        createdAt: agoraISO,
+        updatedAt: agoraISO,
+      };
+
+      await addDoc(collection(db, "romaneios"), objReprogramado);
+
+      console.log("✅ Romaneio reprogramado criado:", objReprogramado);
+    }
+
+    // 4) RECARREGA A FILA TODA DO FIRESTORE
+    const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
+    const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
+      sysId: docSnap.id,
+      ...docSnap.data(),
+    }));
+    setFilaProducao(listaRomaneios);
+
+    // 5) LIMPA ESTADOS E FECHA MODAL
+    setItensReprogramados([]);
+    setSelectedItemIds([]);
+    setNovaDataReprogramacao("");
+
+    alert("Romaneio salvo com sucesso!");
     setShowModalNovaOrdem(false);
-    limparFormularioGeral();
-  } catch (error) {
-    console.error("Erro ao salvar o romaneio no Firestore: ", error);
-    alert("Falha ao salvar. Veja o console (F12).");
+  } catch (err) {
+    console.error("Erro ao salvar o romaneio no Firestore:", err);
+    alert("Erro ao salvar romaneio. Veja o console (F12).");
   }
 };
+
+
+
+
 
   const abrirModalNovo = () => { limparFormularioGeral(); setShowModalNovaOrdem(true); };
   const abrirModalEdicao = (r) => {
   setRomaneioEmEdicaoId(r.sysId);          // id do doc no Firebase
-  setFormRomaneioId(r.id || '');           // número do romaneio / ESTOQUE
+setFormRomaneioId(r.id || r.romaneioId || '');
   setFormCliente(r.cliente);
   setFormTotvs(r.totvs || '');
-  setFormDataProducao(r.data);
+setFormDataProducao(getDataRomaneio(r));
   setItensNoPedido(
     (r.itens || []).map((i) => ({ ...i, tempId: Math.random() }))
   );
-  setIsEstoque(r.id === 'ESTOQUE');
+setIsEstoque((r.id || r.romaneioId) === 'ESTOQUE');
   setShowModalNovaOrdem(true);
 };
 
@@ -991,14 +1091,16 @@ const deletarParada = async (id) => {
   e.target.value = null;
 };
 
+const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
 
 
 
   const colunasAgenda = {
-    hoje: filaProducao.filter(r => r.data === hoje),
-    amanha: filaProducao.filter(r => r.data === amanha),
-    futuro: filaProducao.filter(r => r.data > amanha)
-  };
+  hoje: filaProducao.filter((r) => getDataRomaneio(r) === hoje),
+  amanha: filaProducao.filter((r) => getDataRomaneio(r) === amanha),
+  futuro: filaProducao.filter((r) => getDataRomaneio(r) > amanha),
+};
+
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
 
   // --- DASHBOARD E OEE ---
@@ -1088,7 +1190,6 @@ const deletarParada = async (id) => {
 
   // datas pra cálculo de dias úteis até o fim do mês
   const inicioPeriodo = new Date(dataInicioInd + 'T12:00:00');
-  const hojeISO = new Date().toISOString().split('T')[0];
   const hojeDate = new Date(hojeISO + 'T12:00:00');
   const lastDayOfMonth = new Date(
     inicioPeriodo.getFullYear(), 
@@ -1165,6 +1266,52 @@ const ehTempoUtil = (evento) => {
   return false;
 };
 
+const handleReprogramarItensSelecionados = () => {
+  if (!novaDataReprogramacao) {
+    alert("Escolha a nova data para reprogramar.");
+    return;
+  }
+
+  if (!selectedItemIds || selectedItemIds.length === 0) {
+    alert("Selecione pelo menos um item para reprogramar.");
+    return;
+  }
+
+  const itensParaMover = itensNoPedido.filter((i) =>
+    selectedItemIds.includes(i.tempId)
+  );
+  const itensQueFicam = itensNoPedido.filter(
+    (i) => !selectedItemIds.includes(i.tempId)
+  );
+
+  if (itensParaMover.length === 0) {
+    alert("Nenhum item válido encontrado para reprogramar.");
+    return;
+  }
+
+  setItensNoPedido(itensQueFicam);
+  setItensReprogramados(itensParaMover);
+
+  console.log(
+    "🔁 Itens marcados para reprogramar em",
+    novaDataReprogramacao,
+    itensParaMover
+  );
+
+  setSelectedItemIds([]);
+};
+
+
+
+
+
+
+const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
+  const base = dataISO.replaceAll('-', '');
+  const sequencial =
+    romaneiosExistentes.filter((r) => r.dataProducao === dataISO).length + 1;
+  return `${base}-${String(sequencial).padStart(2, '0')}`; // ex: 20250209-01
+};
 
 
 
@@ -1334,7 +1481,7 @@ const migrarDadosParaNuvem = async () => {
     
     {filaProducao
         // 1. Filtro por Data (Garantindo que a data exista)
-        .filter((r) => r.data && String(r.data) === dataFiltroImpressao)
+      .filter((r) => getDataRomaneio(r) === dataFiltroImpressao)
         
         // 2. Filtro de Segurança: Remove Romaneios sem itens ou com peso zero (para eliminar 'ESTOQUE 04' vazios)
         .filter((r) => {
@@ -1494,15 +1641,16 @@ const migrarDadosParaNuvem = async () => {
                     {filaProducao
                         // 1. Cria uma cópia e ordena: mais recente (b) - mais antigo (a)
                         .slice() 
-                        .sort((a, b) => new Date(b.data) - new Date(a.data))
+.sort((a, b) => new Date(getDataRomaneio(b)) - new Date(getDataRomaneio(a)))
                         // 2. Limita a 50 itens para exibição
                         .slice(0, 300) 
                         .map((r) => (
                            <tr key={r.sysId} className="hover:bg-white/5">
                                  {/* Exibindo o ID do Firebase (assumindo que está em r.sysId) */}
                                 <td className="p-4 text-blue-400 font-mono text-xs">#{r.sysId}</td> 
-                                <td className="p-4 text-zinc-300">{formatarDataBR(r.data)}</td>
-                                <td className="p-4">{r.cliente}</td>
+<td className="p-4 text-zinc-300">
+  {formatarDataBR(getDataRomaneio(r))}
+</td>                                <td className="p-4">{r.cliente}</td>
                                 <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
                                 <td className="p-4 text-right">
                                     {/* Verifica se o r.sysId é válido antes de renderizar o botão */}
@@ -1780,18 +1928,18 @@ const migrarDadosParaNuvem = async () => {
   </div>
 
   {/* Barra de progresso: projeção / meta */}
-  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
-    <div
-      className="h-full bg-emerald-500"
-      style={{
-        width: `${Math.min(
-          (dadosIndicadores.projecaoFinal / (dadosIndicadores.metaAteFimMes || 1)) * 100,
-          100
-        )}%`
-      }}
-    ></div>
-  </div>
-</div>
+                  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
+                    <div
+                      className="h-full bg-emerald-500"
+                      style={{
+                        width: `${Math.min(
+                          (dadosIndicadores.projecaoFinal / (dadosIndicadores.metaAteFimMes || 1)) * 100,
+                          100
+                        )}%`
+                      }}
+                    ></div>
+                  </div>
+                </div>
 
               </div>
 
@@ -1909,21 +2057,92 @@ const migrarDadosParaNuvem = async () => {
                     <div className="flex justify-end"><button onClick={adicionarItemNaLista} className="px-6 py-2 bg-emerald-600 text-white rounded font-bold flex items-center gap-2"><PlusCircle size={18} /> Add</button></div>
                 </div>
 
-                <div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden min-h-[100px]">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-white/5 text-xs text-zinc-500"><tr><th className="p-3">Item</th><th className="text-center">Qtd</th><th className="text-right">Peso</th><th className="text-right">#</th></tr></thead>
-                        <tbody className="divide-y divide-white/5">
-                            {itensNoPedido.map((i) => (
-                                <tr key={i.tempId}>
-                                    <td className="p-3 text-zinc-300"><b>{i.desc}</b><div className="text-[10px]">{i.cod}</div></td>
-                                    <td className="p-3 text-center font-bold text-white">{i.qtd}</td>
-                                    <td className="p-3 text-right">{i.pesoTotal}</td>
-                                    <td className="p-3 text-right"><button onClick={() => removerItemDaLista(i.tempId)} className="text-zinc-500 hover:text-red-400"><Trash2 size={16} /></button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                {/* TABELA DE ITENS */}
+<div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden min-h-[100px]">
+  <table className="w-full text-left text-sm">
+    <thead className="bg-white/5 text-xs text-zinc-500">
+      <tr>
+        <th className="p-3 w-8 text-center">Sel</th> {/* NOVO */}
+        <th className="p-3">Item</th>
+        <th className="text-center">Qtd</th>
+        <th className="text-right">Peso</th>
+        <th className="text-right">#</th>
+      </tr>
+    </thead>
+
+    <tbody className="divide-y divide-white/5">
+      {itensNoPedido.map((i) => (
+        <tr key={i.tempId}>
+          {/* checkbox */}
+          <td className="p-3 text-center">
+            <input
+              type="checkbox"
+              checked={selectedItemIds.includes(i.tempId)}
+              onChange={() => toggleItemSelecionado(i.tempId)}
+              className="h-4 w-4 accent-emerald-500"
+            />
+          </td>
+
+          <td className="p-3 text-zinc-300">
+            <b>{i.desc}</b>
+            <div className="text-[10px]">{i.cod}</div>
+          </td>
+
+          <td className="p-3 text-center font-bold text-white">
+            {i.qtd}
+          </td>
+
+          <td className="p-3 text-right">{i.pesoTotal}</td>
+
+          <td className="p-3 text-right">
+            <button
+              onClick={() => removerItemDaLista(i.tempId)}
+              className="text-zinc-500 hover:text-red-400"
+            >
+              <Trash2 size={16} />
+            </button>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+
+{/* Barra de reprogramação de itens selecionados */}
+<div className="mt-3 flex flex-col md:flex-row items-center justify-between gap-3 bg-zinc-900/60 border border-white/10 rounded-xl px-4 py-3">
+  <div className="text-xs text-zinc-400">
+    {selectedItemIds.length === 0 ? (
+      <span>Nenhum item selecionado.</span>
+    ) : (
+      <span>
+        <b>{selectedItemIds.length}</b> item(ns) selecionado(s) para reprogramar.
+      </span>
+    )}
+  </div>
+
+  <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-zinc-400 font-semibold">Nova data:</span>
+      <input
+        type="date"
+        value={novaDataReprogramacao}
+        onChange={(e) => setNovaDataReprogramacao(e.target.value)}
+        className="bg-black/60 border border-white/10 rounded px-2 py-1 text-xs text-white"
+      />
+    </div>
+
+    <button
+      type="button"
+      onClick={handleReprogramarItensSelecionados}
+      className="px-4 py-2 bg-amber-500/90 hover:bg-amber-500 text-black text-xs font-bold rounded-lg flex items-center gap-2 disabled:opacity-40"
+      disabled={selectedItemIds.length === 0 || !novaDataReprogramacao}
+    >
+      Reprogramar selecionados
+    </button>
+  </div>
+</div>
+
             </div>
 
             <div className="p-4 md:p-6 border-t border-white/10 bg-white/5 flex gap-3 justify-end">
@@ -2026,40 +2245,6 @@ const CardIndicador = ({ label, valor, icon }) => (
   </div>
 );
 
-const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => (
-  <div className="flex flex-col min-h-[500px] md:h-full bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden shadow-lg shrink-0">
-    <div className="p-4 border-b border-white/5 bg-zinc-900/80">
-      <div className="flex justify-between mb-1">
-        <h2
-          className={`text-lg font-black ${
-            cor === "emerald" ? "text-emerald-400" : "text-blue-400"
-          }`}
-        >
-          {titulo}
-        </h2>
-        <span className="text-xs text-zinc-500">
-          {formatarDataBR(data)}
-        </span>
-      </div>
-      <div className="text-xs text-zinc-400">
-        Peso:{" "}
-        <strong className="text-white">
-          {(resumo.peso / 1000).toFixed(1)}t
-        </strong>
-      </div>
-    </div>
-
-    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-      {lista.map((r) => (
-        <CardRomaneio
-          key={r.sysId}
-          romaneio={r}
-          onEdit={() => onEdit(r)}
-        />
-      ))}
-    </div>
-  </div>
-);
 
 const CardRomaneio = ({ romaneio, onEdit }) => (
   <div className="bg-black/40 border border-white/5 rounded-xl p-3 hover:border-white/20 group relative">
