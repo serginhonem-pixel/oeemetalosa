@@ -29,7 +29,7 @@ import {
   ComposedChart, ReferenceLine,
   ResponsiveContainer,
   Tooltip,
-  XAxis, YAxis
+  XAxis, YAxis, LabelList
 } from 'recharts';
 
 // --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
@@ -219,7 +219,7 @@ export default function App() {
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(hoje);
   const [dataFimInd, setDataFimInd] = useState(new Date(new Date().setDate(new Date().getDate() + 7)).toISOString().split('T')[0]);
-  const [capacidadeDiaria, setCapacidadeDiaria] = useState(16000); 
+  const [capacidadeDiaria, setCapacidadeDiaria] = useState(15000); 
   const [turnoHoras, setTurnoHoras] = useState(9);
 
   // Modal Manual (COMPLETO)
@@ -262,6 +262,80 @@ export default function App() {
 
   // --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
   
+    const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload || !payload.length) return null;
+
+    const plan = payload.find(p => p.dataKey === 'pesoPlanejado')?.value || 0;
+    const exec = payload.find(p => p.dataKey === 'pesoExecutado')?.value || 0;
+
+    // Meta diária em kg: usa o state; se der problema, cai pra 15000
+    const metaDiaria = Number(capacidadeDiaria) || 15000;
+
+    const saldoVsMeta = exec - metaDiaria;
+    const isPositiveMeta = saldoVsMeta >= 0;
+
+    return (
+      <div className="bg-zinc-950 border border-white/10 p-4 rounded-xl shadow-2xl backdrop-blur-xl">
+        <p className="text-zinc-400 text-xs mb-2 font-mono">
+          {formatarDataBR(label)}
+        </p>
+
+        <div className="flex flex-col gap-2">
+          {/* PLANEJADO */}
+          <div className="flex items-center justify-between gap-8">
+            <span className="text-zinc-500 text-xs font-bold uppercase flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-zinc-600"></div>
+              Planejado
+            </span>
+            <span className="text-zinc-200 font-mono font-bold">
+              {(plan / 1000).toFixed(2)}t
+            </span>
+          </div>
+
+          {/* EXECUTADO */}
+          <div className="flex items-center justify-between gap-8">
+            <span className="text-blue-500 text-xs font-bold uppercase flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+              Executado
+            </span>
+            <span className="text-blue-400 font-mono font-bold">
+              {(exec / 1000).toFixed(2)}t
+            </span>
+          </div>
+
+          {/* META DO DIA */}
+          <div className="flex items-center justify-between gap-8">
+            <span className="text-amber-400 text-xs font-bold uppercase flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-amber-400"></div>
+              Meta do dia
+            </span>
+            <span className="text-amber-300 font-mono font-bold">
+              {(metaDiaria / 1000).toFixed(2)}t
+            </span>
+          </div>
+
+          <div className="w-full h-px bg-white/10 my-1" />
+
+          {/* SALDO VS META */}
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-zinc-500">Saldo vs meta</span>
+            <span
+              className={`font-mono font-bold text-xs ${
+                isPositiveMeta ? 'text-emerald-400' : 'text-red-400'
+              }`}
+            >
+              {isPositiveMeta ? '+' : ''}
+              {(saldoVsMeta / 1000).toFixed(2)}t
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
+
   useEffect(() => {
     const carregarDados = async () => {
       try {
@@ -931,84 +1005,119 @@ const deletarParada = async (id) => {
   // --- DASHBOARD E OEE (Lógica Atualizada) ---
   // --- DASHBOARD E OEE (Lógica Atualizada com Filtros) ---
   // --- SUBSTITUA O SEU 'const dadosIndicadores' ATUAL POR ESTE INTEIRO ---
-  const dadosIndicadores = useMemo(() => {
-    const agrupadoPorDia = {};
-    
-    // Ajuste de datas
-    let currDate = new Date(dataInicioInd + 'T12:00:00');
-    const lastDate = new Date(dataFimInd + 'T12:00:00');
-    
-    // 1. Cria chaves
-    while (currDate <= lastDate) {
-        const dStr = currDate.toISOString().split('T')[0];
-        agrupadoPorDia[dStr] = { pesoPlanejado: 0, itensPlanejados: 0, pesoExecutado: 0, itensExecutados: 0 };
-        currDate.setDate(currDate.getDate() + 1);
-    }
-
-    // 2. Soma Planejado
-    const romaneiosNoPeriodo = filaProducao.filter(r => r.data >= dataInicioInd && r.data <= dataFimInd);
-    romaneiosNoPeriodo.forEach(r => {
-        const d = String(r.data);
-        if (agrupadoPorDia[d]) {
-            const pesoR = r.itens.reduce((acc, i) => acc + parseFloat(i.pesoTotal || 0), 0);
-            agrupadoPorDia[d].pesoPlanejado += pesoR;
-        }
-    });
-
-    // 3. Soma Executado
-    const producaoNoPeriodo = historicoProducaoReal.filter(p => p.data >= dataInicioInd && p.data <= dataFimInd);
-    producaoNoPeriodo.forEach(p => {
-        const d = String(p.data);
-        if (agrupadoPorDia[d]) {
-            let pesoItem = 0;
-            if (CATALOGO_PRODUTOS) {
-                const prodCatalogo = CATALOGO_PRODUTOS.find(cat => cat.cod === p.cod);
-                if (prodCatalogo) pesoItem = (prodCatalogo.pesoUnit || 0) * p.qtd;
-            }
-            agrupadoPorDia[d].pesoExecutado += pesoItem;
-        }
-    });
-
-    // 4. Filtra array gráfico (tira FDS e Vazios)
-    const arrayGrafico = Object.keys(agrupadoPorDia)
-        .sort()
-        .map(data => ({ data, ...agrupadoPorDia[data] }))
-        .filter(dia => {
-            const dataObj = new Date(dia.data + 'T12:00:00');
-            const diaSemana = dataObj.getDay(); 
-            const isFimDeSemana = diaSemana === 0 || diaSemana === 6;
-            const isVazio = dia.pesoPlanejado === 0 && dia.pesoExecutado === 0;
-            return !(isFimDeSemana || isVazio);
-        });
-    
-    // 5. Totais Gerais
-    const totalPesoPlanejado = romaneiosNoPeriodo.reduce((acc, r) => acc + r.itens.reduce((sum, i) => sum + parseFloat(i.pesoTotal || 0), 0), 0);
-    const totalPesoExecutado = producaoNoPeriodo.reduce((acc, p) => {
-         const prod = CATALOGO_PRODUTOS?.find(c => c.cod === p.cod);
-         return acc + ((prod?.pesoUnit || 0) * p.qtd);
-    }, 0);
-
-    // --- CÁLCULOS DOS NOVOS CARDS ---
-    const saldoTotal = totalPesoExecutado - totalPesoPlanejado;
-    
-    const diasPassados = arrayGrafico.filter(d => d.pesoExecutado > 0).length;
-    const diasRestantes = arrayGrafico.length - diasPassados;
-    
-    // Ritmo necessário para recuperar
-    let ritmoNecessario = 0;
-    if (diasRestantes > 0 && saldoTotal < 0) {
-        ritmoNecessario = (totalPesoPlanejado - totalPesoExecutado) / diasRestantes;
-    }
-
-    // Projeção final baseada na média atual
-    const mediaAtual = diasPassados > 0 ? (totalPesoExecutado / diasPassados) : 0;
-    const projecaoFinal = totalPesoExecutado + (mediaAtual * diasRestantes);
-
-    return { 
-        arrayGrafico, totalPesoPlanejado, totalPesoExecutado,
-        saldoTotal, ritmoNecessario, projecaoFinal
+  const dadosIndicadores = useMemo(() => { 
+  const agrupadoPorDia = {};
+  
+  // Ajuste de datas
+  let currDate = new Date(dataInicioInd + 'T12:00:00');
+  const lastDate = new Date(dataFimInd + 'T12:00:00');
+  
+  // 1. Cria chaves
+  while (currDate <= lastDate) {
+    const dStr = currDate.toISOString().split('T')[0];
+    agrupadoPorDia[dStr] = { 
+      pesoPlanejado: 0, 
+      itensPlanejados: 0, 
+      pesoExecutado: 0, 
+      itensExecutados: 0 
     };
-  }, [filaProducao, historicoProducaoReal, dataInicioInd, dataFimInd]);
+    currDate.setDate(currDate.getDate() + 1);
+  }
+
+  // 2. Soma Planejado
+  const romaneiosNoPeriodo = filaProducao.filter(
+    r => r.data >= dataInicioInd && r.data <= dataFimInd
+  );
+  romaneiosNoPeriodo.forEach(r => {
+    const d = String(r.data);
+    if (agrupadoPorDia[d]) {
+      const pesoR = r.itens.reduce(
+        (acc, i) => acc + parseFloat(i.pesoTotal || 0), 
+        0
+      );
+      agrupadoPorDia[d].pesoPlanejado += pesoR;
+    }
+  });
+
+  // 3. Soma Executado
+  const producaoNoPeriodo = historicoProducaoReal.filter(
+    p => p.data >= dataInicioInd && p.data <= dataFimInd
+  );
+  producaoNoPeriodo.forEach(p => {
+    const d = String(p.data);
+    if (agrupadoPorDia[d]) {
+      let pesoItem = 0;
+      if (CATALOGO_PRODUTOS) {
+        const prodCatalogo = CATALOGO_PRODUTOS.find(cat => cat.cod === p.cod);
+        if (prodCatalogo) {
+          pesoItem = (prodCatalogo.pesoUnit || 0) * p.qtd;
+        }
+      }
+      agrupadoPorDia[d].pesoExecutado += pesoItem;
+    }
+  });
+
+  // 4. Filtra array gráfico (tira FDS e vazios)
+  const arrayGrafico = Object.keys(agrupadoPorDia)
+    .sort()
+    .map(data => ({ data, ...agrupadoPorDia[data] }))
+    .filter(dia => {
+      const dataObj = new Date(dia.data + 'T12:00:00');
+      const diaSemana = dataObj.getDay(); 
+      const isFimDeSemana = diaSemana === 0 || diaSemana === 6;
+      const isVazio = dia.pesoPlanejado === 0 && dia.pesoExecutado === 0;
+      return !(isFimDeSemana || isVazio);
+    });
+
+  // 5. Totais Gerais (continua calculando planejado/executado)
+  const totalPesoPlanejado = romaneiosNoPeriodo.reduce(
+    (acc, r) => acc + r.itens.reduce(
+      (sum, i) => sum + parseFloat(i.pesoTotal || 0), 
+      0
+    ),
+    0
+  );
+
+  const totalPesoExecutado = producaoNoPeriodo.reduce((acc, p) => {
+    const prod = CATALOGO_PRODUTOS?.find(c => c.cod === p.cod);
+    return acc + ((prod?.pesoUnit || 0) * p.qtd);
+  }, 0);
+
+  // ========== NOVO BLOCO: META x EXECUTADO ==========
+
+  const diasValidos = arrayGrafico.length;                  // dias úteis considerados
+  const capacidadeNum = Number(capacidadeDiaria) || 0;      // meta diária em kg
+  const metaPeriodo = capacidadeNum * diasValidos;          // meta total no período
+
+  // Saldo agora é EXECUTADO - META
+  const saldoTotal = totalPesoExecutado - metaPeriodo;
+
+  const diasPassados = arrayGrafico.filter(d => d.pesoExecutado > 0).length;
+  const diasRestantes = diasValidos - diasPassados;
+
+  // Ritmo necessário para bater a META (não o planejado)
+  let ritmoNecessario = 0;
+  if (diasRestantes > 0 && totalPesoExecutado < metaPeriodo) {
+    ritmoNecessario = (metaPeriodo - totalPesoExecutado) / diasRestantes;
+  }
+
+  // Projeção final baseada na média atual (continua igual)
+  const mediaAtual = diasPassados > 0 
+    ? (totalPesoExecutado / diasPassados) 
+    : 0;
+  const projecaoFinal = totalPesoExecutado + (mediaAtual * diasRestantes);
+
+  return { 
+    arrayGrafico, 
+    totalPesoPlanejado,   // ainda disponível se quiser mostrar
+    totalPesoExecutado,
+    metaPeriodo,          // *** opcional: bom pra card de "meta do período"
+    saldoTotal,           // agora vs meta
+    ritmoNecessario,      // vs meta
+    projecaoFinal
+  };
+}, [filaProducao, historicoProducaoReal, dataInicioInd, dataFimInd, capacidadeDiaria]);
+
 
 // --- Helper: evento de tempo útil (máquina rodando) -----------------
 const ehTempoUtil = (evento) => {
@@ -1622,27 +1731,49 @@ const migrarDadosParaNuvem = async () => {
                 </div>
               </div>
 
-              {/* Gráfico Side-by-Side */}
-              <div className="flex-1 bg-zinc-900/40 rounded-2xl border border-white/10 p-4 md:p-6 relative flex flex-col min-h-[400px]">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-bold text-zinc-400 flex items-center gap-2"><BarChart3 size={16} /> Evolução Diária</h3>
-                </div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dadosIndicadores.arrayGrafico} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barGap={2}>
-                    <defs>
-                      <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={1}/><stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.8}/></linearGradient>
-                      <linearGradient id="grayArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#52525b" stopOpacity={0.4}/><stop offset="90%" stopColor="#52525b" stopOpacity={0.05}/></linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                    <XAxis dataKey="data" tickFormatter={(val) => formatarDataBR(val).slice(0, 5)} stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                    <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val/1000).toFixed(0)}`} />
-                    <Tooltip cursor={{ fill: '#ffffff05' }} content={<CustomTooltip />} />
-                    <ReferenceLine y={capacidadeDiaria} stroke="#be185d" strokeDasharray="3 3" strokeOpacity={0.6} />
-                    <Area type="monotone" dataKey="pesoPlanejado" fill="url(#grayArea)" stroke="#71717a" strokeWidth={2} dot={{ r: 3, fill: "#3f3f46", strokeWidth: 0 }} />
-                    <Bar dataKey="pesoExecutado" barSize={30} fill="url(#blueGradient)" radius={[4, 4, 0, 0]} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
+
+              {/* Gráfico Side-by-Side */}
+              <div className="flex-1 bg-zinc-900/40 rounded-2xl border border-white/10 p-4 md:p-6 relative flex flex-col min-h-[400px]">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-sm font-bold text-zinc-400 flex items-center gap-2"><BarChart3 size={16} /> Evolução Diária</h3>
+                </div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={dadosIndicadores.arrayGrafico} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barGap={2}>
+                    <defs>
+                      <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={1}/><stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.8}/></linearGradient>
+                      <linearGradient id="grayArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#52525b" stopOpacity={0.4}/><stop offset="90%" stopColor="#52525b" stopOpacity={0.05}/></linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                    <XAxis dataKey="data" tickFormatter={(val) => formatarDataBR(val).slice(0, 5)} stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                    <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val/1000).toFixed(0)}`} />
+                    <Tooltip cursor={{ fill: '#ffffff05' }} content={<CustomTooltip />} />
+                    <ReferenceLine y={capacidadeDiaria} stroke="#be185d" strokeDasharray="3 3" strokeOpacity={0.6} />
+                    
+                    <Area type="monotone" dataKey="pesoPlanejado" fill="url(#grayArea)" stroke="#71717a" strokeWidth={2} dot={{ r: 3, fill: "#3f3f46", strokeWidth: 0 }} >
+                        {/* Rótulo para Peso Planejado (Linha) */}
+                        <LabelList 
+                            dataKey="pesoPlanejado" 
+                            position="top" 
+                            formatter={(val) => `${(val / 1000).toFixed(1)}t`}
+                            style={{ fill: '#71717a', fontSize: 9 }} 
+                            dy={-10}
+                        />
+                    </Area>
+                    
+                    <Bar dataKey="pesoExecutado" barSize={30} fill="url(#blueGradient)" radius={[4, 4, 0, 0]}>
+                        {/* Rótulo para Peso Executado (Barras) */}
+                        <LabelList 
+                            dataKey="pesoExecutado" 
+                            position="top" 
+                            formatter={(val) => `${(val / 1000).toFixed(1)}t`}
+                            style={{ fill: '#ffffff', fontSize: 10, fontWeight: 'bold' }} 
+                            dy={-10}
+                        />
+                    </Bar>
+
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
 
@@ -1914,43 +2045,3 @@ const BotaoMenu = ({ ativo, onClick, icon, label }) => (
 );
 
 // --- COMPONENTE DE TOOLTIP CUSTOMIZADO ---
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    const plan = payload.find(p => p.dataKey === 'pesoPlanejado')?.value || 0;
-    const exec = payload.find(p => p.dataKey === 'pesoExecutado')?.value || 0;
-    const diferenca = exec - plan;
-    const isPositive = diferenca >= 0;
-
-    return (
-      <div className="bg-zinc-950 border border-white/10 p-4 rounded-xl shadow-2xl backdrop-blur-xl">
-        <p className="text-zinc-400 text-xs mb-2 font-mono">{formatarDataBR(label)}</p>
-        
-        <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-8">
-                <span className="text-zinc-500 text-xs font-bold uppercase flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-zinc-600"></div> Planejado
-                </span>
-                <span className="text-zinc-200 font-mono font-bold">{(plan/1000).toFixed(2)}t</span>
-            </div>
-            
-            <div className="flex items-center justify-between gap-8">
-                <span className="text-blue-500 text-xs font-bold uppercase flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div> Executado
-                </span>
-                <span className="text-blue-400 font-mono font-bold">{(exec/1000).toFixed(2)}t</span>
-            </div>
-
-            <div className="w-full h-px bg-white/10 my-1"></div>
-            
-            <div className="flex items-center justify-between">
-                <span className="text-[10px] text-zinc-500">Saldo</span>
-                <span className={`font-mono font-bold text-xs ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {isPositive ? '+' : ''}{(diferenca/1000).toFixed(2)}t
-                </span>
-            </div>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
