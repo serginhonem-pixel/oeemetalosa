@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 
+
 // --- FIREBASE ---
-import { addDoc, collection, getDocs } from "firebase/firestore";
+import { addDoc, collection, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
+
 import { db } from "./firebaseConfig";
 
 // --- ÍCONES (Adicionei o CheckSquare que faltava) ---
@@ -212,6 +214,7 @@ export default function App() {
   const [formApontProdDesc, setFormApontProdDesc] = useState('');
   const [formApontProdQtd, setFormApontProdQtd] = useState('');
   const [formApontProdDestino, setFormApontProdDestino] = useState('Estoque');
+  const [producaoEmEdicaoId, setProducaoEmEdicaoId] = useState(null);
 
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(hoje);
@@ -249,7 +252,7 @@ export default function App() {
 
   const pesoTotalAcumuladoModal = itensNoPedido.reduce((acc, item) => acc + parseFloat(item.pesoTotal), 0);
   const qtdTotalAcumuladaModal = itensNoPedido.reduce((acc, item) => acc + parseInt(item.qtd), 0);
-
+  const [apontamentoEmEdicaoId, setApontamentoEmEdicaoId] = useState(null);
 
   const [dataInicioOEE, setDataInicioOEE] = useState(hojeISO);
   const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
@@ -273,12 +276,20 @@ export default function App() {
         if (listaRomaneios.length > 0) setFilaProducao(listaRomaneios);
 
         // 2. Buscar Produção Real
-        const producaoSnapshot = await getDocs(collection(db, "producao"));
-        const listaProducao = producaoSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        if (listaProducao.length > 0) setHistoricoProducaoReal(listaProducao);
+        // 2. Buscar Produção Real
+// 2. Buscar Produção Real
+const producaoSnapshot = await getDocs(collection(db, "producao"));
+const listaProducao = producaoSnapshot.docs.map((docSnap) => {
+  const data = docSnap.data();
+  const { id, ...rest } = data;   // ignora qualquer campo "id" salvo no documento
+  return {
+    id: docSnap.id,               // esse é o id REAL do Firestore
+    ...rest,
+  };
+});
+if (listaProducao.length > 0) setHistoricoProducaoReal(listaProducao);
+
+
 
         // 3. Buscar Paradas
         const paradasSnapshot = await getDocs(collection(db, "paradas"));
@@ -449,20 +460,82 @@ const handleDownloadModeloParadas = () => {
   };
   const removerItemDaLista = (id) => setItensNoPedido(itensNoPedido.filter(i => i.tempId !== id));
   
-  const salvarRomaneio = (e) => {
-    e.preventDefault();
-    const obj = { id: formRomaneioId||'MANUAL', sysId: Math.random(), cliente: formCliente, totvs: formTotvs, data: formDataProducao, status: 'PENDENTE', itens: itensNoPedido };
-    if (romaneioEmEdicaoId) setFilaProducao(filaProducao.map(r => r.id === romaneioEmEdicaoId ? { ...r, ...obj } : r));
-    else setFilaProducao([...filaProducao, obj]);
-    setShowModalNovaOrdem(false); limparFormularioGeral();
+  const salvarRomaneio = async (e) => {
+  e.preventDefault();
+
+  const base = {
+    id: formRomaneioId || '',        // ID que você mostra na tela (#13, ESTOQUE etc.)
+    cliente: formCliente,
+    totvs: formTotvs,
+    data: formDataProducao,
+    status: 'PENDENTE',
+    itens: itensNoPedido,
   };
+
+  try {
+    if (romaneioEmEdicaoId) {
+      // EDITAR – usa sempre o sysId (id do doc no Firebase)
+     const docRef = await addDoc(collection(db, "producao"), obj);
+setHistoricoProducaoReal((prev) => [
+  { id: docRef.id, ...obj },     // id vem do Firestore
+  ...prev,
+]);
+
+
+      setFilaProducao((prev) =>
+        prev.map((r) =>
+          r.sysId === romaneioEmEdicaoId ? { ...r, ...base } : r
+        )
+      );
+    } else {
+      // NOVO
+      const docRef = await addDoc(collection(db, "romaneios"), base);
+
+      setFilaProducao((prev) => [
+        ...prev,
+        { ...base, sysId: docRef.id },   // sysId = id do Firebase
+      ]);
+    }
+
+    setShowModalNovaOrdem(false);
+    limparFormularioGeral();
+  } catch (error) {
+    console.error("Erro ao salvar o romaneio no Firestore: ", error);
+    alert("Falha ao salvar. Veja o console (F12).");
+  }
+};
+
   const abrirModalNovo = () => { limparFormularioGeral(); setShowModalNovaOrdem(true); };
   const abrirModalEdicao = (r) => {
-    setRomaneioEmEdicaoId(r.id); setFormRomaneioId(r.id); setFormCliente(r.cliente); setFormTotvs(r.totvs||''); setFormDataProducao(r.data);
-    setItensNoPedido(r.itens.map(i => ({...i, tempId: Math.random()}))); setIsEstoque(r.id === 'ESTOQUE'); setShowModalNovaOrdem(true);
-  };
+  setRomaneioEmEdicaoId(r.sysId);          // id do doc no Firebase
+  setFormRomaneioId(r.id || '');           // número do romaneio / ESTOQUE
+  setFormCliente(r.cliente);
+  setFormTotvs(r.totvs || '');
+  setFormDataProducao(r.data);
+  setItensNoPedido(
+    (r.itens || []).map((i) => ({ ...i, tempId: Math.random() }))
+  );
+  setIsEstoque(r.id === 'ESTOQUE');
+  setShowModalNovaOrdem(true);
+};
+
   const limparFormularioGeral = () => { setFormRomaneioId(''); setFormCliente(''); setFormTotvs(''); setFormDataProducao(hoje); setItensNoPedido([]); setIsEstoque(false); resetItemFields(); setRomaneioEmEdicaoId(null); };
-  const deletarRomaneio = (sysId) => { if(window.confirm('Excluir?')) setFilaProducao(filaProducao.filter(r => r.sysId !== sysId)); };
+const deletarRomaneio = async (sysId) => {
+  const ok = window.confirm("Excluir esse romaneio?");
+  if (!ok) return;
+
+  // some da tela
+  setFilaProducao((prev) => prev.filter((r) => r.sysId !== sysId));
+
+  // tenta apagar no Firestore
+  try {
+    await deleteDoc(doc(db, "romaneios", String(sysId)));
+  } catch (err) {
+    console.error("Erro ao apagar romaneio no Firebase:", err);
+    alert("Erro ao apagar no servidor. Dá uma olhada no console (F12).");
+  }
+};
+
 
   // --- APONTAMENTOS ---
   const handleSelectProdApontamento = (e) => {
@@ -472,92 +545,195 @@ const handleDownloadModeloParadas = () => {
         if(produto) setFormApontProdDesc(produto.desc); else setFormApontProdDesc('');
       }
   };
-  const salvarApontamentoProducao = (e) => {
-      e.preventDefault();
-      if(!formApontProdCod || !formApontProdQtd) return alert("Preencha código e quantidade.");
-      setHistoricoProducaoReal([{ id: Math.random(), data: formApontProdData, cod: formApontProdCod, desc: formApontProdDesc || 'Item s/ descrição', qtd: parseInt(formApontProdQtd), destino: formApontProdDestino }, ...historicoProducaoReal]);
-      setFormApontProdQtd(''); setFormApontProdCod(''); setFormApontProdDesc('');
+const limparFormApontamentoProducao = () => {
+  setProducaoEmEdicaoId(null);
+  setFormApontProdData(hoje);
+  setFormApontProdCod('');
+  setFormApontProdDesc('');
+  setFormApontProdQtd('');
+  setFormApontProdDestino('Estoque');
+};
+
+const iniciarEdicaoProducao = (registro) => {
+  setProducaoEmEdicaoId(registro.id);
+  setFormApontProdData(registro.data || hoje);
+  setFormApontProdCod(registro.cod || '');
+  setFormApontProdDesc(registro.desc || '');
+  setFormApontProdQtd(String(registro.qtd || ''));
+  setFormApontProdDestino(registro.destino || 'Estoque');
+};
+
+const salvarApontamentoProducao = async (e) => {
+  e.preventDefault();
+
+  if (!formApontProdCod || !formApontProdQtd) {
+    alert("Preencha código e quantidade.");
+    return;
+  }
+
+  const qtd = parseInt(formApontProdQtd, 10) || 0;
+  if (!qtd) {
+    alert("Quantidade inválida.");
+    return;
+  }
+
+  const dataISO = String(formApontProdData || "").trim();
+
+  const obj = {
+    data: dataISO,
+    cod: formApontProdCod,
+    desc: formApontProdDesc || "Item s/ descrição",
+    qtd,
+    destino: formApontProdDestino || "Estoque",
   };
-  const deletarProducaoReal = (id) => { if(window.confirm("Remover?")) setHistoricoProducaoReal(historicoProducaoReal.filter(i => i.id !== id)); };
+
+  try {
+    if (apontamentoEmEdicaoId) {
+      const docRef = doc(db, "producao", String(apontamentoEmEdicaoId));
+      await updateDoc(docRef, obj);
+
+      setHistoricoProducaoReal((prev) =>
+        prev.map((p) =>
+          p.id === apontamentoEmEdicaoId ? { ...p, ...obj } : p
+        )
+      );
+    } else {
+      const docRef = await addDoc(collection(db, "producao"), obj);
+      setHistoricoProducaoReal((prev) => [{ id: docRef.id, ...obj }, ...prev]);
+    }
+
+    // limpa o form
+    setApontamentoEmEdicaoId(null);
+    setFormApontProdQtd("");
+    setFormApontProdCod("");
+    setFormApontProdDesc("");
+    setFormApontProdDestino("Estoque");
+    // se quiser, pode voltar a data pra hoje aqui
+  } catch (err) {
+    console.error("Erro ao salvar produção:", err);
+    alert("Erro ao salvar no servidor. Veja o console (F12).");
+  }
+};
+
+
+const deletarProducaoReal = async (id) => {
+  if (!window.confirm("Remover esse apontamento?")) return;
+
+  // Some da tela
+  setHistoricoProducaoReal((prev) => prev.filter((i) => i.id !== id));
+
+  try {
+    await deleteDoc(doc(db, "producao", id));
+  } catch (err) {
+    console.error("Erro ao apagar produção:", err);
+    alert("Erro ao apagar no servidor. Veja o console (F12).");
+  }
+};
+
   
   const handleUploadApontamentoProducao = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const file = e.target.files[0];
+  if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const wb = XLSX.read(evt.target.result, { type: 'binary', cellDates: true });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(sheet);
+  const reader = new FileReader();
 
-      const novos = data
-        .map((row) => {
-          const rawData = encontrarValorNaLinha(row, ['DATA', 'DT', 'DATA_APONTAMENTO']);
-          const dataISO = processarDataExcel(rawData);
+  reader.onload = async (evt) => {
+    const wb = XLSX.read(evt.target.result, {
+      type: "binary",
+      cellDates: true,
+    });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet);
 
-          const cod = String(
-            encontrarValorNaLinha(row, ['CODIGO', 'COD', 'PRODUTO']) || ''
-          ).trim();
+    const novos = data
+      .map((row) => {
+        const rawData = encontrarValorNaLinha(row, [
+          "DATA",
+          "DT",
+          "DATA_APONTAMENTO",
+        ]);
+        const dataISO = processarDataExcel(rawData);
 
-          const qtdRaw = encontrarValorNaLinha(row, ['QTD', 'QUANTIDADE', 'QDE']);
-          const qtd = parseInt(String(qtdRaw ?? 0).replace(',', '.'), 10) || 0;
+        const cod = String(
+          encontrarValorNaLinha(row, ["CODIGO", "COD", "PRODUTO"]) || ""
+        ).trim();
 
-          const desc = String(
-            encontrarValorNaLinha(row, ['DESCRICAO', 'DESC']) || ''
-          ).trim();
+        const qtdRaw = encontrarValorNaLinha(row, [
+          "QTD",
+          "QUANTIDADE",
+          "QDE",
+        ]);
+        const qtd =
+          parseInt(String(qtdRaw ?? 0).replace(",", "."), 10) || 0;
 
-          const destino = String(
-            encontrarValorNaLinha(row, ['DESTINO', 'LOCAL', 'ARMAZEM']) || 'Estoque'
-          ).trim();
+        const desc = String(
+          encontrarValorNaLinha(row, ["DESCRICAO", "DESC"]) || ""
+        ).trim();
 
-          if (!cod || !qtd) return null;
+        const destino = String(
+          encontrarValorNaLinha(row, ["DESTINO", "LOCAL", "ARMAZEM"]) ||
+            "Estoque"
+        ).trim();
 
-          return {
-            id: Math.random(),
-            data: dataISO,
-            cod,
-            desc: desc || 'Item s/ descrição',
-            qtd,
-            destino,
-          };
+        if (!cod || !qtd) return null;
+
+        return {
+          data: dataISO,
+          cod,
+          desc: desc || "Item s/ descrição",
+          qtd,
+          destino,
+        };
+      })
+      .filter(Boolean);
+
+    if (!novos.length) {
+      alert("Nenhuma linha válida encontrada no arquivo de produção.");
+      return;
+    }
+
+    try {
+      const salvos = await Promise.all(
+        novos.map(async (item) => {
+          const docRef = await addDoc(collection(db, "producao"), item);
+          return { id: docRef.id, ...item };
         })
-        .filter(Boolean);
+      );
 
-      if (novos.length > 0) {
-        // entra na frente pra ficar na mesma lógica do manual
-        setHistoricoProducaoReal((prev) => [...novos, ...prev]);
-        alert(`${novos.length} apontamentos de produção importados.`);
-      } else {
-        alert('Nenhuma linha válida encontrada no arquivo de produção.');
-      }
-    };
-
-    reader.readAsBinaryString(file);
-    e.target.value = null;
+      setHistoricoProducaoReal((prev) => [...salvos, ...prev]);
+      alert(
+        `${salvos.length} apontamentos de produção importados e salvos na nuvem.`
+      );
+    } catch (err) {
+      console.error("Erro ao importar apontamentos de produção:", err);
+      alert("Erro ao salvar apontamentos de produção no servidor.");
+    }
   };
+
+  reader.readAsBinaryString(file);
+  e.target.value = null;
+};
+
 
 
   // --- SALVAR PARADA ---
-  const salvarApontamentoParada = (e) => {
-    e.preventDefault();
-    if(!formParadaInicio || !formParadaFim || !formParadaMotivoCod) return alert("Preencha tudo.");
-    
-    const d1 = new Date(`${formParadaData}T${formParadaInicio}`);
-    const d2 = new Date(`${formParadaData}T${formParadaFim}`);
-    const diffMs = d2 - d1;
-    const duracaoMin = Math.floor(diffMs / 60000); 
-    
-    if (duracaoMin <= 0) return alert("Hora final deve ser maior.");
-    
-    // Tenta encontrar motivo por 'codigo' ou 'cod'
-    const motivo = dicionarioLocal.find(
-  (d) => d.codigo === formParadaMotivoCod
-);
+  const salvarApontamentoParada = async (e) => {
+  e.preventDefault();
+  if (!formParadaInicio || !formParadaFim || !formParadaMotivoCod)
+    return alert("Preencha tudo.");
 
-setHistoricoParadas((prev) => [
-  ...prev,
-  {
-    id: crypto.randomUUID(),
+  const d1 = new Date(`${formParadaData}T${formParadaInicio}`);
+  const d2 = new Date(`${formParadaData}T${formParadaFim}`);
+  const diffMs = d2 - d1;
+  const duracaoMin = Math.floor(diffMs / 60000);
+
+  if (duracaoMin <= 0) return alert("Hora final deve ser maior.");
+
+  const motivo = dicionarioLocal.find(
+    (d) => d.codigo === formParadaMotivoCod
+  );
+
+  const novo = {
     data: formParadaData,
     inicio: formParadaInicio,
     fim: formParadaFim,
@@ -565,13 +741,41 @@ setHistoricoParadas((prev) => [
     codMotivo: formParadaMotivoCod,
     descMotivo: motivo?.evento || "",
     grupo: motivo?.grupo || "",
-  },
-]);
-
-    
-    setShowModalParada(false); setFormParadaInicio(formParadaFim); setFormParadaFim(''); setFormParadaObs(''); setFormParadaMotivoCod('');
+    obs: formParadaObs || "",
   };
-  const deletarParada = (id) => setHistoricoParadas(historicoParadas.filter(p => p.id !== id));
+
+  try {
+    const docRef = await addDoc(collection(db, "paradas"), novo);
+
+    setHistoricoParadas((prev) => [
+      ...prev,
+      { id: docRef.id, ...novo },
+    ]);
+
+    setShowModalParada(false);
+    setFormParadaInicio(formParadaFim);
+    setFormParadaFim("");
+    setFormParadaObs("");
+    setFormParadaMotivoCod("");
+  } catch (err) {
+    console.error("Erro ao salvar parada no Firebase:", err);
+    alert("Erro ao salvar parada no servidor.");
+  }
+};
+
+const deletarParada = async (id) => {
+  const ok = window.confirm("Remover essa parada?");
+  if (!ok) return;
+
+  setHistoricoParadas((prev) => prev.filter((p) => p.id !== id));
+
+  try {
+    await deleteDoc(doc(db, "paradas", String(id)));
+  } catch (err) {
+    console.error("Erro ao apagar parada no Firebase:", err);
+    alert("Erro ao apagar parada no servidor.");
+  }
+};
 
   const handleUploadDicionario = (e) => {
     const file = e.target.files[0];
@@ -598,26 +802,54 @@ setHistoricoParadas((prev) => [
 
   const reader = new FileReader();
 
-  reader.onload = (evt) => {
+  reader.onload = async (evt) => {
     const bstr = evt.target.result;
-    const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]] || {});
+    const wb = XLSX.read(bstr, { type: "binary", cellDates: true });
+    const data = XLSX.utils.sheet_to_json(
+      wb.Sheets[wb.SheetNames[0]] || {}
+    );
 
     const novos = [];
 
     data.forEach((row) => {
-      // aceita vários nomes de coluna
-      const rawData = encontrarValorNaLinha(row, ['DATA', 'DATA_EVENTO', 'DT', 'DIA']);
-      const rawInicio = encontrarValorNaLinha(row, ['INICIO', 'INÍCIO', 'HR_INICIO', 'HORA_INICIO', 'START']);
-      const rawFim = encontrarValorNaLinha(row, ['FIM', 'HR_FIM', 'HORA_FIM', 'END']);
-      const rawCod = encontrarValorNaLinha(row, ['COD_MOTIVO', 'CÓD_MOTIVO', 'CODIGO_MOTIVO', 'CODIGO', 'COD', 'MOTIVO']);
-      const rawObs = encontrarValorNaLinha(row, ['OBS', 'OBSERVACAO', 'OBSERVAÇÃO', 'DETALHE']);
+      const rawData = encontrarValorNaLinha(row, [
+        "DATA",
+        "DATA_EVENTO",
+        "DT",
+        "DIA",
+      ]);
+      const rawInicio = encontrarValorNaLinha(row, [
+        "INICIO",
+        "INÍCIO",
+        "HR_INICIO",
+        "HORA_INICIO",
+        "START",
+      ]);
+      const rawFim = encontrarValorNaLinha(row, [
+        "FIM",
+        "HR_FIM",
+        "HORA_FIM",
+        "END",
+      ]);
+      const rawCod = encontrarValorNaLinha(row, [
+        "COD_MOTIVO",
+        "CÓD_MOTIVO",
+        "CODIGO_MOTIVO",
+        "CODIGO",
+        "COD",
+        "MOTIVO",
+      ]);
+      const rawObs = encontrarValorNaLinha(row, [
+        "OBS",
+        "OBSERVACAO",
+        "OBSERVAÇÃO",
+        "DETALHE",
+      ]);
 
       const dataISO = processarDataExcel(rawData);
       const inicio = normalizarHoraExcel(rawInicio);
       const fim = normalizarHoraExcel(rawFim);
 
-      // precisa pelo menos de data + início + fim
       if (!dataISO || !inicio || !fim) return;
 
       const d1 = new Date(`${dataISO}T${inicio}:00`);
@@ -627,47 +859,64 @@ setHistoricoParadas((prev) => [
       const duracaoMin = Math.max(0, Math.round((d2 - d1) / 60000));
       if (duracaoMin <= 0) return;
 
-      const codMotivo = rawCod ? String(rawCod).trim() : '';
+      const codMotivo = rawCod ? String(rawCod).trim() : "";
 
-      // tenta achar no dicionário pelo código ou pela descrição
       let motivo = null;
       if (codMotivo) {
-        motivo = dicionarioLocal.find((p) =>
-          String(p.codigo).trim() === codMotivo ||
-          String(p.cod ?? '').trim() === codMotivo ||
-          String(p.evento ?? '').trim().toUpperCase() === codMotivo.toUpperCase()
+        motivo = dicionarioLocal.find(
+          (p) =>
+            String(p.codigo).trim() === codMotivo ||
+            String(p.cod ?? "").trim() === codMotivo ||
+            String(p.evento ?? "")
+              .trim()
+              .toUpperCase() === codMotivo.toUpperCase()
         );
       }
 
       novos.push({
-        id: Math.random(),
         data: dataISO,
         inicio,
         fim,
         duracao: duracaoMin,
-        codMotivo: codMotivo || (motivo ? motivo.codigo : ''),
+        codMotivo: codMotivo || (motivo ? motivo.codigo : ""),
         descMotivo: motivo
           ? motivo.evento || motivo.desc
-          : (codMotivo || 'Desconhecido'),
-        grupo: motivo ? (motivo.grupo || 'Geral') : 'Geral',
-        obs: rawObs ? String(rawObs) : ''
+          : codMotivo || "Desconhecido",
+        grupo: motivo ? motivo.grupo || "Geral" : "Geral",
+        obs: rawObs ? String(rawObs) : "",
       });
     });
 
-    if (novos.length > 0) {
-      setHistoricoParadas((prev) => [...novos, ...prev]);
-      alert(`${novos.length} apontamentos de parada importados.`);
-    } else {
+    if (!novos.length) {
       alert(
-        'Nenhuma linha válida encontrada no arquivo de paradas.\n\n' +
-        'Confere se o arquivo tem pelo menos as colunas DATA, INICIO e FIM preenchidas.'
+        "Nenhuma linha válida encontrada no arquivo de paradas.\n\n" +
+          "Confere se o arquivo tem pelo menos as colunas DATA, INICIO e FIM preenchidas."
       );
+      return;
+    }
+
+    try {
+      const salvos = await Promise.all(
+        novos.map(async (item) => {
+          const docRef = await addDoc(collection(db, "paradas"), item);
+          return { id: docRef.id, ...item };
+        })
+      );
+
+      setHistoricoParadas((prev) => [...salvos, ...prev]);
+      alert(
+        `${salvos.length} apontamentos de parada importados e salvos na nuvem.`
+      );
+    } catch (err) {
+      console.error("Erro ao importar apontamentos de parada:", err);
+      alert("Erro ao salvar apontamentos de parada no servidor.");
     }
   };
 
   reader.readAsBinaryString(file);
   e.target.value = null;
 };
+
 
 
 
@@ -897,7 +1146,9 @@ const ehTempoUtil = (evento) => {
 
 
 const migrarDadosParaNuvem = async () => {
-    if (!confirm("Isso vai enviar todos os dados locais para o Firebase. Continuar?")) return;
+    if (!confirm("Isso vai enviar todos os dados locais para o Firebase. Continuar?")) 
+      
+      return;
 
     try {
       console.log("Iniciando migração...");
@@ -913,8 +1164,9 @@ const migrarDadosParaNuvem = async () => {
       // 2. Subir Histórico de Produção
       console.log("Subindo Produção...");
       for (const item of historicoProducaoReal) {
-        await addDoc(collection(db, "producao"), item);
-      }
+  const { id, ...rest } = item; // tira o id local
+  await addDoc(collection(db, "producao"), rest);
+}
 
       // 3. Subir Paradas
       console.log("Subindo Paradas...");
@@ -934,32 +1186,73 @@ const migrarDadosParaNuvem = async () => {
       <PrintStyles />
 
       {/* --- ÁREA DE IMPRESSÃO --- */}
-      <div id="printable-area">
-        <div className="page-title">PROGRAMAÇÃO - {formatarDataBR(dataFiltroImpressao)}</div>
-        {filaProducao
-          .filter((r) => String(r.data) === dataFiltroImpressao)
-          .sort((a, b) => a.cliente.localeCompare(b.cliente))
-          .map((r) => (
-            <div key={r.sysId} className="romaneio-container">
-              <div className="client-header"><span>{r.cliente}</span><span>ROM: {r.id}</span></div>
-              <table className="simple-table">
-                <thead><tr><th>COD</th><th>DESC / MEDIDA</th><th>QTD</th><th>PESO</th><th>CHK</th></tr></thead>
-                <tbody>
-                  {r.itens.map((i, k) => (
-                    <tr key={k}>
-                      <td>{i.cod}</td>
-                      <td><strong>{i.comp.toFixed(2)}m</strong> - {i.desc} {i.perfil && `(${i.perfil})`}</td>
-                      <td align="center">{i.qtd}</td>
-                      <td align="center">{i.pesoTotal}</td>
-                      <td align="center">[ ]</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="block-footer"><span>TOTAL: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg</span></div>
+      <div id="printable-area" className="print-page-container">
+    <div className="page-title text-center text-xl font-serif mb-6 border-b border-gray-400 pb-2">
+        PROGRAMAÇÃO DE PRODUÇÃO - DATA: {formatarDataBR(dataFiltroImpressao)}
+    </div>
+    
+    {filaProducao
+        // 1. Filtro por Data (Garantindo que a data exista)
+        .filter((r) => r.data && String(r.data) === dataFiltroImpressao)
+        
+        // 2. Filtro de Segurança: Remove Romaneios sem itens ou com peso zero (para eliminar 'ESTOQUE 04' vazios)
+        .filter((r) => {
+            const temItens = Array.isArray(r.itens) && r.itens.length > 0;
+            if (!temItens) return false;
+            
+            const pesoTotal = r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0);
+            return pesoTotal > 0;
+        })
+        
+        // 3. Ordenação por Cliente
+        .sort((a, b) => (a.cliente || '').localeCompare(b.cliente || ''))
+        
+        .map((r) => (
+            // Usa o sysId como chave e adiciona uma margem inferior clara para separação
+            <div key={r.sysId} className="romaneio-container border border-gray-300 mb-6 p-4 rounded shadow-md break-after-page">
+                
+                {/* Cabeçalho do Cliente: Mais formal e claro */}
+                <div className="client-header bg-gray-100 p-2 mb-3 flex justify-between items-center text-sm font-bold border-b border-gray-300">
+                    <span className="text-gray-700 uppercase">CLIENTE: {r.cliente || 'ESTOQUE / MANUAL'}</span>
+                    <span className="text-blue-700 font-mono">ROMANEIO ID: {r.id}</span>
+                </div>
+                
+                <table className="simple-table w-full border-collapse text-sm">
+                    <thead>
+                        <tr className="bg-gray-50 border-b border-gray-300">
+                            <th className="py-2 px-3 text-left w-[10%]">CÓDIGO</th>
+                            <th className="py-2 px-3 text-left w-[60%]">DESCRIÇÃO / MEDIDA</th>
+                            <th className="py-2 px-3 text-center w-[10%]">QTD</th>
+                            <th className="py-2 px-3 text-right w-[10%]">PESO (kg)</th>
+                            <th className="py-2 px-3 text-center w-[10%]">CHK</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {r.itens.map((i, k) => (
+                            <tr key={k} className="border-b border-gray-100 last:border-b-0">
+                                <td className="py-2 px-3">{i.cod}</td>
+                                <td className="py-2 px-3">
+                                    <strong className="text-gray-800">{i.comp?.toFixed(2) || '0.00'}m</strong>
+                                    {' - '}
+                                    {i.desc} {i.perfil && `(${i.perfil})`}
+                                </td>
+                                <td className="py-2 px-3 text-center font-medium">{i.qtd}</td>
+                                <td className="py-2 px-3 text-right text-gray-700">{i.pesoTotal}</td>
+                                <td className="py-2 px-3 text-center">[ ]</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                
+                {/* Rodapé Total */}
+                <div className="block-footer mt-3 pt-2 border-t-2 border-blue-200 flex justify-end">
+                    <span className="text-lg font-bold text-gray-800">
+                        TOTAL DO ROMANEIO: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg
+                    </span>
+                </div>
             </div>
-          ))}
-      </div>
+        ))}
+</div>
 
       {/* --- APP CONTAINER --- */}
       <div className="app-container flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
@@ -1038,33 +1331,55 @@ const migrarDadosParaNuvem = async () => {
 
           {/* ABA PCP */}
           {abaAtiva === 'planejamento' && (
-             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
-                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                   <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
-                   <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                      <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
-                      <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
-                      <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
-                   </div>
-                </header>
-                <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
-                   <table className="w-full text-left text-sm min-w-[600px]">
-                      <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10"><th className="p-4">ID</th><th className="p-4">Data</th><th className="p-4">Cliente</th><th className="p-4 text-center">Peso</th><th className="p-4 text-right">#</th></tr></thead>
-                      <tbody className="divide-y divide-white/5">
-                        {filaProducao.map((r) => (
+    <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
+            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
+                <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
+                <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
+            </div>
+        </header>
+        <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[600px]">
+                <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
+                    <th className="p-4">ID FIREBASE</th> {/* Título da coluna atualizado */}
+                    <th className="p-4">Data</th>
+                    <th className="p-4">Cliente</th>
+                    <th className="p-4 text-center">Peso</th>
+                    <th className="p-4 text-right">#</th>
+                </tr></thead>
+                <tbody className="divide-y divide-white/5">
+                    {filaProducao
+                        // 1. Cria uma cópia e ordena: mais recente (b) - mais antigo (a)
+                        .slice() 
+                        .sort((a, b) => new Date(b.data) - new Date(a.data))
+                        // 2. Limita a 50 itens para exibição
+                        .slice(0, 300) 
+                        .map((r) => (
                            <tr key={r.sysId} className="hover:bg-white/5">
-                              <td className="p-4 text-blue-400 font-mono">#{r.id}</td>
-                              <td className="p-4 text-zinc-300">{formatarDataBR(r.data)}</td>
-                              <td className="p-4">{r.cliente}</td>
-                              <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
-                              <td className="p-4 text-right"><button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500"><Trash2 size={16} /></button></td>
-                           </tr>
+                                 {/* Exibindo o ID do Firebase (assumindo que está em r.sysId) */}
+                                <td className="p-4 text-blue-400 font-mono text-xs">#{r.sysId}</td> 
+                                <td className="p-4 text-zinc-300">{formatarDataBR(r.data)}</td>
+                                <td className="p-4">{r.cliente}</td>
+                                <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
+                                <td className="p-4 text-right">
+                                    {/* Verifica se o r.sysId é válido antes de renderizar o botão */}
+                                    {r.sysId && (typeof r.sysId === 'string' && r.sysId.length > 5) ? (
+                                        <button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    ) : (
+                                        // Se o ID for inválido (como no Estoque Interno), exibe um placeholder ou nada
+                                        <span className="text-zinc-600 cursor-not-allowed">—</span>
+                                    )}
+                                </td>                           </tr>
                         ))}
-                      </tbody>
-                   </table>
-                </div>
-             </div>
-          )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+)}
 
           {/* ABA PRODUÇÃO */}
           {abaAtiva === 'producao' && (
@@ -1084,26 +1399,72 @@ const migrarDadosParaNuvem = async () => {
                                <option value="Estoque">Estoque</option><option value="Cometa 04">Cometa 04</option><option value="Serra 06">Serra 06</option>
                             </select>
                          </div>
-                         <button onClick={salvarApontamentoProducao} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"><CheckCircle2 size={20} /> Confirmar</button>
+<button
+  onClick={salvarApontamentoProducao}
+  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"
+>
+  <CheckCircle2 size={20} />
+  {producaoEmEdicaoId ? 'Atualizar apontamento' : 'Confirmar'}
+</button>
+
+{producaoEmEdicaoId && (
+  <button
+    type="button"
+    onClick={limparFormApontamentoProducao}
+    className="mt-2 w-full bg-zinc-700 hover:bg-zinc-600 text-white py-2 rounded-lg text-sm"
+  >
+    Cancelar edição
+  </button>
+)}
                       </div>
                    </div>
                    <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
-                      <div className="p-4 border-b border-white/10 bg-white/5"><h3 className="font-bold text-white flex gap-2"><History size={18} /> Histórico Hoje</h3></div>
-                      <div className="flex-1 overflow-y-auto">
-                         <table className="w-full text-left text-sm">
-                            <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur"><tr><th className="p-4">Item</th><th className="p-4 text-center">Qtd</th><th className="p-4 text-right">#</th></tr></thead>
-                            <tbody className="divide-y divide-white/5">
-                               {historicoProducaoReal.filter(p => p.data === formApontProdData).map((p) => (
-                                  <tr key={p.id}>
-                                     <td className="p-4"><div className="font-mono text-emerald-400">{p.cod}</div><div className="text-zinc-400 text-xs">{p.desc}</div></td>
-                                     <td className="p-4 text-center font-bold">{p.qtd}</td>
-                                     <td className="p-4 text-right"><button onClick={() => deletarProducaoReal(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
-                                  </tr>
-                               ))}
-                            </tbody>
-                         </table>
-                      </div>
-                   </div>
+    <div className="p-4 border-b border-white/10 bg-white/5"><h3 className="font-bold text-white flex gap-2"><History size={18} /> Histórico Hoje</h3></div>
+    <div className="flex-1 overflow-y-auto">
+        <table className="w-full text-left text-sm">
+            <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur">
+                <tr>
+                    <th className="p-4">Item</th>
+                    <th className="p-4 text-center">Qtd</th>
+                    {/* ➡️ NOVA COLUNA PARA O ID DO FIREBASE */}
+                    <th className="p-4 text-xs font-mono">ID</th>
+                    <th className="p-4 text-right">#</th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+                {historicoProducaoReal.filter(p => p.data === formApontProdData).map((p) => (
+                    <tr key={p.id}>
+                        <td className="p-4">
+                            <div className="font-mono text-emerald-400">{p.cod}</div>
+                            <div className="text-zinc-400 text-xs">{p.desc}</div>
+                        </td>
+                        <td className="p-4 text-center font-bold">{p.qtd}</td>
+                        
+                        {/* ➡️ CÉLULA EXIBINDO O ID DO FIREBASE (p.id) */}
+                        <td className="p-4 text-zinc-500 font-mono text-xs w-[120px] overflow-hidden truncate">{p.id}</td>
+                        
+                        <td className="p-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                                <button
+                                    onClick={() => iniciarEdicaoProducao(p)}
+                                    className="text-zinc-500 hover:text-emerald-400"
+                                >
+                                    <Pencil size={16} />
+                                </button>
+                                <button
+                                    onClick={() => deletarProducaoReal(p.id)}
+                                    className="text-zinc-600 hover:text-red-500"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+</div>
                 </div>
              </div>
           )}
@@ -1427,11 +1788,23 @@ const migrarDadosParaNuvem = async () => {
           Cancelar
         </button>
         <button
-          onClick={salvarApontamentoParada}
-          className="px-6 py-2 bg-red-600 text-white rounded"
-        >
-          Salvar
-        </button>
+  onClick={salvarApontamentoProducao}
+  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"
+>
+  <CheckCircle2 size={20} />
+  {producaoEmEdicaoId ? 'Atualizar apontamento' : 'Confirmar'}
+</button>
+
+{producaoEmEdicaoId && (
+  <button
+    type="button"
+    onClick={limparFormApontamentoProducao}
+    className="mt-2 w-full bg-zinc-700 hover:bg-zinc-600 text-white py-2 rounded-lg text-sm"
+  >
+    Cancelar edição
+  </button>
+)}
+
       </div>
     </div>
   </div>
