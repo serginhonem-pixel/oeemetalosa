@@ -1330,7 +1330,12 @@ const migrarDadosParaNuvem = async () => {
                     </div>
                     <div className="md:col-span-2">
                         <label className="text-xs font-bold text-zinc-500 block mb-1">TOTVS</label>
-                        <input value={formTotvs} onChange={(e) => setFormTotvs(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" readOnly={isEstoque} />
+                        <input
+  value={formTotvs}
+  onChange={(e) => setFormTotvs(e.target.value)}
+  className="w-full bg-black/50 border border-white/10 rounded p-2 text-white"
+/>
+
                     </div>
                 </div>
                 

@@ -25,6 +25,7 @@ import { CATALOGO_PRODUTOS } from "../data/catalogoProdutos";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // ---------- HELPERS ----------
+
 const formatDateBR = (iso) => {
   if (!iso) return "-";
   const [y, m, d] = iso.split("-");
