@@ -9,17 +9,25 @@ import { db } from "./firebaseConfig";
 // --- ÍCONES (Adicionei o CheckSquare que faltava) ---
 import {
   Activity, AlertOctagon, ArrowRight, BarChart3, Box,
-  CalendarDays, CheckCircle2, CheckSquare, ClipboardList, Clock, // <--- CheckSquare AQUI
+  CalendarDays, CheckCircle2,
+  ClipboardList, Clock, // <--- CheckSquare AQUI
   Download, Factory, FileText, History, Layers, Layout,
-  Pencil, Plus, PlusCircle, Scale, Trash2, TrendingUp,
-  Upload, X, AlertCircle, TrendingDown // Adicionei alguns extras úteis
+  Pencil, Plus, PlusCircle, Scale, Trash2,
+  TrendingDown // Adicionei alguns extras úteis
+  ,
+  TrendingUp,
+  Upload, X
 } from 'lucide-react';
 
 // --- GRÁFICOS (RECHARTS) ---
-import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, ResponsiveContainer, AreaChart, Area, 
-  PieChart, Pie, Cell, ComposedChart, ReferenceLine, Brush // <--- Adicione ComposedChart e ReferenceLine
+import {
+  Area,
+  Bar,
+  CartesianGrid,
+  ComposedChart, ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis, YAxis
 } from 'recharts';
 
 // --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
@@ -87,7 +95,9 @@ const normalizarHoraExcel = (valorBruto) => {
 
 
 const processarDataExcel = (valorBruto) => {
+  // Data de hoje no formato YYYY-MM-DD
   const hojeISO = new Date().toISOString().split('T')[0];
+
   if (!valorBruto) return hojeISO;
 
   try {
@@ -183,10 +193,11 @@ const PrintStyles = () => (
 
 export default function App() {
   const [abaAtiva, setAbaAtiva] = useState('agenda'); 
-  const hoje = new Date().toISOString().split('T')[0];
+// Data de hoje no formato YYYY-MM-DD
+  const hojeISO = new Date().toISOString().split('T')[0];
   const d_amanha = new Date(); d_amanha.setDate(d_amanha.getDate() + 1);
   const amanha = d_amanha.toISOString().split('T')[0];
-
+  const hoje = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
   const [dataFiltroImpressao, setDataFiltroImpressao] = useState(hoje);
   const [filaProducao, setFilaProducao] = useState([]);
   
@@ -239,9 +250,15 @@ export default function App() {
   const pesoTotalAcumuladoModal = itensNoPedido.reduce((acc, item) => acc + parseFloat(item.pesoTotal), 0);
   const qtdTotalAcumuladaModal = itensNoPedido.reduce((acc, item) => acc + parseInt(item.qtd), 0);
 
+
+  const [dataInicioOEE, setDataInicioOEE] = useState(hojeISO);
+  const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
+
+
 // ... seus useStates estão aqui em cima ...
 
   // --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
+  
   useEffect(() => {
     const carregarDados = async () => {
       try {
@@ -277,6 +294,7 @@ export default function App() {
         console.error("❌ Erro ao buscar dados:", erro);
       }
     };
+    
 
     carregarDados();
   }, []); // Esse [] vazio no final significa "Rode apenas 1 vez quando abrir a tela"
@@ -532,19 +550,24 @@ const handleDownloadModeloParadas = () => {
     if (duracaoMin <= 0) return alert("Hora final deve ser maior.");
     
     // Tenta encontrar motivo por 'codigo' ou 'cod'
-    const motivo = dicionarioLocal.find(p => p.codigo === formParadaMotivoCod || p.cod === formParadaMotivoCod);
-    
-    setHistoricoParadas([...historicoParadas, {
-        id: Math.random(), 
-        data: formParadaData, 
-        inicio: formParadaInicio, 
-        fim: formParadaFim, 
-        duracao: duracaoMin,
-        codMotivo: formParadaMotivoCod, 
-        descMotivo: motivo ? (motivo.evento || motivo.desc) : 'Desconhecido', 
-        grupo: motivo ? (motivo.grupo) : 'Geral', 
-        obs: formParadaObs
-    }]);
+    const motivo = dicionarioLocal.find(
+  (d) => d.codigo === formParadaMotivoCod
+);
+
+setHistoricoParadas((prev) => [
+  ...prev,
+  {
+    id: crypto.randomUUID(),
+    data: formParadaData,
+    inicio: formParadaInicio,
+    fim: formParadaFim,
+    duracao: duracaoMin,
+    codMotivo: formParadaMotivoCod,
+    descMotivo: motivo?.evento || "",
+    grupo: motivo?.grupo || "",
+  },
+]);
+
     
     setShowModalParada(false); setFormParadaInicio(formParadaFim); setFormParadaFim(''); setFormParadaObs(''); setFormParadaMotivoCod('');
   };
@@ -738,22 +761,139 @@ const handleDownloadModeloParadas = () => {
     };
   }, [filaProducao, historicoProducaoReal, dataInicioInd, dataFimInd]);
 
-  const dadosOEE = useMemo(() => {
-      const paradasDoDia = historicoParadas.filter(p => p.data === hoje);
-      const tempoTotalMinutos = turnoHoras * 60; 
-      const tempoParadoTotal = paradasDoDia.reduce((acc, p) => acc + p.duracao, 0);
-      const tempoProduzindo = Math.max(0, tempoTotalMinutos - tempoParadoTotal);
-      const disponibilidade = tempoTotalMinutos > 0 ? (tempoProduzindo / tempoTotalMinutos) * 100 : 0;
-      const motivosAgrupados = {};
-      paradasDoDia.forEach(p => {
-          if(!motivosAgrupados[p.descMotivo]) motivosAgrupados[p.descMotivo] = 0;
-          motivosAgrupados[p.descMotivo] += p.duracao;
-      });
-      const listaPareto = Object.keys(motivosAgrupados).map(k => ({ motivo: k, tempo: motivosAgrupados[k] })).sort((a,b) => b.tempo - a.tempo);
-      const performance = 95; const qualidade = 98; 
-      const oee = (disponibilidade * performance * qualidade) / 10000;
-      return { disponibilidade, performance, qualidade, oee, tempoProduzindo, tempoParadoTotal, listaPareto };
-  }, [historicoParadas, turnoHoras, hoje]);
+// --- Helper: evento de tempo útil (máquina rodando) -----------------
+const ehTempoUtil = (evento) => {
+  const grupo = String(evento.grupo || '').toUpperCase().trim();
+  const cod   = String(evento.codMotivo || evento.codigo || '').toUpperCase().trim();
+
+  // Grupo TU cadastrado no dicionário
+  if (grupo === 'TU') return true;
+
+  // Segurança extra: códigos TU01, TU02 etc
+  if (cod.startsWith('TU')) return true;
+
+  return false;
+};
+
+
+
+
+    const dadosOEE = useMemo(() => {
+    // Se não tiver dado nenhum, já volta zerado
+    if (!Array.isArray(historicoParadas) || !historicoParadas.length) {
+      return {
+        oee: 0,
+        disponibilidade: 0,
+        performance: 100,
+        qualidade: 100,
+        tempoProduzindo: 0,
+        tempoParadoTotal: 0,
+        tempoTurnoTotal: 0,
+        diasPeriodo: 0,
+        listaPareto: [],
+      };
+    }
+
+    // Helpers de data
+    const parseISODate = (iso) => {
+      if (!iso) return null;
+      const dt = new Date(`${iso}T00:00:00`);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const inicio = parseISODate(dataInicioInd);
+    const fim = parseISODate(dataFimInd);
+
+    // Se as datas estiverem zoada, não calcula nada
+    if (!inicio || !fim || fim < inicio) {
+      return {
+        oee: 0,
+        disponibilidade: 0,
+        performance: 100,
+        qualidade: 100,
+        tempoProduzindo: 0,
+        tempoParadoTotal: 0,
+        tempoTurnoTotal: 0,
+        diasPeriodo: 0,
+        listaPareto: [],
+      };
+    }
+
+    const MS_DIA = 24 * 60 * 60 * 1000;
+    const diasPeriodo = Math.floor((fim - inicio) / MS_DIA) + 1;
+
+    const turnoHorasNum = Number(turnoHoras) || 0;
+    const tempoTurnoTotal = diasPeriodo * turnoHorasNum * 60; // minutos de turno no período
+
+    // Convenção: códigos que começam com "TU" = máquina rodando
+    const ehCodigoRodando = (cod) =>
+      String(cod || "").toUpperCase().startsWith("TU");
+
+    // Filtrar eventos de parada / funcionamento dentro do período
+    const eventosPeriodo = historicoParadas.filter((p) => {
+      if (!p?.data) return false;
+      const d = parseISODate(p.data);
+      return d && d >= inicio && d <= fim;
+    });
+
+    let tempoProduzindoMin = 0;
+    let tempoParadoMin = 0;
+
+    const mapaPareto = {};
+
+    eventosPeriodo.forEach((p) => {
+      const dur = Number(p.duracao) || 0;
+      const cod = p.codMotivo || "";
+      const desc = p.descMotivo || cod || "Motivo não informado";
+
+      if (ehCodigoRodando(cod)) {
+        // TU = máquina rodando
+        tempoProduzindoMin += dur;
+      } else {
+        // Qualquer outro código = parada
+        tempoParadoMin += dur;
+        mapaPareto[desc] = (mapaPareto[desc] || 0) + dur;
+      }
+    });
+
+    // Se por algum motivo não tiver TU apontado, mas tiver turno configurado,
+    // assume que o resto do turno foi tempo rodando
+    if (!tempoProduzindoMin && tempoTurnoTotal > 0) {
+      tempoProduzindoMin = Math.max(tempoTurnoTotal - tempoParadoMin, 0);
+    }
+
+    // Disponibilidade = tempo rodando / tempo de turno
+    const disponibilidade =
+      tempoTurnoTotal > 0
+        ? (tempoProduzindoMin / tempoTurnoTotal) * 100
+        : 0;
+
+    // Performance e Qualidade fixadas em 100% por enquanto
+    const performance = 100;
+    const qualidade = 100;
+
+    // OEE = A * P * Q
+    const oee = (disponibilidade * performance * qualidade) / 10000;
+
+    // Pareto só com PARADAS (sem TU)
+    const listaPareto = Object.entries(mapaPareto)
+      .map(([motivo, tempo]) => ({ motivo, tempo }))
+      .sort((a, b) => b.tempo - a.tempo)
+      .slice(0, 5);
+
+    return {
+      oee,
+      disponibilidade,
+      performance,
+      qualidade,
+      tempoProduzindo: tempoProduzindoMin,
+      tempoParadoTotal: tempoParadoMin,
+      tempoTurnoTotal,
+      diasPeriodo,
+      listaPareto,
+    };
+  }, [historicoParadas, dataInicioInd, dataFimInd, turnoHoras]);
+
 
 
 const migrarDadosParaNuvem = async () => {
@@ -981,9 +1121,30 @@ const migrarDadosParaNuvem = async () => {
                             <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
                             <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
                          </div>
-                         <select value={formParadaMotivoCod} onChange={(e) => setFormParadaMotivoCod(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
-                            <option value="">Motivo...</option>{dicionarioLocal.map((p) => <option key={p.codigo} value={p.codigo}>{p.evento}</option>)}
-                         </select>
+                         <select
+  value={formParadaMotivoCod}
+  onChange={(e) => setFormParadaMotivoCod(e.target.value)}
+  className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm"
+>
+  <option value="">Motivo...</option>
+
+  {dicionarioLocal.map((p) => {
+    const codigo = p.codigo ?? "";
+    const evento = p.evento ?? "";
+
+    // Texto que aparece na lista
+    const label = codigo
+      ? `${codigo} - ${evento}`
+      : evento || "Motivo não identificado";
+
+    return (
+      <option key={codigo || evento} value={codigo || evento}>
+        {label}
+      </option>
+    );
+  })}
+</select>
+
                          <button onClick={salvarApontamentoParada} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg">Confirmar</button>
                       </div>
                    </div>
@@ -992,14 +1153,33 @@ const migrarDadosParaNuvem = async () => {
                          <table className="w-full text-left text-sm">
                             <thead className="bg-black/20 sticky top-0 text-xs uppercase text-zinc-500"><tr><th className="p-4">Horário</th><th className="p-4">Motivo</th><th className="p-4 text-right">#</th></tr></thead>
                             <tbody className="divide-y divide-white/5">
-                               {historicoParadas.filter(p => p.data === formParadaData).map((p) => (
-                                  <tr key={p.id}>
-                                     <td className="p-4 font-mono text-zinc-300">{p.inicio} - {p.fim} ({p.duracao}min)</td>
-                                     <td className="p-4">{p.descMotivo}</td>
-                                     <td className="p-4 text-right"><button onClick={() => deletarParada(p.id)} className="text-zinc-600 hover:text-red-500"><Trash2 size={16} /></button></td>
-                                  </tr>
-                               ))}
-                            </tbody>
+  {historicoParadas
+    .filter(p => p.data === formParadaData)
+    .map(p => (
+      <tr key={p.id} className="hover:bg-white/5">
+        <td className="p-4 font-mono text-zinc-300">
+          {p.inicio} - {p.fim} ({p.duracao}min)
+        </td>
+
+        <td className="p-4">
+          <span className="text-[10px] font-mono text-zinc-400 mr-2">
+            {p.codMotivo}
+          </span>
+          <span>{p.descMotivo}</span>
+        </td>
+
+        <td className="p-4 text-right">
+          <button
+            onClick={() => deletarParada(p.id)}
+            className="text-zinc-600 hover:text-red-500"
+          >
+            <Trash2 size={16} />
+          </button>
+        </td>
+      </tr>
+    ))}
+</tbody>
+
                          </table>
                       </div>
                    </div>
@@ -1009,18 +1189,16 @@ const migrarDadosParaNuvem = async () => {
 
           {/* ABA OEE (AQUI ESTÁ ELA!) */}
           {abaAtiva === "oee" && (
-            <div className="flex-1 p-4 md:p-8 overflow-y-auto">
-              {/* Certifique-se de que o componente OeeDashboard existe e é importado */}
-              <OeeDashboard
-                historicoProducaoReal={historicoProducaoReal}
-                historicoParadas={historicoParadas}
-                dataInicioInd={dataInicioInd}
-                dataFimInd={dataFimInd}
-                capacidadeDiaria={capacidadeDiaria}
-                turnoHoras={turnoHoras}
-              />
-            </div>
-          )}
+  <OeeDashboard
+    historicoProducaoReal={historicoProducaoReal}
+    historicoParadas={historicoParadas}
+    dataInicioInd={dataInicioInd}
+    dataFimInd={dataFimInd}
+    capacidadeDiaria={capacidadeDiaria}
+    turnoHoras={turnoHoras}
+  />
+)}
+
 
           {/* ABA CARGA MÁQUINA */}
           {abaAtiva === 'indicadores' && (
@@ -1197,23 +1375,63 @@ const migrarDadosParaNuvem = async () => {
 
       {/* --- MODAL PARADA --- */}
       {showModalParada && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-zinc-900 rounded-2xl w-full max-w-lg border border-red-500/30 shadow-2xl flex flex-col p-6">
-            <h3 className="text-xl font-bold text-red-400 mb-4">Apontar Parada</h3>
-            <div className="space-y-4">
-               <div className="grid grid-cols-2 gap-4">
-                  <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-2 text-white" />
-                  <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-2 text-white" />
-               </div>
-               <select value={formParadaMotivoCod} onChange={(e) => setFormParadaMotivoCod(e.target.value)} className="w-full bg-black border border-white/10 rounded p-2 text-white"><option value="">Motivo...</option>{dicionarioLocal.map(p=><option key={p.codigo} value={p.codigo}>{p.evento}</option>)}</select>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-               <button onClick={() => setShowModalParada(false)} className="px-4 py-2 bg-zinc-800 text-white rounded">Cancelar</button>
-               <button onClick={salvarApontamentoParada} className="px-6 py-2 bg-red-600 text-white rounded">Salvar</button>
-            </div>
-          </div>
+  <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+    <div className="bg-zinc-900 rounded-2xl w-full max-w-lg border border-red-500/30 shadow-2xl flex flex-col p-6">
+      <h3 className="text-xl font-bold text-red-400 mb-4">Apontar Parada</h3>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <input
+            type="time"
+            value={formParadaInicio}
+            onChange={(e) => setFormParadaInicio(e.target.value)}
+            className="bg-black border border-white/10 rounded p-2 text-white"
+          />
+          <input
+            type="time"
+            value={formParadaFim}
+            onChange={(e) => setFormParadaFim(e.target.value)}
+            className="bg-black border border-white/10 rounded p-2 text-white"
+          />
         </div>
-      )}
+
+        {/* SELECT AJUSTADO COM CÓDIGO + MOTIVO */}
+        <select
+  value={formParadaMotivoCod}
+  onChange={(e) => setFormParadaMotivoCod(e.target.value)}
+  className="w-full bg-black border border-white/10 rounded p-2 text-white"
+>
+  <option value="">Motivo...</option>
+
+  {dicionarioLocal
+    .slice() // copia pra não mexer no array original
+    .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo))) // ordena pelo código
+    .map((p) => (
+      <option key={p.codigo} value={p.codigo}>
+        {p.codigo} - {p.evento}
+      </option>
+    ))}
+</select>
+
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          onClick={() => setShowModalParada(false)}
+          className="px-4 py-2 bg-zinc-800 text-white rounded"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={salvarApontamentoParada}
+          className="px-6 py-2 bg-red-600 text-white rounded"
+        >
+          Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
     </>
   );
 }
