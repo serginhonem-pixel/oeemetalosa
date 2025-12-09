@@ -1008,11 +1008,11 @@ const deletarParada = async (id) => {
   const dadosIndicadores = useMemo(() => { 
   const agrupadoPorDia = {};
   
-  // Ajuste de datas
+  // Datas base
   let currDate = new Date(dataInicioInd + 'T12:00:00');
   const lastDate = new Date(dataFimInd + 'T12:00:00');
-  
-  // 1. Cria chaves
+
+  // 1. Cria chaves dia a dia
   while (currDate <= lastDate) {
     const dStr = currDate.toISOString().split('T')[0];
     agrupadoPorDia[dStr] = { 
@@ -1024,7 +1024,7 @@ const deletarParada = async (id) => {
     currDate.setDate(currDate.getDate() + 1);
   }
 
-  // 2. Soma Planejado
+  // 2. Soma Planejado (continua igual)
   const romaneiosNoPeriodo = filaProducao.filter(
     r => r.data >= dataInicioInd && r.data <= dataFimInd
   );
@@ -1057,7 +1057,7 @@ const deletarParada = async (id) => {
     }
   });
 
-  // 4. Filtra array gráfico (tira FDS e vazios)
+  // 4. Array para o gráfico (sem FDS e sem dias totalmente vazios)
   const arrayGrafico = Object.keys(agrupadoPorDia)
     .sort()
     .map(data => ({ data, ...agrupadoPorDia[data] }))
@@ -1069,7 +1069,7 @@ const deletarParada = async (id) => {
       return !(isFimDeSemana || isVazio);
     });
 
-  // 5. Totais Gerais (continua calculando planejado/executado)
+  // 5. Totais do período selecionado
   const totalPesoPlanejado = romaneiosNoPeriodo.reduce(
     (acc, r) => acc + r.itens.reduce(
       (sum, i) => sum + parseFloat(i.pesoTotal || 0), 
@@ -1083,40 +1083,72 @@ const deletarParada = async (id) => {
     return acc + ((prod?.pesoUnit || 0) * p.qtd);
   }, 0);
 
-  // ========== NOVO BLOCO: META x EXECUTADO ==========
+  // ================= META vs EXECUTADO CORRIDO ==================
+  const capacidadeNum = Number(capacidadeDiaria) || 0;
 
-  const diasValidos = arrayGrafico.length;                  // dias úteis considerados
-  const capacidadeNum = Number(capacidadeDiaria) || 0;      // meta diária em kg
-  const metaPeriodo = capacidadeNum * diasValidos;          // meta total no período
+  // datas pra cálculo de dias úteis até o fim do mês
+  const inicioPeriodo = new Date(dataInicioInd + 'T12:00:00');
+  const hojeISO = new Date().toISOString().split('T')[0];
+  const hojeDate = new Date(hojeISO + 'T12:00:00');
+  const lastDayOfMonth = new Date(
+    inicioPeriodo.getFullYear(), 
+    inicioPeriodo.getMonth() + 1, 
+    0
+  );
 
-  // Saldo agora é EXECUTADO - META
-  const saldoTotal = totalPesoExecutado - metaPeriodo;
+  let diasUteisMes = 0;
+  let diasUteisPassados = 0;
 
-  const diasPassados = arrayGrafico.filter(d => d.pesoExecutado > 0).length;
-  const diasRestantes = diasValidos - diasPassados;
+  for (let d = new Date(inicioPeriodo); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) continue; // pula sábado/domingo
 
-  // Ritmo necessário para bater a META (não o planejado)
-  let ritmoNecessario = 0;
-  if (diasRestantes > 0 && totalPesoExecutado < metaPeriodo) {
-    ritmoNecessario = (metaPeriodo - totalPesoExecutado) / diasRestantes;
+    diasUteisMes++;
+    if (d <= hojeDate) diasUteisPassados++;
   }
 
-  // Projeção final baseada na média atual (continua igual)
-  const mediaAtual = diasPassados > 0 
-    ? (totalPesoExecutado / diasPassados) 
-    : 0;
-  const projecaoFinal = totalPesoExecutado + (mediaAtual * diasRestantes);
+  if (diasUteisPassados === 0) diasUteisPassados = 1;
+
+  // Meta acumulada até hoje (pra saldo corrido)
+  const metaAteHoje = capacidadeNum * diasUteisPassados;
+
+  // Meta até o fim do mês (é isso que vai no CARD como "Meta")
+  const metaAteFimMes = capacidadeNum * diasUteisMes;
+
+  // Média diária REAL até hoje
+  const mediaAtual = totalPesoExecutado / diasUteisPassados;
+
+  // Projeção até o fim do mês = média diária * todos os dias úteis do mês
+  const projecaoFinal = mediaAtual * diasUteisMes;
+
+  // Saldo corrido vs meta (executado - meta até hoje)
+  const saldoTotal = totalPesoExecutado - metaAteHoje;
+
+  // Ritmo necessário pra bater a meta do mês (se quiser manter esse indicador)
+  const diasRestantes = Math.max(diasUteisMes - diasUteisPassados, 0);
+  let ritmoNecessario = 0;
+  if (diasRestantes > 0 && capacidadeNum > 0) {
+    const falta = metaAteFimMes - totalPesoExecutado;
+    ritmoNecessario = falta > 0 ? falta / diasRestantes : 0;
+  }
 
   return { 
-    arrayGrafico, 
-    totalPesoPlanejado,   // ainda disponível se quiser mostrar
+    arrayGrafico,
+    totalPesoPlanejado,    // continua disponível se quiser ver “planejado x executado”
     totalPesoExecutado,
-    metaPeriodo,          // *** opcional: bom pra card de "meta do período"
-    saldoTotal,           // agora vs meta
-    ritmoNecessario,      // vs meta
-    projecaoFinal
+    saldoTotal,            // agora vs meta corrida
+    ritmoNecessario,
+    projecaoFinal,         // projeção até o fim do mês
+    metaAteFimMes          // meta até o fim do mês (capacidade * dias úteis)
   };
-}, [filaProducao, historicoProducaoReal, dataInicioInd, dataFimInd, capacidadeDiaria]);
+}, [
+  filaProducao,
+  historicoProducaoReal,
+  dataInicioInd,
+  dataFimInd,
+  capacidadeDiaria
+]);
+
 
 
 // --- Helper: evento de tempo útil (máquina rodando) -----------------
@@ -1723,12 +1755,44 @@ const migrarDadosParaNuvem = async () => {
                   <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Ritmo Necessário</div><div className="text-2xl font-black text-white">{(dadosIndicadores.ritmoNecessario / 1000).toFixed(1)} <span className="text-sm font-normal text-zinc-500">t/dia</span></div></div>
                 </div>
                 <div className="bg-zinc-900 p-4 rounded-xl border border-white/10 flex flex-col justify-center gap-2">
-                  <div className="flex justify-between items-end">
-                    <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Projeção</div><div className={`text-xl font-black ${dadosIndicadores.projecaoFinal >= dadosIndicadores.totalPesoPlanejado ? 'text-emerald-400' : 'text-zinc-200'}`}>{(dadosIndicadores.projecaoFinal / 1000).toFixed(0)} t</div></div>
-                    <div className="text-right"><div className="text-[10px] text-zinc-500">Meta</div><div className="text-sm font-bold text-zinc-400">{(dadosIndicadores.totalPesoPlanejado / 1000).toFixed(0)} t</div></div>
-                  </div>
-                  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex"><div className="h-full bg-zinc-500" style={{ width: `${Math.min(((dadosIndicadores.totalPesoPlanejado / (dadosIndicadores.projecaoFinal || 1)) * 100), 100)}%` }}></div></div>
-                </div>
+  <div className="flex justify-between items-end">
+    <div>
+      <div className="text-zinc-500 text-[10px] uppercase font-bold">
+        Projeção até fim do mês
+      </div>
+      <div
+        className={`text-xl font-black ${
+          dadosIndicadores.projecaoFinal >= dadosIndicadores.metaAteFimMes
+            ? 'text-emerald-400'
+            : 'text-zinc-200'
+        }`}
+      >
+        {(dadosIndicadores.projecaoFinal / 1000).toFixed(0)} t
+      </div>
+    </div>
+
+    <div className="text-right">
+      <div className="text-[10px] text-zinc-500">Meta do mês (dias úteis)</div>
+      <div className="text-sm font-bold text-zinc-400">
+        {(dadosIndicadores.metaAteFimMes / 1000).toFixed(0)} t
+      </div>
+    </div>
+  </div>
+
+  {/* Barra de progresso: projeção / meta */}
+  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
+    <div
+      className="h-full bg-emerald-500"
+      style={{
+        width: `${Math.min(
+          (dadosIndicadores.projecaoFinal / (dadosIndicadores.metaAteFimMes || 1)) * 100,
+          100
+        )}%`
+      }}
+    ></div>
+  </div>
+</div>
+
               </div>
 
 
