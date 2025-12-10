@@ -98,6 +98,38 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
     return cA.localeCompare(cB);
   });
 
+      // calcula o peso do romaneio para exibir no card
+  const getPesoRomaneio = (r) => {
+    if (!r) return 0;
+
+    // 1) tenta usar campos diretos
+    const direto = parseFloat(r.pesoTotalKg ?? r.peso ?? 0);
+    let peso = !Number.isNaN(direto) ? direto : 0;
+
+    // 2) se não tiver peso direto, tenta somar itens (igual ao CardRomaneio antigo)
+    if (peso <= 0 && Array.isArray(r.itens) && r.itens.length > 0) {
+      peso = r.itens.reduce(
+        (acc, item) => acc + parseFloat(item?.pesoTotal || 0),
+        0
+      );
+      if (Number.isNaN(peso)) peso = 0;
+    }
+
+    // 3) Fallback esperto:
+    //    se ainda deu 0, mas o resumo diz que tem só 1 romaneio na coluna,
+    //    usa o peso do resumo (que é o que aparece lá em cima em toneladas)
+    if (peso <= 0 && resumo && totalRomaneios === 1) {
+      const fromResumo = parseFloat(resumo.peso ?? 0);
+      if (!Number.isNaN(fromResumo) && fromResumo > 0) {
+        peso = fromResumo;
+      }
+    }
+
+    return peso;
+  };
+
+
+
   return (
     <div
       className={`
@@ -192,11 +224,12 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
               <div className="text-right">
                 <div className="text-[11px] text-zinc-500">Peso</div>
                 <div className="text-sm font-bold text-zinc-100">
-                  {(r.pesoTotalKg ?? r.peso ?? 0).toLocaleString("pt-BR", {
-                    maximumFractionDigits: 0,
-                  })}{" "}
-                  kg
-                </div>
+  {getPesoRomaneio(r).toLocaleString("pt-BR", {
+    maximumFractionDigits: 0,
+  })}{" "}
+  kg
+</div>
+
               </div>
             </div>
 

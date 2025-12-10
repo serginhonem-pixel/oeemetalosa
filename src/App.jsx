@@ -1,54 +1,61 @@
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  setDoc,
+  updateDoc
+} from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import {
-  collection,
-  addDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  doc,
-  setDoc,
-  deleteDoc,
-  updateDoc,
-} from 'firebase/firestore';
 
-import { db } from "./firebaseConfig";
+import { db } from "./services/firebase";
 
 
 import {
   Activity, AlertOctagon, ArrowRight, BarChart3, Box,
   CalendarDays, CheckCircle2,
-  ClipboardList, Clock,
+  ClipboardList,
   Download, Factory, FileText, History, Layers, Layout,
   Pencil, Plus, PlusCircle, Scale, Trash2,
   TrendingDown, TrendingUp,
   Upload, X
 } from 'lucide-react';
 
+import BackupControls from './components/BackupControls';
+import { IS_PRODUCTION } from './services/firebase';
+import { safeAddDoc } from './services/firebaseSafeWrites';
+
+
 // --- GRÁFICOS (RECHARTS) ---
 import {
   Area,
   Bar,
   CartesianGrid,
-  ComposedChart, ReferenceLine,
+  ComposedChart,
+  LabelList,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
-  XAxis, YAxis, LabelList
+  XAxis, YAxis
 } from 'recharts';
 
 // --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
 
 
 // ⚠️ Certifique-se de que criou o arquivo na pasta 'components'
-import OeeDashboard from './components/OeeDashboard';
 import { ColunaKanban } from "./components/ColunaKanban";
+import OeeDashboard from './components/OeeDashboard';
+import { ParadasScreen } from './components/ParadasScreen';
+
 
 // --- DADOS ---
 import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
+import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 
-  
+
 const formatarDataBR = (dataISO) => {
   if (!dataISO) return '-';
   if (typeof dataISO !== 'string') return String(dataISO);
@@ -198,6 +205,8 @@ const encontrarValorNaLinha = (row, possiveisNomes) => {
 
 
 // --- ESTILOS COMPLETO (RESTAURADO) ---
+
+
 const PrintStyles = () => (
   <style>{`
     #printable-area { display: none; }
@@ -210,7 +219,7 @@ const PrintStyles = () => (
       .romaneio-container { margin-bottom: 25px; page-break-inside: avoid; border: 1px solid #000; }
       .client-header { background-color: #e5e5e5 !important; border-bottom: 1px solid #000; padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; }
       .simple-table { width: 100%; border-collapse: collapse; }
-      .simple-table th { text-align: left; padding: 4px; font-size: 9px; uppercase; border-bottom: 1px solid #000; background: #f0f0f0 !important; }
+      .simple-table th { t  xt-align: left; padding: 4px; font-size: 9px; uppercase; border-bottom: 1px solid #000; background: #f0f0f0 !important; }
       .simple-table td { padding: 4px; border-bottom: 1px solid #eee; }
       .block-footer { display: flex; justify-content: flex-end; gap: 20px; padding: 5px 10px; border-top: 1px solid #000; font-weight: bold; background: #f9f9f9 !important; }
     }
@@ -219,6 +228,8 @@ const PrintStyles = () => (
 
 
 export default function App() {
+
+  const [maquinaSelecionada, setMaquinaSelecionada] = useState("");
   // datas base do app, agora 100% fuso local
   const hoje = getLocalISODate();
   const amanha = getLocalISODate(
@@ -241,6 +252,8 @@ export default function App() {
   // Paradas
   const [historicoParadas, setHistoricoParadas] = useState([]);
   const [dicionarioLocal, setDicionarioLocal] = useState(DICIONARIO_PARADAS || []);
+  const [eventosParada, setEventosParada] = useState([]);
+
   
   // Apontamento Prod
   const [historicoProducaoReal, setHistoricoProducaoReal] = useState([]);
@@ -301,6 +314,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [formParadaFim, setFormParadaFim] = useState('');
   const [formParadaMotivoCod, setFormParadaMotivoCod] = useState('');
   const [formParadaObs, setFormParadaObs] = useState('');
+  
 
   const pesoTotalAcumuladoModal = itensNoPedido.reduce((acc, item) => acc + parseFloat(item.pesoTotal), 0);
   const qtdTotalAcumuladaModal = itensNoPedido.reduce((acc, item) => acc + parseInt(item.qtd), 0);
@@ -428,6 +442,15 @@ useEffect(() => {
 
   carregarDados();
 }, []); // roda só uma vez na montagem
+
+
+const IS_LOCALHOST =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+   window.location.hostname === "127.0.0.1" ||
+   window.location.hostname === "");
+
+
 
 
   // --- IMPORTAÇÃO EXCEL ---
@@ -1305,6 +1328,40 @@ const handleReprogramarItensSelecionados = () => {
 
 
 
+const handleRegistrarParada = async (novaParada) => {
+  // gera um ID temporário local
+  const paradaLocal = {
+    id: `par_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    ...novaParada,
+  };
+
+  // 1) SEMPRE joga no histórico local (pra aparecer na tela)
+  setHistoricoParadas((prev) => [...prev, paradaLocal]);
+
+  // 2) Se estiver rodando em localhost, não tenta salvar no Firebase
+  if (IS_LOCALHOST) {
+    console.info("[Paradas] Rodando em localhost, não salvando no Firebase.");
+    return;
+  }
+
+  // 3) Em produção, tenta salvar de verdade
+  try {
+    const idGerado = await salvarApontamentoParada(novaParada);
+
+    // se o backend devolver um id, atualiza o registro local com ele
+    if (idGerado) {
+      setHistoricoParadas((prev) =>
+        prev.map((p) =>
+          p.id === paradaLocal.id ? { ...p, id: idGerado } : p
+        )
+      );
+    }
+  } catch (erro) {
+    console.error("Erro ao salvar parada no Firebase:", erro);
+    alert("Erro ao salvar parada, tenta de novo.");
+  }
+};
+
 
 const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
   const base = dataISO.replaceAll('-', '');
@@ -1469,6 +1526,93 @@ const migrarDadosParaNuvem = async () => {
     }
   };
 
+
+  // Exemplo simples de export
+// --- BACKUP: EXPORTA TODAS AS COLEÇÕES PRINCIPAIS ---
+// --- BACKUP: EXPORTA TODAS AS COLEÇÕES PRINCIPAIS ---
+const handleExportBackup = async () => {
+  try {
+    // Lê direto do Firestore (do projeto DEV ou PROD, conforme firebase.js)
+    const [romSnap, prodSnap, parSnap] = await Promise.all([
+      getDocs(collection(db, 'romaneios')),
+      getDocs(collection(db, 'producao')),
+      getDocs(collection(db, 'paradas')),
+    ]);
+
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      romaneios: romSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      producao: prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      paradas: parSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup-painelpcp-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Erro ao gerar backup:', err);
+    alert('Erro ao gerar backup. Veja o console (F12).');
+  }
+};
+
+
+
+// --- BACKUP: IMPORTA (SÓ ESCREVE EM PRODUÇÃO) ---
+const handleImportBackup = async (json) => {
+  if (!json) return;
+
+  if (!IS_PRODUCTION) {
+    console.log('[DEV] Import de backup SIMULADO (não grava no Firebase):', json);
+    alert('Import de backup só grava na nuvem no site oficial. No localhost é simulado.');
+    return;
+  }
+
+  const romaneios = Array.isArray(json.romaneios) ? json.romaneios : [];
+  const producao  = Array.isArray(json.producao)  ? json.producao  : [];
+  const paradas   = Array.isArray(json.paradas)   ? json.paradas   : [];
+
+  if (!romaneios.length && !producao.length && !paradas.length) {
+    alert('Arquivo de backup sem dados válidos (romaneios / producao / paradas).');
+    return;
+  }
+
+  try {
+    // ROMANEIOS
+    for (const r of romaneios) {
+      const { id, sysId, ...rest } = r; // tira ids antigos
+      await safeAddDoc('romaneios', rest);
+    }
+
+    // PRODUÇÃO
+    for (const p of producao) {
+      const { id, ...rest } = p;
+      await safeAddDoc('producao', rest);
+    }
+
+    // PARADAS
+    for (const pa of paradas) {
+      const { id, ...rest } = pa;
+      await safeAddDoc('paradas', rest);
+    }
+
+    alert('Backup importado e gravado no Firebase com sucesso!');
+  } catch (err) {
+    console.error('Erro ao importar backup:', err);
+    alert('Erro ao importar backup. Veja o console (F12).');
+  }
+};
+
+
+
+
+
     return (
     <>
       <PrintStyles />
@@ -1568,18 +1712,40 @@ const migrarDadosParaNuvem = async () => {
 
         {/* --- CONTEÚDO --- */}
         <div className="flex-1 flex overflow-hidden bg-[#09090b] pb-16 md:pb-0">
-          
           {/* ABA AGENDA */}
           {abaAtiva === 'agenda' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-6 overflow-hidden flex flex-col">
               <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
-                <h1 className="text-2xl font-bold flex gap-3"><Layers className="text-purple-500" size={28} /> Gestão</h1>
-                <div className="flex gap-3 w-full md:w-auto">
-                  <input type="date" value={dataFiltroImpressao} onChange={(e) => setDataFiltroImpressao(e.target.value)} className="bg-zinc-800 border border-white/10 rounded p-2 text-white text-xs flex-1 md:flex-none" />
-                  <button onClick={handlePrint} className="p-2 bg-zinc-700 rounded text-white"><FileText size={20} /></button>
-                  <button onClick={abrirModalNovo} className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2 items-center flex-1 md:flex-none justify-center"><Plus size={20} /> Novo</button>
-                </div>
-              </header>
+  <h1 className="text-2xl font-bold flex gap-3">
+    <Layers className="text-purple-500" size={28} /> Gestão
+  </h1>
+
+  <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto md:items-center">
+    <BackupControls
+      onExportBackup={handleExportBackup}
+      onImportBackup={handleImportBackup}
+    />
+
+    <div className="flex gap-3 w-full md:w-auto">
+      <input
+        type="date"
+        value={dataFiltroImpressao}
+        onChange={(e) => setDataFiltroImpressao(e.target.value)}
+        className="bg-zinc-800 border border-white/10 rounded p-2 text-white text-xs flex-1 md:flex-none"
+      />
+      <button onClick={handlePrint} className="p-2 bg-zinc-700 rounded text-white">
+        <FileText size={20} />
+      </button>
+      <button
+        onClick={abrirModalNovo}
+        className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2 items-center flex-1 md:flex-none justify-center"
+      >
+        <Plus size={20} /> Novo
+      </button>
+    </div>
+  </div>
+</header>
+
               {/* Grid Agenda: 1 coluna no mobile (com scroll) */}
               <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-y-auto pb-20 md:pb-4">
                 
@@ -1758,84 +1924,17 @@ const migrarDadosParaNuvem = async () => {
              </div>
           )}
 
+          
           {/* ABA PARADAS */}
           {abaAtiva === 'apontamento' && (
-             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
-                <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><AlertOctagon className="text-red-500" size={32} /> Paradas</h1></header>
-                <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
-                   <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-red-500/20 p-4 md:p-6 shrink-0">
-                      <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2"><Clock size={20} /> Registrar</h3>
-                      <div className="space-y-4">
-                         <input type="date" value={formParadaData} onChange={(e) => setFormParadaData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
-                         <div className="grid grid-cols-2 gap-4">
-                            <input type="time" value={formParadaInicio} onChange={(e) => setFormParadaInicio(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
-                            <input type="time" value={formParadaFim} onChange={(e) => setFormParadaFim(e.target.value)} className="bg-black border border-white/10 rounded p-3 text-white" />
-                         </div>
-                         <select
-  value={formParadaMotivoCod}
-  onChange={(e) => setFormParadaMotivoCod(e.target.value)}
-  className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm"
->
-  <option value="">Motivo...</option>
+  <ParadasScreen
+    eventosParada={historicoParadas}
+    onRegistrarParada={handleRegistrarParada}
+    deletarParada={deletarParada}
+  />
+)}
 
-  {dicionarioLocal.map((p) => {
-    const codigo = p.codigo ?? "";
-    const evento = p.evento ?? "";
 
-    // Texto que aparece na lista
-    const label = codigo
-      ? `${codigo} - ${evento}`
-      : evento || "Motivo não identificado";
-
-    return (
-      <option key={codigo || evento} value={codigo || evento}>
-        {label}
-      </option>
-    );
-  })}
-</select>
-
-                         <button onClick={salvarApontamentoParada} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg">Confirmar</button>
-                      </div>
-                   </div>
-                   <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
-                      <div className="flex-1 overflow-y-auto">
-                         <table className="w-full text-left text-sm">
-                            <thead className="bg-black/20 sticky top-0 text-xs uppercase text-zinc-500"><tr><th className="p-4">Horário</th><th className="p-4">Motivo</th><th className="p-4 text-right">#</th></tr></thead>
-                            <tbody className="divide-y divide-white/5">
-  {historicoParadas
-    .filter(p => p.data === formParadaData)
-    .map(p => (
-      <tr key={p.id} className="hover:bg-white/5">
-        <td className="p-4 font-mono text-zinc-300">
-          {p.inicio} - {p.fim} ({p.duracao}min)
-        </td>
-
-        <td className="p-4">
-          <span className="text-[10px] font-mono text-zinc-400 mr-2">
-            {p.codMotivo}
-          </span>
-          <span>{p.descMotivo}</span>
-        </td>
-
-        <td className="p-4 text-right">
-          <button
-            onClick={() => deletarParada(p.id)}
-            className="text-zinc-600 hover:text-red-500"
-          >
-            <Trash2 size={16} />
-          </button>
-        </td>
-      </tr>
-    ))}
-</tbody>
-
-                         </table>
-                      </div>
-                   </div>
-                </div>
-             </div>
-          )}
 
           {/* ABA OEE (AQUI ESTÁ ELA!) */}
           {abaAtiva === "oee" && (
@@ -2202,22 +2301,22 @@ const migrarDadosParaNuvem = async () => {
           Cancelar
         </button>
         <button
-  onClick={salvarApontamentoProducao}
-  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"
->
-  <CheckCircle2 size={20} />
-  {producaoEmEdicaoId ? 'Atualizar apontamento' : 'Confirmar'}
-</button>
+        onClick={salvarApontamentoProducao}
+        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"
+      >
+        <CheckCircle2 size={20} />
+        {producaoEmEdicaoId ? 'Atualizar apontamento' : 'Confirmar'}
+      </button>
 
-{producaoEmEdicaoId && (
-  <button
-    type="button"
-    onClick={limparFormApontamentoProducao}
-    className="mt-2 w-full bg-zinc-700 hover:bg-zinc-600 text-white py-2 rounded-lg text-sm"
-  >
-    Cancelar edição
-  </button>
-)}
+      {producaoEmEdicaoId && (
+        <button
+          type="button"
+          onClick={limparFormApontamentoProducao}
+          className="mt-2 w-full bg-zinc-700 hover:bg-zinc-600 text-white py-2 rounded-lg text-sm"
+        >
+          Cancelar edição
+        </button>
+      )}
 
       </div>
     </div>

@@ -1,26 +1,13 @@
 // src/data/catalogoProdutos.js
 
-export const CATALOGO_PRODUTOS = [
-  // --- SOB MEDIDA ---
-  { cod: '02000', desc: 'TELHA GALVALUME TP 40 SOB MEDIDA', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', kgMetro: 3.76, comp: 0, custom: true },
-  { cod: '02010', desc: 'TELHA GALVALUME OND 17 SOB MEDIDA', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', kgMetro: 3.76, comp: 0, custom: true },
+import { CATALOGO_TELHAS } from './catalogoTelhas';
+import { CATALOGO_PERFIL } from './catalogoPerfil';
 
-  // --- PADRÃO DE PRATELEIRA (Lista Completa) ---
-  { cod: '02006', desc: 'TELHA GALVALUME TP 40 0,43MM 6,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', pesoUnit: 22.56, comp: 6.00, custom: false },
-  { cod: '02005', desc: 'TELHA GALVALUME TP 40 0,43MM 5,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', pesoUnit: 18.80, comp: 5.00, custom: false },
-  { cod: '02004', desc: 'TELHA GALVALUME TP 40 0,43MM 4,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', pesoUnit: 15.04, comp: 4.00, custom: false },
-  { cod: '02007', desc: 'TELHA GALVALUME TP 40 0,43MM 7,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', pesoUnit: 26.32, comp: 7.00, custom: false },
-  { cod: '02016', desc: 'TELHA GALVALUME OND 17 0,43MM 6,00M', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', pesoUnit: 22.56, comp: 6.00, custom: false },
-  { cod: '02020', desc: 'TELHA CUMEEIRA GL TRAP 40 ABAS 300MM', perfil: 'Cumeeira', material: 'Galvalume', pesoUnit: 2.30, comp: 0.30, custom: false },
-  { cod: '02003', desc: 'TELHA GALVALUME TP 40 0,43MM 3,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', pesoUnit: 11.28, comp: 3.00, custom: false },
-  { cod: '02008', desc: 'TELHA GALVALUME TP 40 0,43MM 8,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.43mm', pesoUnit: 30.08, comp: 8.00, custom: false },
-  { cod: '02015', desc: 'TELHA GALVALUME OND 17 0,43MM 5,00M', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', pesoUnit: 18.80, comp: 5.00, custom: false },
-  { cod: '02017', desc: 'TELHA GALVALUME OND 17 0,43MM 7,00M', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', pesoUnit: 26.32, comp: 7.00, custom: false },
-  { cod: '02014', desc: 'TELHA GALVALUME OND 17 0,43MM 4,00M', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', pesoUnit: 15.04, comp: 4.00, custom: false },
-  { cod: '02013', desc: 'TELHA GALVALUME OND 17 0,43MM 3,00M', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', pesoUnit: 11.28, comp: 3.00, custom: false },
-  { cod: '02018', desc: 'TELHA GALVALUME OND 17 0,43MM 8,00M', perfil: 'Ondulada 17', material: 'Galvalume 0.43mm', pesoUnit: 30.08, comp: 8.00, custom: false },
-  { cod: '01976', desc: 'TELHA GALVALUME #0,32 TRAP 40 6,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.32mm', pesoUnit: 17.70, comp: 6.00, custom: false },
-  { cod: '02022', desc: 'TELHA CUMEEIRA GL OND 17 ABAS 300MM', perfil: 'Cumeeira', material: 'Galvalume', pesoUnit: 2.30, comp: 0.30, custom: false },
-  { cod: '02020A', desc: 'TELHA CUMEEIRA GL TRAP 40 ABAS 400MM', perfil: 'Cumeeira', material: 'Galvalume', pesoUnit: 3.10, comp: 0.40, custom: false },
-  { cod: '01974', desc: 'TELHA GALVALUME #0,32 TRAP 40 4,00M', perfil: 'Trapezoidal 40', material: 'Galvalume 0.32mm', pesoUnit: 11.80, comp: 4.00, custom: false },
+// Catálogo geral de PA para quem ainda importa CATALOGO_PRODUTOS
+export const CATALOGO_PRODUTOS = [
+  ...CATALOGO_TELHAS,
+  ...CATALOGO_PERFIL,
 ];
+
+
+''
