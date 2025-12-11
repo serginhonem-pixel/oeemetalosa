@@ -211,19 +211,29 @@ export default function OeeDashboard({
       diasNoPeriodo = Math.floor((endDate - startDate) / MS_PER_DAY) + 1;
     }
 
-    // --- FUNÇÃO DE FILTRO CENTRALIZADA ---
+    // --- FUNÇÃO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
     const filterData = (item) => {
         // 1. Filtro de Data
         if (!item.data) return false;
         const d = new Date(`${item.data}T00:00:00`);
         const dataOk = d >= startDate && d <= endDate;
         
-        // 2. Filtro de Máquina
-        // Se maquinaId estiver vazio, aceita tudo. 
-        // Se item não tiver máquina (legado), aceita também para não sumir do gráfico geral.
-        // Se item tiver máquina, tem que bater com o filtro.
-        const itemMaq = item.maquinaId || item.maquina;
-        const maquinaOk = !maquinaId || !itemMaq || itemMaq === maquinaId;
+        // 2. Filtro de Máquina (aceita id ou nome)
+        const idRegistro = item.maquinaId || item.maquina || item.maquinaid;
+        const nomeRegistro = item.maquinaNome || item.maquinaExibicao;
+
+        const maquinaSelecionadaObj = maquinasAtivas.find(
+          (m) =>
+            m.maquinaId === maquinaId ||
+            m.id === maquinaId ||
+            m.nomeExibicao === maquinaId
+        );
+        const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao;
+
+        const maquinaOk =
+          !maquinaId ||
+          idRegistro === maquinaId ||
+          (!!nomeSelecionado && (idRegistro === nomeSelecionado || nomeRegistro === nomeSelecionado));
   
         return dataOk && maquinaOk;
     };
@@ -277,11 +287,21 @@ export default function OeeDashboard({
       const qtd = Number(item.qtd) || 0;
       producaoTotalPcs += qtd;
 
-      let peso = 0;
-      const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
-      if (prodInfo && prodInfo.pesoUnit) {
-        peso = qtd * Number(prodInfo.pesoUnit || 0);
+      // Usa peso já salvo no registro; se não houver, calcula a partir do catálogo
+      let peso = Number(item.pesoTotal) || 0;
+      if (!peso) {
+        const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
+        if (prodInfo) {
+          if (prodInfo.custom) {
+            const comp = Number(item.comp || item.compMetros || prodInfo.comp || 0);
+            const kgMetro = Number(prodInfo.kgMetro || 0);
+            peso = qtd * comp * kgMetro;
+          } else {
+            peso = qtd * Number(prodInfo.pesoUnit || 0);
+          }
+        }
       }
+
       producaoTotalKg += peso;
 
       if (dailyMap[iso]) {
@@ -409,11 +429,14 @@ export default function OeeDashboard({
                     className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer min-w-[140px]"
                 >
                     <option value="" className="bg-zinc-900">Todas as Máquinas</option>
-                    {maquinasAtivas.map(m => (
-                        <option key={m.id} value={m.id} className="bg-zinc-900">
-                            {m.nomeExibicao}
-                        </option>
-                    ))}
+                    {maquinasAtivas.map(m => {
+                        const val = m.maquinaId || m.id || m.nomeExibicao;
+                        return (
+                          <option key={val} value={val} className="bg-zinc-900">
+                              {m.nomeExibicao}
+                          </option>
+                        );
+                    })}
                 </select>
             </div>
         </div>

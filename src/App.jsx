@@ -4,14 +4,14 @@ import {
   deleteDoc,
   doc,
   getDocs,
-  setDoc,
-  updateDoc
+  setDoc
 } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 import { db } from "./services/firebase";
 import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
+import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
 
 import {
   Activity, AlertOctagon, ArrowRight, BarChart3, Box,
@@ -24,8 +24,7 @@ import {
 } from 'lucide-react';
 
 import BackupControls from './components/BackupControls';
-import { IS_PRODUCTION } from './services/firebase';
-import { safeAddDoc } from './services/firebaseSafeWrites';
+import { safeAddDoc, safeUpdateDoc, safeDeleteDoc } from './services/firebaseSafeWrites';
 
 
 // --- GRÁFICOS (RECHARTS) ---
@@ -56,6 +55,9 @@ import { ProducaoScreen } from "./components/ProducaoScreen";
 import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
+
+
+const DEV_CACHE_KEY = getDevCacheKey();
 
 
 const formatarDataBR = (dataISO) => {
@@ -229,15 +231,20 @@ const PrintStyles = () => (
 );
 
 
+
 export default function App() {
 
   const [maquinaSelecionada, setMaquinaSelecionada] = useState("");
   // datas base do app, agora 100% fuso local
-  const hoje = getLocalISODate();
+  const hojeDate = new Date();
+  const hoje = getLocalISODate(hojeDate);
   const amanha = getLocalISODate(
     new Date(Date.now() + 24 * 60 * 60 * 1000)
   );
   const hojeISO = hoje;
+  const primeiroDiaMesAtual = getLocalISODate(
+    new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1)
+  );
 
   const [abaAtiva, setAbaAtiva] = useState('agenda');
 
@@ -263,20 +270,21 @@ export default function App() {
   const [formApontProdCod, setFormApontProdCod] = useState('');
   const [formApontProdDesc, setFormApontProdDesc] = useState('');
   const [formApontProdQtd, setFormApontProdQtd] = useState('');
+  const [formApontProdComp, setFormApontProdComp] = useState('');
   const [formApontProdDestino, setFormApontProdDestino] = useState('Estoque');
   const [producaoEmEdicaoId, setProducaoEmEdicaoId] = useState(null);
   const [formApontProdMaquina, setFormApontProdMaquina] = useState('');
 
   // Indicadores
-  const [dataInicioInd, setDataInicioInd] = useState(hoje);
-const [dataFimInd, setDataFimInd] = useState(
-  getLocalISODate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
-);  const [capacidadeDiaria, setCapacidadeDiaria] = useState(15000); 
+  const [dataInicioInd, setDataInicioInd] = useState(primeiroDiaMesAtual);
+const [dataFimInd, setDataFimInd] = useState(hoje);
+  const [capacidadeDiaria, setCapacidadeDiaria] = useState(15000); 
   const [turnoHoras, setTurnoHoras] = useState(9);
 
   // Modal Manual (COMPLETO)
   
   const [showModalNovaOrdem, setShowModalNovaOrdem] = useState(false);
+  const [showModalSelecaoMaquina, setShowModalSelecaoMaquina] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
   const [novaDataReprogramacao, setNovaDataReprogramacao] = useState('');
 const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
@@ -330,6 +338,22 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
 // ... seus useStates estão aqui em cima ...
 
   // --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
+
+  const salvarCacheLocal = (override = {}) => {
+  if (!IS_LOCALHOST) return;
+
+  try {
+    const payload = {
+      producao: override.producao ?? historicoProducaoReal,
+      paradas: override.paradas ?? historicoParadas,
+      // se quiser, adiciona fila de romaneios aqui depois
+    };
+    localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.error("Erro ao salvar cache local:", err);
+  }
+};
+
   
     const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
@@ -405,22 +429,41 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
 
   
 useEffect(() => {
-  // --- MODO DEV: CARREGAR JSON LOCAL ---
-  // Verifica se você está rodando no computador (localhost)
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    console.log("🏠 Modo Dev detectado: Carregando dados do arquivo local...");
-    
-    // Injeta os dados do JSON direto nos estados
-    setFilaProducao(dadosLocais.romaneios || []);
-    setHistoricoProducaoReal(dadosLocais.producao || []);
-    setHistoricoParadas(dadosLocais.paradas || []);
-    
-    return; // 🛑 PARE AQUI! Isso impede que ele tente conectar no Firebase
-  }
-
-  // --- MODO PROD: CARREGAR FIREBASE ---
-  // Se chegou aqui, é porque está na Vercel/Produção
   const carregarDados = async () => {
+    // ------------------------------
+    // MODO DEV (localhost)
+    // ------------------------------
+    if (IS_LOCALHOST) {
+      console.log("🏠 Modo Dev detectado... tentando ler do localStorage");
+
+      try {
+        const salvo = localStorage.getItem(DEV_CACHE_KEY);
+
+        if (salvo) {
+          const parsed = JSON.parse(salvo);
+          console.log("🔄 Cache local encontrado, carregando...");
+
+          setFilaProducao(parsed.romaneios || []);
+          setHistoricoProducaoReal(parsed.producao || []);
+          setHistoricoParadas(parsed.paradas || []);
+
+          return; // já carregou do cache, não precisa ir pro JSON nem Firebase
+        }
+      } catch (err) {
+        console.error("Erro ao ler cache local:", err);
+      }
+
+      // Se não tiver nada no localStorage, usa o JSON da pasta (como você já fazia)
+      console.log("📁 Sem cache local, carregando do backup JSON...");
+      setFilaProducao(dadosLocais.romaneios || []);
+      setHistoricoProducaoReal(dadosLocais.producao || []);
+      setHistoricoParadas(dadosLocais.paradas || []);
+      return; // importante: não ir para o bloco do Firebase
+    }
+
+    // ------------------------------
+    // MODO PRODUÇÃO (Vercel / nuvem)
+    // ------------------------------
     try {
       console.log("☁️ Modo Produção: Buscando dados do Firebase...");
 
@@ -461,11 +504,25 @@ useEffect(() => {
   carregarDados();
 }, []);
 
-// const IS_LOCALHOST =
-//   typeof window !== "undefined" &&
-//   (window.location.hostname === "localhost" ||
-//    window.location.hostname === "127.0.0.1" ||
-//    window.location.hostname === "");
+
+
+
+useEffect(() => {
+  if (!IS_LOCALHOST) return; // em produção não mexe em localStorage
+
+  try {
+    const payload = {
+      romaneios: filaProducao,
+      producao: historicoProducaoReal,
+      paradas: historicoParadas,
+    };
+
+    localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(payload));
+    // console.log("💾 Cache local atualizado");
+  } catch (err) {
+    console.error("Erro ao salvar cache local:", err);
+  }
+}, [filaProducao, historicoProducaoReal, historicoParadas]);
 
 
 
@@ -621,6 +678,10 @@ const handleDownloadModeloParadas = () => {
   
   const salvarRomaneio = async () => {
   try {
+    if (!maquinaSelecionada) {
+      alert("Selecione a mÇ­quina para esta ordem.");
+      return;
+    }
     if (!formRomaneioId || !formDataProducao) {
       alert("Preencha o Romaneio e a Data.");
       return;
@@ -644,6 +705,7 @@ const handleDownloadModeloParadas = () => {
       cliente: formCliente || "",
       totvs: formTotvs || "",
       tipo: isEstoque ? "EST" : "PED",
+      maquinaId: maquinaSelecionada,
       itens: itensNoPedido,
       updatedAt: agoraISO,
     };
@@ -682,6 +744,7 @@ const handleDownloadModeloParadas = () => {
         cliente: formCliente || "",
         totvs: formTotvs || "",
         tipo: isEstoque ? "EST" : "PED",
+        maquinaId: maquinaSelecionada,
         itens: itensReprogramados,
         origemReprogramacao: sysIdAtual,
         createdFromReprogramacao: true,
@@ -719,9 +782,10 @@ const handleDownloadModeloParadas = () => {
 
 
 
-  const abrirModalNovo = () => { limparFormularioGeral(); setShowModalNovaOrdem(true); };
+const abrirModalNovo = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
   const abrirModalEdicao = (r) => {
   setRomaneioEmEdicaoId(r.sysId);          // id do doc no Firebase
+setMaquinaSelecionada(r.maquinaId || r.maquina || '');
 setFormRomaneioId(r.id || r.romaneioId || '');
   setFormCliente(r.cliente);
   setFormTotvs(r.totvs || '');
@@ -734,6 +798,12 @@ setIsEstoque((r.id || r.romaneioId) === 'ESTOQUE');
 };
 
   const limparFormularioGeral = () => { setFormRomaneioId(''); setFormCliente(''); setFormTotvs(''); setFormDataProducao(hoje); setItensNoPedido([]); setIsEstoque(false); resetItemFields(); setRomaneioEmEdicaoId(null); };
+  const abrirSelecaoMaquina = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
+  const handleEscolherMaquina = (id) => {
+    setMaquinaSelecionada(id);
+    setShowModalSelecaoMaquina(false);
+    setShowModalNovaOrdem(true);
+  };
 const deletarRomaneio = async (sysId) => {
   const ok = window.confirm("Excluir esse romaneio?");
   if (!ok) return;
@@ -756,7 +826,14 @@ const deletarRomaneio = async (sysId) => {
       const codigo = e.target.value; setFormApontProdCod(codigo);
       if(CATALOGO_PRODUTOS) {
         const produto = CATALOGO_PRODUTOS.find(p => p.cod === codigo);
-        if(produto) setFormApontProdDesc(produto.desc); else setFormApontProdDesc('');
+        if(produto) {
+          setFormApontProdDesc(produto.desc);
+          // sugere o comprimento padrÇ½o ou limpa para sob medida
+          setFormApontProdComp(produto.custom ? '' : (produto.comp || ''));
+        } else {
+          setFormApontProdDesc('');
+          setFormApontProdComp('');
+        }
       }
   };
 const limparFormApontamentoProducao = () => {
@@ -765,6 +842,7 @@ const limparFormApontamentoProducao = () => {
   setFormApontProdCod('');
   setFormApontProdDesc('');
   setFormApontProdQtd('');
+  setFormApontProdComp('');
   setFormApontProdDestino('Estoque');
 };
 
@@ -774,6 +852,11 @@ const iniciarEdicaoProducao = (registro) => {
   setFormApontProdCod(registro.cod || '');
   setFormApontProdDesc(registro.desc || '');
   setFormApontProdQtd(String(registro.qtd || ''));
+  setFormApontProdComp(
+    registro.comp !== undefined && registro.comp !== null
+      ? String(registro.comp)
+      : ''
+  );
   setFormApontProdDestino(registro.destino || 'Estoque');
 };
 
@@ -793,19 +876,49 @@ const salvarApontamentoProducao = async (e) => {
 
   const dataISO = String(formApontProdData || "").trim();
 
+  // Dados do produto
+  const produtoCatalogo = CATALOGO_PRODUTOS?.find(
+    (p) => p.cod === formApontProdCod
+  );
+
+  const compNumero = (() => {
+    const valor = formApontProdComp || produtoCatalogo?.comp || 0;
+    const num = parseFloat(valor);
+    return Number.isFinite(num) ? num : 0;
+  })();
+
+  if (produtoCatalogo?.custom && !compNumero) {
+    alert("Informe o comprimento (m) para itens sob medida.");
+    return;
+  }
+
+  const pesoPorPeca = (() => {
+    if (produtoCatalogo?.custom) {
+      const kgMetro = produtoCatalogo?.kgMetro || 0;
+      return kgMetro * compNumero;
+    }
+    return produtoCatalogo?.pesoUnit || 0;
+  })();
+
+  const pesoTotal = pesoPorPeca * qtd;
+  const m2Total = compNumero * qtd; // considera largura padronizada de 1m
+
   const obj = {
     data: dataISO,
     cod: formApontProdCod,
     desc: formApontProdDesc || "Item s/ descrição",
     qtd,
+    comp: compNumero,
+    pesoTotal,
+    pesoPorPeca,
+    m2Total,
     destino: formApontProdDestino || "Estoque",
-    maquinaId: formApontProdMaquina || "", 
+    maquinaId: formApontProdMaquina || "",
     };
 
   try {
     if (apontamentoEmEdicaoId) {
-      const docRef = doc(db, "producao", String(apontamentoEmEdicaoId));
-      await updateDoc(docRef, obj);
+      await safeUpdateDoc("producao", String(apontamentoEmEdicaoId), obj);
 
       setHistoricoProducaoReal((prev) =>
         prev.map((p) =>
@@ -813,8 +926,9 @@ const salvarApontamentoProducao = async (e) => {
         )
       );
     } else {
-      const docRef = await addDoc(collection(db, "producao"), obj);
-      setHistoricoProducaoReal((prev) => [{ id: docRef.id, ...obj }, ...prev]);
+      const docRef = await safeAddDoc("producao", obj);
+      const newId = docRef?.id || `local-${Date.now()}`;
+      setHistoricoProducaoReal((prev) => [{ id: newId, ...obj }, ...prev]);
     }
 
     // limpa o form
@@ -822,6 +936,7 @@ const salvarApontamentoProducao = async (e) => {
     setFormApontProdQtd("");
     setFormApontProdCod("");
     setFormApontProdDesc("");
+    setFormApontProdComp("");
     setFormApontProdDestino("Estoque");
     // se quiser, pode voltar a data pra hoje aqui
   } catch (err) {
@@ -838,7 +953,7 @@ const deletarProducaoReal = async (id) => {
   setHistoricoProducaoReal((prev) => prev.filter((i) => i.id !== id));
 
   try {
-    await deleteDoc(doc(db, "producao", id));
+    await safeDeleteDoc("producao", id);
   } catch (err) {
     console.error("Erro ao apagar produção:", err);
     alert("Erro ao apagar no servidor. Veja o console (F12).");
@@ -932,51 +1047,17 @@ const deletarProducaoReal = async (id) => {
 
 
   // --- SALVAR PARADA ---
-  const salvarApontamentoParada = async (e) => {
-  e.preventDefault();
-  if (!formParadaInicio || !formParadaFim || !formParadaMotivoCod)
-    return alert("Preencha tudo.");
-
-  const d1 = new Date(`${formParadaData}T${formParadaInicio}`);
-  const d2 = new Date(`${formParadaData}T${formParadaFim}`);
-  const diffMs = d2 - d1;
-  const duracaoMin = Math.floor(diffMs / 60000);
-
-  if (duracaoMin <= 0) return alert("Hora final deve ser maior.");
-
-  const motivo = dicionarioLocal.find(
-    (d) => d.codigo === formParadaMotivoCod
-  );
-
-  const novo = {
-    data: formParadaData,
-    inicio: formParadaInicio,
-    fim: formParadaFim,
-    duracao: duracaoMin,
-    codMotivo: formParadaMotivoCod,
-    descMotivo: motivo?.evento || "",
-    grupo: motivo?.grupo || "",
-    obs: formParadaObs || "",
-  };
-
+  // --- SALVAR PARADA (apenas na nuvem, recebendo a parada pronta) ---
+const salvarApontamentoParada = async (novaParada) => {
   try {
-    const docRef = await addDoc(collection(db, "paradas"), novo);
-
-    setHistoricoParadas((prev) => [
-      ...prev,
-      { id: docRef.id, ...novo },
-    ]);
-
-    setShowModalParada(false);
-    setFormParadaInicio(formParadaFim);
-    setFormParadaFim("");
-    setFormParadaObs("");
-    setFormParadaMotivoCod("");
+    const docRef = await addDoc(collection(db, "paradas"), novaParada);
+    return docRef.id; // devolve o id gerado
   } catch (err) {
     console.error("Erro ao salvar parada no Firebase:", err);
-    alert("Erro ao salvar parada no servidor.");
+    throw err; // deixa o handleRegistrarParada tratar o erro
   }
 };
+
 
 const deletarParada = async (id) => {
   const ok = window.confirm("Remover essa parada?");
@@ -1353,20 +1434,19 @@ const handleRegistrarParada = async (novaParada) => {
     ...novaParada,
   };
 
-  // 1) SEMPRE joga no histórico local (pra aparecer na tela)
+  // 1) SEMPRE joga no histórico local
   setHistoricoParadas((prev) => [...prev, paradaLocal]);
 
-  // 2) Se estiver rodando em localhost, não tenta salvar no Firebase
+  // 2) Em localhost, não chama Firebase
   if (IS_LOCALHOST) {
     console.info("[Paradas] Rodando em localhost, não salvando no Firebase.");
     return;
   }
 
-  // 3) Em produção, tenta salvar de verdade
+  // 3) Em produção, salva e troca o id temporário pelo id real
   try {
     const idGerado = await salvarApontamentoParada(novaParada);
 
-    // se o backend devolver um id, atualiza o registro local com ele
     if (idGerado) {
       setHistoricoParadas((prev) =>
         prev.map((p) =>
@@ -1379,6 +1459,7 @@ const handleRegistrarParada = async (novaParada) => {
     alert("Erro ao salvar parada, tenta de novo.");
   }
 };
+
 
 
 const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
@@ -1742,7 +1823,7 @@ const handleImportBackup = (json) => {
         <FileText size={20} />
       </button>
       <button
-        onClick={abrirModalNovo}
+        onClick={abrirSelecaoMaquina}
         className="bg-purple-600 px-4 py-2 rounded font-bold text-white flex gap-2 items-center flex-1 md:flex-none justify-center"
       >
         <Plus size={20} /> Novo
@@ -1853,6 +1934,8 @@ const handleImportBackup = (json) => {
     setFormApontProdCod={setFormApontProdCod}
     formApontProdQtd={formApontProdQtd}
     setFormApontProdQtd={setFormApontProdQtd}
+    formApontProdComp={formApontProdComp}
+    setFormApontProdComp={setFormApontProdComp}
     formApontProdDestino={formApontProdDestino}
     setFormApontProdDestino={setFormApontProdDestino}
     
@@ -1909,18 +1992,61 @@ const handleImportBackup = (json) => {
                   <TrendingUp className="text-pink-500" size={28} /> 
                   <span className="truncate">Carga Máquina</span>
                 </h1>
-                <div className="w-full md:w-auto grid grid-cols-2 md:flex gap-3 bg-zinc-900/50 p-3 rounded-xl border border-white/10 shadow-xl">
-                  <div className="col-span-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Início</label>
-                    <input type="date" value={dataInicioInd} onChange={(e) => setDataInicioInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
+                <div className="w-full md:w-auto flex flex-col gap-2">
+                  <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden self-end">
+                    <button
+                      onClick={() => {
+                        setDataInicioInd(hoje);
+                        setDataFimInd(hoje);
+                      }}
+                      className="px-3 py-1.5 text-zinc-400 hover:bg-white/5"
+                    >
+                      Hoje
+                    </button>
+                    <button
+                      onClick={() => {
+                        const inicio = getLocalISODate(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
+                        setDataInicioInd(inicio);
+                        setDataFimInd(hoje);
+                      }}
+                      className="px-3 py-1.5 text-zinc-400 hover:bg-white/5"
+                    >
+                      7 Dias
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDataInicioInd(primeiroDiaMesAtual);
+                        setDataFimInd(hoje);
+                      }}
+                      className="px-3 py-1.5 bg-emerald-500 text-black font-semibold"
+                    >
+                      Mês
+                    </button>
+                    <button
+                      onClick={() => {
+                        const inicioAno = getLocalISODate(new Date(hojeDate.getFullYear(), 0, 1));
+                        setDataInicioInd(inicioAno);
+                        setDataFimInd(hoje);
+                      }}
+                      className="px-3 py-1.5 text-zinc-400 hover:bg-white/5"
+                    >
+                      Ano
+                    </button>
                   </div>
-                  <div className="col-span-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Fim</label>
-                    <input type="date" value={dataFimInd} onChange={(e) => setDataFimInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
-                  </div>
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-[10px] text-pink-500 font-bold uppercase block mb-1">Meta/Dia</label>
-                    <input type="number" value={capacidadeDiaria} onChange={(e) => setCapacidadeDiaria(e.target.value)} className="w-full bg-black/50 border border-pink-500/30 rounded p-1.5 text-white text-xs font-mono" />
+
+                  <div className="grid grid-cols-2 md:flex gap-3 bg-zinc-900/50 p-3 rounded-xl border border-white/10 shadow-xl items-center">
+                    <div className="col-span-1">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Início</label>
+                      <input type="date" value={dataInicioInd} onChange={(e) => setDataInicioInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Fim</label>
+                      <input type="date" value={dataFimInd} onChange={(e) => setDataFimInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
+                    </div>
+                    <div className="col-span-2 md:col-span-1">
+                      <label className="text-[10px] text-pink-500 font-bold uppercase block mb-1">Meta/Dia</label>
+                      <input type="number" value={capacidadeDiaria} onChange={(e) => setCapacidadeDiaria(e.target.value)} className="w-full bg-black/50 border border-pink-500/30 rounded p-1.5 text-white text-xs font-mono" />
+                    </div>
                   </div>
                 </div>
               </header>
@@ -2198,6 +2324,49 @@ const handleImportBackup = (json) => {
             <div className="p-4 md:p-6 border-t border-white/10 bg-white/5 flex gap-3 justify-end">
                 <button onClick={() => setShowModalNovaOrdem(false)} className="px-6 py-3 bg-zinc-800 text-white rounded-lg font-bold border border-white/10">Cancelar</button>
                 <button onClick={salvarRomaneio} className="px-8 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg flex items-center gap-2"><ArrowRight size={20} /> Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL SELEÇÃO DE MÁQUINA --- */}
+      {showModalSelecaoMaquina && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+              <h3 className="text-lg font-bold text-white">Escolha a máquina</h3>
+              <button
+                onClick={() => setShowModalSelecaoMaquina(false)}
+                className="text-zinc-400 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+              {CATALOGO_MAQUINAS.map((m) => (
+                <button
+                  key={m.maquinaId || m.id}
+                  onClick={() => handleEscolherMaquina(m.maquinaId || m.id)}
+                  className="w-full text-left bg-zinc-800/70 hover:bg-zinc-800 border border-white/10 hover:border-emerald-400/40 rounded-xl px-4 py-3 flex items-center justify-between gap-3 transition-colors"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-white">
+                      {m.nomeExibicao}
+                    </div>
+                    <div className="text-[11px] text-zinc-400">
+                      {m.grupo === 'GRUPO_TELHAS' ? 'Linha de Telhas' : 'Perfil / Dobra'}
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    Selecionar
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="p-4 border-t border-white/10 bg-white/5 text-[12px] text-zinc-400">
+              Selecione primeiro a máquina para abrir o formulário de romaneio.
             </div>
           </div>
         </div>

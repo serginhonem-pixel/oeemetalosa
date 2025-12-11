@@ -1,5 +1,5 @@
-// src/ProducaoScreen.jsx
-import React, { useMemo } from "react";
+// src/components/ProducaoScreen.jsx
+import React, { useMemo, useRef } from "react";
 import {
   Factory,
   Box,
@@ -15,17 +15,19 @@ import {
 import { CATALOGO_PRODUTOS } from "../data/catalogoProdutos";
 
 export const ProducaoScreen = ({
-  // estado do form
+  // estado do form (vem do App)
   formApontProdData,
   setFormApontProdData,
   formApontProdCod,
   setFormApontProdCod,
   formApontProdQtd,
   setFormApontProdQtd,
+  formApontProdComp,
+  setFormApontProdComp,
   formApontProdDestino,
   setFormApontProdDestino,
 
-  // MÁQUINA
+  // máquina
   formApontProdMaquina,
   setFormApontProdMaquina,
   catalogoMaquinas,
@@ -44,60 +46,148 @@ export const ProducaoScreen = ({
   // import/export
   handleUploadApontamentoProducao,
   handleDownloadModeloApontProd,
+
+  // opcional: meta do dia
+  metaProducaoDia,
 }) => {
-  // ----------------- FILTRO DO DIA + MÁQUINA -----------------
-  const producaoFiltrada = historicoProducaoReal.filter((p) => {
-    const dataOk = p.data === formApontProdData;
+  // apenas para focar na quantidade se quiser
+  const inputQtdRef = useRef(null);
+  const inputCompRef = useRef(null);
 
-    const maquinaOk =
-      !formApontProdMaquina ||
-      p.maquinaId === formApontProdMaquina ||
-      p.maquina === formApontProdMaquina;
+  // ---------------------------------------------------------------------------
+  //  FILTRO HISTÓRICO: DATA + MÁQUINA
+  // ---------------------------------------------------------------------------
 
-    return dataOk && maquinaOk;
-  });
+  const producaoFiltrada = useMemo(() => {
+    return (historicoProducaoReal || []).filter((p) => {
+      const dataOk = p.data === formApontProdData;
 
-  // ----------------- TOTALIZADOR (PEÇAS / METROS / KG) -----------------
-  const { totalPecasDia, totalMetrosDia, totalKgDia } = useMemo(() => {
-    let totalPecas = 0;
-    let totalMetros = 0;
-    let totalKg = 0;
+      if (!formApontProdMaquina) return dataOk;
 
-    producaoFiltrada.forEach((p) => {
-      const qtd = Number(p.qtd) || 0;
-      totalPecas += qtd;
+      const maquinaRegistro = p.maquinaId || p.maquina || null;
+      if (!maquinaRegistro) return dataOk;
 
-      const prod = CATALOGO_PRODUTOS.find((prod) => prod.cod === p.cod);
-      if (!prod) return;
+      const maquinaSelecionadaObj = catalogoMaquinas?.find(
+        (m) =>
+          m.maquinaId === formApontProdMaquina || m.id === formApontProdMaquina
+      );
+      const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao;
 
-      const comp = Number(prod.comp) || 0;       // comprimento em metros (ou unidade que você usa)
-      const kgMetro = Number(prod.kgMetro) || 0; // kg por metro, se existir
-      const pesoUnit = Number(prod.pesoUnit) || 0; // kg por peça, se existir
+      const maquinaOk =
+        maquinaRegistro === formApontProdMaquina ||
+        (!!nomeSelecionado && maquinaRegistro === nomeSelecionado);
 
-      // Metros produzidos
-      if (comp > 0) {
-        totalMetros += qtd * comp;
-      }
-
-      // Peso total (prioriza pesoUnit; se não tiver, usa kgMetro * comp)
-      if (pesoUnit > 0) {
-        totalKg += qtd * pesoUnit;
-      } else if (kgMetro > 0 && comp > 0) {
-        totalKg += qtd * comp * kgMetro;
-      }
+      return dataOk && maquinaOk;
     });
+  }, [historicoProducaoReal, formApontProdData, formApontProdMaquina, catalogoMaquinas]);
 
-    return { totalPecasDia: totalPecas, totalMetrosDia: totalMetros, totalKgDia: totalKg };
-  }, [producaoFiltrada]);
+  const totalPecasDia = useMemo(
+    () =>
+      producaoFiltrada.reduce(
+        (acc, curr) => acc + (Number(curr.qtd) || 0),
+        0
+      ),
+    [producaoFiltrada]
+  );
 
-  const formatNumber = (v, frac = 0) =>
-    (Number(v) || 0).toLocaleString("pt-BR", {
-      minimumFractionDigits: frac,
-      maximumFractionDigits: frac,
-    });
+  const produtoSelecionado = useMemo(
+    () => CATALOGO_PRODUTOS.find((p) => p.cod === formApontProdCod),
+    [formApontProdCod]
+  );
+
+  const calcularTotaisRegistro = (registro) => {
+    const prod = CATALOGO_PRODUTOS.find((p) => p.cod === registro.cod);
+    const qtd = Number(registro.qtd) || 0;
+    const comp = Number(
+      registro.comp ??
+        registro.compMetros ??
+        prod?.comp ??
+        0
+    ) || 0;
+
+    const pesoPorPeca =
+      registro.pesoPorPeca ??
+      (prod?.custom
+        ? (prod?.kgMetro || 0) * comp
+        : prod?.pesoUnit || 0);
+
+    const pesoTotal = registro.pesoTotal ?? pesoPorPeca * qtd;
+    const m2Total = registro.m2Total ?? comp * qtd;
+
+    return { qtd, comp, pesoPorPeca, pesoTotal, m2Total };
+  };
+
+  const totalM2Dia = useMemo(
+    () =>
+      producaoFiltrada.reduce(
+        (acc, reg) => acc + calcularTotaisRegistro(reg).m2Total,
+        0
+      ),
+    [producaoFiltrada]
+  );
+
+  const totalPesoDia = useMemo(
+    () =>
+      producaoFiltrada.reduce(
+        (acc, reg) => acc + calcularTotaisRegistro(reg).pesoTotal,
+        0
+      ),
+    [producaoFiltrada]
+  );
+
+  const metaDia = metaProducaoDia ?? null;
+  const percentualMeta =
+    metaDia && metaDia > 0 ? Math.min(100, (totalPecasDia / metaDia) * 100) : 0;
+
+  // ---------------------------------------------------------------------------
+  //  HANDLERS
+  // ---------------------------------------------------------------------------
+
+  const handleSelecionarProduto = (cod) => {
+    setFormApontProdCod(cod);
+
+    if (handleSelectProdApontamento) {
+      handleSelectProdApontamento({ target: { value: cod } });
+    }
+
+    // Se quiser, já sugere "Estoque" na primeira vez
+    if (!formApontProdDestino) {
+      setFormApontProdDestino("Estoque");
+    }
+
+    if (inputQtdRef.current) {
+      inputQtdRef.current.focus();
+      inputQtdRef.current.select();
+    }
+  };
+
+
+
+  const handleKeyDownQtd = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (salvarApontamentoProducao) salvarApontamentoProducao(e);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  //  RENDER
+  // ---------------------------------------------------------------------------
+
+  const isSobMedida = produtoSelecionado?.custom;
+  const compSugerido = produtoSelecionado?.comp || "";
+  const compAtualNumero =
+    parseFloat(formApontProdComp || compSugerido || 0) || 0;
+  const qtdNumero = Number(formApontProdQtd) || 0;
+  const pesoPorPecaPreview = isSobMedida
+    ? (produtoSelecionado?.kgMetro || 0) * compAtualNumero
+    : (produtoSelecionado?.pesoUnit || 0);
+  const pesoTotalPreview = pesoPorPecaPreview * qtdNumero;
+  const m2Preview = compAtualNumero * qtdNumero;
 
   return (
     <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
+      {/* HEADER PRINCIPAL */}
       <header className="mb-6 flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center">
           <Factory className="text-emerald-400" size={20} />
@@ -134,10 +224,7 @@ export const ProducaoScreen = ({
             </span>
           </div>
 
-          <form
-            onSubmit={salvarApontamentoProducao}
-            className="flex flex-col gap-3"
-          >
+          <form onSubmit={salvarApontamentoProducao} className="flex flex-col gap-3">
             {/* DATA */}
             <div>
               <label className="text-[10px] font-bold text-zinc-500 uppercase">
@@ -145,6 +232,7 @@ export const ProducaoScreen = ({
               </label>
               <input
                 type="date"
+                required
                 value={formApontProdData}
                 onChange={(e) => setFormApontProdData(e.target.value)}
                 className="w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
@@ -161,34 +249,70 @@ export const ProducaoScreen = ({
                 onChange={(e) => setFormApontProdMaquina(e.target.value)}
                 className="w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
               >
-                <option value="">Selecione a máquina...</option>
+                <option value="">Todas / não informado</option>
                 {catalogoMaquinas &&
                   catalogoMaquinas.map((m) => (
-                    <option key={m.id} value={m.id}>
+                    <option key={m.maquinaId || m.id} value={m.maquinaId || m.id}>
                       {m.nomeExibicao}
                     </option>
                   ))}
               </select>
+              <p className="text-[10px] text-zinc-600 mt-1">
+                Essa máquina também é usada para filtrar o histórico.
+              </p>
             </div>
 
-            {/* PRODUTO */}
+            {/* PRODUTO - APENAS LISTA */}
             <div>
               <label className="text-[10px] font-bold text-zinc-500 uppercase">
                 Produto
               </label>
-              <select
-                value={formApontProdCod}
-                onChange={handleSelectProdApontamento}
+              <select                
+                value={formApontProdCod || ""}
+                onChange={(e) => handleSelecionarProduto(e.target.value)}
                 className="w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
               >
                 <option value="">Selecione...</option>
                 {CATALOGO_PRODUTOS.map((p) => (
-                  <option key={p.cod} value={p.cod}>
+                  <option key={`${p.cod}-${p.desc}`} value={p.cod}>
                     {p.cod} - {p.desc}
                   </option>
                 ))}
               </select>
+              <p className="text-[10px] text-zinc-600 mt-1">
+                Selecione diretamente o item da lista.
+              </p>
             </div>
+
+            {isSobMedida && (
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-amber-400 uppercase">
+                    Comprimento (m)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => inputCompRef.current?.focus()}
+                    className="text-[10px] px-2 py-1 rounded bg-amber-500/20 border border-amber-400/40 text-amber-200 hover:bg-amber-500/30"
+                  >
+                    Informar medida
+                  </button>
+                </div>
+                <input
+                  ref={inputCompRef}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formApontProdComp}
+                  onChange={(e) => setFormApontProdComp(e.target.value)}
+                  className="w-full mt-1 bg-zinc-900 border border-amber-500/40 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+                  placeholder="Ex: 3,50"
+                />
+                <p className="text-[10px] text-amber-200 mt-1">
+                  Item sob medida: informe o comprimento para calcular m² e peso.
+                </p>
+              </div>
+            )}
 
             {/* QTD + DESTINO */}
             <div className="grid grid-cols-2 gap-3">
@@ -197,10 +321,13 @@ export const ProducaoScreen = ({
                   Qtd
                 </label>
                 <input
+                  ref={inputQtdRef}
                   type="number"
-                  min="0"
+                  min="1"
+                  required
                   value={formApontProdQtd}
                   onChange={(e) => setFormApontProdQtd(e.target.value)}
+                  onKeyDown={handleKeyDownQtd}
                   className="w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
                 />
               </div>
@@ -217,6 +344,13 @@ export const ProducaoScreen = ({
                 />
               </div>
             </div>
+
+            {(qtdNumero > 0 && compAtualNumero > 0) && (
+              <div className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded px-3 py-2 flex items-center justify-between">
+                <span>M²: {(m2Preview).toFixed(2)}</span>
+                <span>Peso: {(pesoTotalPreview).toFixed(2)} kg</span>
+              </div>
+            )}
 
             {/* BOTÕES */}
             <div className="flex flex-col gap-2 mt-2">
@@ -250,7 +384,7 @@ export const ProducaoScreen = ({
                 className="hidden"
                 onChange={handleUploadApontamentoProducao}
               />
-              <label
+            <label
                 htmlFor="input-upload-producao"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] bg-zinc-900 border border-zinc-700 text-zinc-200 cursor-pointer hover:bg-zinc-800"
               >
@@ -274,30 +408,44 @@ export const ProducaoScreen = ({
           <div className="p-4 border-b border-white/10 bg-white/5 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-white flex gap-2 items-center text-sm">
-                <History size={18} /> Histórico Hoje
+                <History size={18} /> Histórico do Dia
               </h3>
               <p className="text-[10px] text-zinc-400">
-                {producaoFiltrada.length} registro(s) em {formApontProdData}
+                {producaoFiltrada.length} registro(s) em{" "}
+                {formApontProdData || "-"}
+                {formApontProdMaquina &&
+                  ` · Máquina: ${
+                    catalogoMaquinas?.find(
+                      (m) => m.id === formApontProdMaquina
+                    )?.nomeExibicao || formApontProdMaquina
+                  }`}
               </p>
             </div>
 
-            {/* RESUMO DO DIA */}
-            <div className="flex flex-col items-end gap-0.5 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
                 <Calculator size={14} className="text-emerald-400" />
-                <span className="text-[11px] font-semibold text-emerald-300">
-                  Resumo do dia
+                <span className="text-xs font-bold text-emerald-400">
+                  Total: {totalPecasDia} un
                 </span>
               </div>
-              <div className="text-[10px] text-emerald-100 font-mono">
-                Peças: {formatNumber(totalPecasDia, 0)} un
+              <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-lg text-blue-200 text-xs font-bold">
+                <span>M²: {totalM2Dia.toFixed(2)}</span>
               </div>
-              <div className="text-[10px] text-emerald-100 font-mono">
-                Metros: {formatNumber(totalMetrosDia, 1)} m
+              <div className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/20 px-3 py-1.5 rounded-lg text-sky-200 text-xs font-bold">
+                <span>Peso: {totalPesoDia.toFixed(1)} kg</span>
               </div>
-              <div className="text-[10px] text-emerald-100 font-mono">
-                Peso: {formatNumber(totalKgDia / 1000, 2)} t
-              </div>
+              {metaDia && metaDia > 0 && (
+                <div className="hidden md:flex flex-col items-end gap-1 text-[10px] text-zinc-300">
+                  <span>Meta: {metaDia} un</span>
+                  <div className="w-28 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500"
+                      style={{ width: `${percentualMeta}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -308,16 +456,21 @@ export const ProducaoScreen = ({
                   <th className="p-4">Item</th>
                   <th className="p-4 text-center">Máquina</th>
                   <th className="p-4 text-center">Qtd</th>
+                  <th className="p-4 text-center">Comp (m)</th>
+                  <th className="p-4 text-center">m²</th>
+                  <th className="p-4 text-center">Peso</th>
                   <th className="p-4 text-xs font-mono">ID</th>
                   <th className="p-4 text-right">#</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {producaoFiltrada.map((p) => {
+                  const metricas = calcularTotaisRegistro(p);
+                  const maquinaId = p.maquinaId || p.maquina;
                   const nomeMaquina =
                     catalogoMaquinas?.find(
-                      (m) => m.id === (p.maquinaId || p.maquina)
-                    )?.nomeExibicao || "-";
+                      (m) => m.maquinaId === maquinaId || m.id === maquinaId
+                    )?.nomeExibicao || maquinaId || "-";
 
                   return (
                     <tr
@@ -337,6 +490,15 @@ export const ProducaoScreen = ({
                       </td>
                       <td className="p-4 text-center font-bold text-white">
                         {p.qtd}
+                      </td>
+                      <td className="p-4 text-center text-zinc-300 text-xs">
+                        {metricas.comp ? metricas.comp.toFixed(2) : "-"}
+                      </td>
+                      <td className="p-4 text-center text-zinc-300 text-xs">
+                        {metricas.m2Total ? metricas.m2Total.toFixed(2) : "-"}
+                      </td>
+                      <td className="p-4 text-center text-zinc-300 text-xs">
+                        {metricas.pesoTotal ? metricas.pesoTotal.toFixed(1) + " kg" : "-"}
                       </td>
                       <td className="p-4 text-zinc-500 font-mono text-xs w-[140px] overflow-hidden truncate">
                         {p.id}
@@ -369,7 +531,7 @@ export const ProducaoScreen = ({
                       colSpan={5}
                       className="p-6 text-center text-xs text-zinc-500"
                     >
-                      Nenhum apontamento para esta data.
+                      Nenhum apontamento para esta combinação de data/máquina.
                     </td>
                   </tr>
                 )}

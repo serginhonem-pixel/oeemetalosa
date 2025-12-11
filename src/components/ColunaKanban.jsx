@@ -1,6 +1,7 @@
 // src/components/ColunaKanban.jsx
 import React from "react";
-import { Layers, CalendarDays } from "lucide-react";
+import { Layers, CalendarDays, Pencil, Factory } from "lucide-react";
+import { CATALOGO_MAQUINAS } from "../data/catalogoMaquinas";
 
 
 const CardRomaneio = ({ romaneio, onEdit }) => (
@@ -128,6 +129,34 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
     return peso;
   };
 
+  const getMaquinaNome = (r) => {
+    const id = r.maquinaId || r.maquina || r.maquinaProgramada;
+    const found = CATALOGO_MAQUINAS.find(
+      (m) => m.maquinaId === id || m.id === id || m.nomeExibicao === id
+    );
+    return found?.nomeExibicao || id || "Máquina não informada";
+  };
+
+  const getResumoItens = (r) => {
+    let qtd = 0;
+    let m2 = 0;
+    if (Array.isArray(r.itens)) {
+      r.itens.forEach((item) => {
+        const q = Number(item?.qtd) || 0;
+        const comp = Number(item?.comp ?? item?.comprimento ?? 0) || 0;
+        qtd += q;
+        m2 += q * comp;
+      });
+    }
+    return { qtd, m2 };
+  };
+
+  const listaRender = listaOrdenada.filter((r) => {
+    const peso = getPesoRomaneio(r);
+    const { qtd, m2 } = getResumoItens(r);
+    return peso > 0 || qtd > 0 || m2 > 0;
+  });
+
 
 
   return (
@@ -192,7 +221,7 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
 
       {/* Lista de cards */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {listaOrdenada.length === 0 && (
+        {listaRender.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center text-zinc-500 text-xs gap-2">
             <div className="w-8 h-8 rounded-full border border-dashed border-zinc-600 flex items-center justify-center text-[10px]">
               0
@@ -201,7 +230,12 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
           </div>
         )}
 
-        {listaOrdenada.map((r) => (
+        {listaRender.map((r) => {
+          const peso = getPesoRomaneio(r);
+          const { qtd, m2 } = getResumoItens(r);
+          const maquina = getMaquinaNome(r);
+
+          return (
           <button
             key={r.sysId}
             onClick={() => onEdit && onEdit(r)}
@@ -211,29 +245,39 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
               px-3 py-2.5 flex flex-col gap-1.5
             `}
           >
-            {/* Topo: hora + cliente + peso */}
+            {/* Topo: cliente + máquina + peso */}
             <div className="flex justify-between gap-2">
-              <div className="flex flex-col gap-0.5">
-                <div className="text-[11px] text-zinc-500 uppercase tracking-[0.16em]">
-                  {r.horaJanela ?? r.hora ?? "Sem horário"}
-                </div>
-                <div className="text-sm font-semibold text-zinc-100 truncate max-w-[180px]">
+              <div className="flex flex-col gap-1">
+                <div className="text-sm font-semibold text-zinc-100 truncate max-w-[200px]">
                   {r.cliente ?? r.destino ?? "Cliente não informado"}
+                </div>
+                <div className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
+                  <Factory size={12} />
+                  <span className="truncate max-w-[180px]">{maquina}</span>
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-[11px] text-zinc-500">Peso</div>
                 <div className="text-sm font-bold text-zinc-100">
-  {getPesoRomaneio(r).toLocaleString("pt-BR", {
-    maximumFractionDigits: 0,
-  })}{" "}
-  kg
-</div>
-
+                  {peso.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg
+                </div>
               </div>
             </div>
 
-            {/* Base: placa + tipo + status */}
+            {/* Resumo produção */}
+            <div className="flex items-center gap-2 text-[11px] text-zinc-300">
+              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
+                {qtd.toLocaleString("pt-BR")} un
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
+                {m2.toFixed(2)} m²
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
+                {r.itens?.length || 0} itens
+              </span>
+            </div>
+
+            {/* Base: placa + status */}
             <div className="flex justify-between items-center gap-2 mt-1">
               <div className="inline-flex items-center gap-2 text-[11px] text-zinc-400">
                 <span className="px-1.5 py-0.5 rounded border border-white/10 bg-black/30">
@@ -263,7 +307,8 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
               )}
             </div>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
