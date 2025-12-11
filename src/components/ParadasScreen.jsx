@@ -1,35 +1,44 @@
-import React, { useState, useMemo } from "react";
-import { AlertOctagon, Clock, History, Trash2, AlertTriangle } from "lucide-react";
+import React, { useState, useMemo, useEffect } from "react";
+import { AlertTriangle, Clock, Trash2, Timer, AlertOctagon } from "lucide-react";
 
-// Garante que está voltando a pasta corretamente com "../"
 import { CATALOGO_MAQUINAS } from "../data/catalogoMaquinas";
 import { DICIONARIO_PARADAS } from "../data/dicionarioParadas";
 
-// --- HELPER PARA CORRIGIR O BUG VISUAL DA DATA ---
-// (Evita que o fuso horário jogue a data para o dia anterior)
-
-
+// --- Helpers ---
 
 const formatarDataVisual = (dataISO) => {
   if (!dataISO) return "-";
-  const [ano, mes, dia] = dataISO.split('-');
+  const [ano, mes, dia] = dataISO.split("-");
   return `${dia}/${mes}/${ano}`;
-
-
 };
 
+const hojeISOcorrigido = () => {
+  const hoje = new Date();
+  const offset = hoje.getTimezoneOffset() * 60000;
+  return new Date(hoje.getTime() - offset).toISOString().slice(0, 10);
+};
 
-export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarParada }) => {
+const horaParaMinutos = (hhmm) => {
+  if (!hhmm || !hhmm.includes(":")) return 0;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
 
+const calcularDuracao = (inicio, fim) => {
+  if (!inicio || !fim) return 0;
+  return horaParaMinutos(fim) - horaParaMinutos(inicio);
+};
 
+// -----------------------------------------------------------------------------
+//  COMPONENTE
+// -----------------------------------------------------------------------------
 
-  // Ajuste para iniciar com a data Local correta (sem ser UTC)
-  const [dataSelecionada, setDataSelecionada] = useState(() => {
-    const hoje = new Date();
-    const offset = hoje.getTimezoneOffset() * 60000;
-    return new Date(hoje - offset).toISOString().slice(0, 10);
-  });
-
+export const ParadasScreen = ({
+  eventosParada = [],
+  onRegistrarParada,
+  deletarParada,
+}) => {
+  const [dataSelecionada, setDataSelecionada] = useState(hojeISOcorrigido);
   const [maquinaId, setMaquinaId] = useState("");
   const [horaInicio, setHoraInicio] = useState("");
   const [horaFim, setHoraFim] = useState("");
@@ -41,21 +50,99 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
     []
   );
 
-  const paradasDoDia = useMemo(
-    () => eventosParada.filter((p) => p.data === dataSelecionada),
-    [eventosParada, dataSelecionada]
-  );
-
   const getDescricaoMotivo = (codigo) =>
-    motivosDisponiveis.find((m) => m.codigo === codigo)?.evento || "-";
+    motivosDisponiveis.find((m) => m.codigo === codigo || m.cod === codigo)?.evento || "-";
 
   const getNomeMaquina = (id) =>
     maquinasAtivas.find((m) => m.id === id)?.nomeExibicao || id || "-";
 
+  // --- LÓGICA DE LISTA ---
+
+  const paradasDoDia = useMemo(() => {
+    // Filtro
+    const filtradas = (eventosParada || []).filter(
+      (p) => p.data === dataSelecionada
+    );
+
+    // Normalização
+    const processadas = filtradas.map((p) => {
+      const inicioNorm = p.horaInicio || p.inicio || "";
+      const fimNorm = p.horaFim || p.fim || "";
+      const maquinaNorm = p.maquinaId || p.maquina || "";
+      const motivoNorm = p.motivoCodigo || p.codMotivo || "";
+      const descNorm = p.descMotivo || getDescricaoMotivo(motivoNorm);
+      const duracao = calcularDuracao(inicioNorm, fimNorm);
+      
+      // Regra: TU001 é produção (verde). O resto é parada (incluindo TU002, TU003...)
+      const isProducao = String(motivoNorm).toUpperCase() === "TU001";
+      
+      // Crítico se não for produção e demorar >= 30 min
+      const isCritico = !isProducao && duracao >= 30;
+
+      return {
+        ...p,
+        inicioNorm,
+        fimNorm,
+        maquinaNorm,
+        motivoNorm,
+        descNorm,
+        duracaoMinutos: duracao,
+        isProducao,
+        isCritico
+      };
+    });
+
+    // Ordenação
+    return processadas.sort((a, b) =>
+      a.inicioNorm.localeCompare(b.inicioNorm)
+    );
+  }, [eventosParada, dataSelecionada]);
+
+  // Total (excluindo TU001)
+  const totalMinutosParados = useMemo(() => {
+    return paradasDoDia.reduce((acc, p) => {
+      if (p.isProducao) return acc;
+      return acc + p.duracaoMinutos;
+    }, 0);
+  }, [paradasDoDia]);
+
+  // Auto-preencher horário
+  const ultimaParadaDaMaquina = useMemo(() => {
+    if (!maquinaId) return null;
+    const listaMaquina = paradasDoDia.filter((p) => p.maquinaNorm === maquinaId);
+    if (listaMaquina.length === 0) return null;
+    return listaMaquina.sort((a, b) => a.fimNorm.localeCompare(b.fimNorm))[listaMaquina.length - 1];
+  }, [paradasDoDia, maquinaId]);
+
+  useEffect(() => {
+    if (!horaInicio && ultimaParadaDaMaquina?.fimNorm) {
+      setHoraInicio(ultimaParadaDaMaquina.fimNorm);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ultimaParadaDaMaquina]);
+
+
+  // Ação Confirmar
   const handleConfirmar = () => {
     if (!maquinaId || !horaInicio || !horaFim || !motivoCodigo) {
-      alert("Preencha máquina, horários e motivo.");
+      alert("Preencha todos os campos.");
       return;
+    }
+
+    if (horaFim <= horaInicio) {
+      alert("Horário final deve ser maior que o inicial.");
+      return;
+    }
+
+    // Conflito simples
+    const temConflito = paradasDoDia.some((p) => 
+      p.maquinaNorm === maquinaId && 
+      ((horaInicio >= p.inicioNorm && horaInicio < p.fimNorm) ||
+       (horaFim > p.inicioNorm && horaFim <= p.fimNorm))
+    );
+
+    if (temConflito) {
+      if (!window.confirm("Conflito de horário nesta máquina. Salvar mesmo assim?")) return;
     }
 
     const novaParada = {
@@ -64,197 +151,193 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
       horaInicio,
       horaFim,
       motivoCodigo,
+      descMotivo: getDescricaoMotivo(motivoCodigo),
     };
 
-    if (onRegistrarParada) {
-      onRegistrarParada(novaParada);
-    }
+    if (onRegistrarParada) onRegistrarParada(novaParada);
 
-    // Limpa apenas os campos de horário e motivo, mantém a máquina e data
-    setHoraInicio("");
+    setHoraInicio(horaFim);
     setHoraFim("");
     setMotivoCodigo("");
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 h-full">
-      {/* COLUNA ESQUERDA - FORMULÁRIO */}
-      <div className="w-full md:w-[360px] bg-zinc-950 border border-red-900/40 rounded-2xl p-4 flex flex-col gap-4">
-        <header className="flex items-center gap-2 pb-2 border-b border-red-900/30">
-          <div className="w-7 h-7 rounded-full bg-red-900/20 flex items-center justify-center">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
+    <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+      
+      {/* --- ESQUERDA: FORMULÁRIO --- */}
+      <div className="w-full md:w-[380px] flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-6 shadow-2xl">
+        
+        <header className="flex items-center gap-4 border-b border-zinc-800 pb-4">
+          <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-500">
+            <AlertTriangle size={24} />
           </div>
           <div>
-            <h1 className="text-lg font-black text-red-400">Paradas</h1>
-            <p className="text-[11px] text-zinc-500">
-              Registrar paradas da linha de produção
-            </p>
+            <h1 className="text-xl font-bold text-zinc-100">Apontar</h1>
+            <p className="text-xs text-zinc-500">Registo de inatividade ou produção</p>
           </div>
         </header>
 
-        <div className="rounded-2xl border border-red-900/30 bg-zinc-950/60 p-4 flex flex-col gap-3">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-red-900/20 flex items-center justify-center">
-                <Clock className="w-3 h-3 text-red-400" />
-              </span>
-              <span className="text-sm font-semibold text-zinc-200">
-                Registrar
-              </span>
-            </div>
-            {/* USO DA FUNÇÃO DE CORREÇÃO VISUAL DA DATA */}
-            <span className="text-[11px] text-zinc-500">
-              {formatarDataVisual(dataSelecionada)}
-            </span>
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="text-xs font-bold text-zinc-400 uppercase mb-1 block">Máquina</label>
+            <select
+              value={maquinaId}
+              onChange={(e) => { setMaquinaId(e.target.value); setHoraInicio(""); }}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-base text-white focus:border-red-500 outline-none"
+            >
+              <option value="">Selecione...</option>
+              {maquinasAtivas.map((m) => (
+                <option key={m.id} value={m.id}>{m.nomeExibicao}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="space-y-2">
-            {/* MÁQUINA */}
-            <div>
-              <label className="block text-[11px] text-zinc-500 mb-1">
-                Máquina
-              </label>
-              <select
-                value={maquinaId}
-                onChange={(e) => setMaquinaId(e.target.value)}
-                className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/60"
-              >
-                <option value="">Máquina...</option>
-                {maquinasAtivas.map((maq) => (
-                  <option key={maq.id} value={maq.id}>
-                    {maq.nomeExibicao}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="text-xs font-bold text-zinc-400 uppercase mb-1 block">Data</label>
+            <input
+              type="date"
+              value={dataSelecionada}
+              onChange={(e) => setDataSelecionada(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-base text-white focus:border-red-500 outline-none"
+            />
+          </div>
 
-            {/* DATA */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] text-zinc-500 mb-1">
-                Data
-              </label>
+              <label className="text-xs font-bold text-zinc-400 uppercase mb-1 block">Início</label>
               <input
-                type="date"
-                value={dataSelecionada}
-                onChange={(e) => setDataSelecionada(e.target.value)}
-                className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                type="time"
+                value={horaInicio}
+                onChange={(e) => setHoraInicio(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-base text-white focus:border-red-500 outline-none text-center"
               />
             </div>
-
-            {/* HORÁRIOS */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] text-zinc-500 mb-1">
-                  Início
-                </label>
-                <input
-                  type="time"
-                  value={horaInicio}
-                  onChange={(e) => setHoraInicio(e.target.value)}
-                  className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/60"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-zinc-500 mb-1">
-                  Fim
-                </label>
-                <input
-                  type="time"
-                  value={horaFim}
-                  onChange={(e) => setHoraFim(e.target.value)}
-                  className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/60"
-                />
-              </div>
-            </div>
-
-            {/* MOTIVO */}
             <div>
-              <label className="block text-[11px] text-zinc-500 mb-1">
-                Motivo
-              </label>
-              <select
-                value={motivoCodigo}
-                onChange={(e) => setMotivoCodigo(e.target.value)}
-                className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/60"
-              >
-                <option value="">Motivo...</option>
-                {motivosDisponiveis.map((motivo) => (
-                  <option key={motivo.codigo} value={motivo.codigo}>
-                    {motivo.codigo} - {motivo.evento}
-                  </option>
-                ))}
-              </select>
+              <label className="text-xs font-bold text-zinc-400 uppercase mb-1 block">Fim</label>
+              <input
+                type="time"
+                value={horaFim}
+                onChange={(e) => setHoraFim(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-base text-white focus:border-red-500 outline-none text-center"
+              />
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-zinc-400 uppercase mb-1 block">Motivo</label>
+            <select
+              value={motivoCodigo}
+              onChange={(e) => setMotivoCodigo(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-base text-white focus:border-red-500 outline-none"
+            >
+              <option value="">Selecione...</option>
+              {motivosDisponiveis.map((m) => (
+                <option key={m.codigo} value={m.codigo}>{m.codigo} - {m.evento}</option>
+              ))}
+            </select>
           </div>
 
           <button
-            type="button"
             onClick={handleConfirmar}
-            className="mt-2 w-full py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-bold text-white tracking-wide transition-colors"
+            className="mt-4 w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-lg"
           >
-            Confirmar
+            <Clock size={20} /> Confirmar
           </button>
         </div>
       </div>
 
-      {/* COLUNA DIREITA - LISTA */}
-      <div className="flex-1 bg-zinc-950 border border-zinc-800/60 rounded-2xl p-4 flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between mb-3">
+      {/* --- DIREITA: LISTA (AMPLIADA) --- */}
+      <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+        
+        {/* Header Lista */}
+        <div className="p-6 border-b border-zinc-800 bg-zinc-900/50 flex justify-between items-center shrink-0">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-200">
-              Paradas do dia
+            <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
+               Histórico do Dia
             </h2>
-            <p className="text-[11px] text-zinc-500">
-              {paradasDoDia.length} registro(s) em{" "}
-              {formatarDataVisual(dataSelecionada)}
+            <p className="text-sm text-zinc-500 mt-1">
+              {paradasDoDia.length} registro(s) em {formatarDataVisual(dataSelecionada)}
             </p>
           </div>
-        </header>
-
-        <div className="flex justify-between text-[11px] text-zinc-500 mb-2 px-1">
-          <span className="w-24">HORÁRIO</span>
-          <span className="flex-1">MOTIVO</span>
-          <span className="w-24 text-right pr-2">MÁQUINA</span>
-          <span className="w-8 text-center">#</span>
+          <div className="flex items-center gap-3 bg-zinc-900 px-5 py-3 rounded-xl border border-zinc-800">
+            <AlertOctagon size={20} className="text-red-500" />
+            <span className="text-base font-mono font-bold text-zinc-200">
+              Total Parado: {Math.floor(totalMinutosParados / 60)}h {totalMinutosParados % 60}m
+            </span>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        {/* Tabela Cabeçalho (Maior) */}
+        <div className="grid grid-cols-[140px_1fr_180px_60px] gap-4 px-6 py-3 bg-zinc-900/30 border-b border-zinc-800 text-xs font-bold text-zinc-500 uppercase tracking-wider shrink-0">
+          <div>Horário / Dur.</div>
+          <div>Motivo</div>
+          <div className="text-right">Máquina</div>
+          <div className="text-center">#</div>
+        </div>
+
+        {/* Lista Scrollável */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {paradasDoDia.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-xs text-zinc-600">
-              Nenhuma parada registrada para esta data.
+            <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-4">
+              <div className="w-16 h-16 rounded-full bg-zinc-900 flex items-center justify-center border border-zinc-800">
+                <Clock size={32} opacity={0.5} />
+              </div>
+              <p className="text-sm font-medium">Nenhum registro encontrado.</p>
             </div>
           ) : (
-            <ul className="space-y-1 text-xs">
-              {paradasDoDia.map((p, idx) => (
-                <li
-                  key={`${p.data}-${p.horaInicio}-${idx}`}
-                  className="grid grid-cols-[90px,1fr,100px,30px] items-center text-zinc-300 bg-zinc-900/70 rounded-lg px-2 py-1.5 border border-zinc-800/60"
-                >
-                  <span className="font-mono text-[11px] text-zinc-400">
-                    {p.horaInicio} - {p.horaFim}
+            paradasDoDia.map((p, idx) => (
+              <div
+                key={`${p.data}-${p.inicioNorm}-${idx}`}
+                className={`group grid grid-cols-[140px_1fr_180px_60px] gap-4 items-center px-4 py-4 rounded-xl border transition-all
+                  ${p.isCritico 
+                    ? "bg-red-950/20 border-red-500/30 hover:border-red-500/50" 
+                    : p.isProducao 
+                        ? "bg-emerald-950/10 border-emerald-900/30 hover:border-emerald-700/50" 
+                        : "bg-zinc-900/40 border-zinc-800/60 hover:bg-zinc-800/60 hover:border-zinc-700"
+                  }`}
+              >
+                {/* Coluna 1: Horário Grande + Badge */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-mono font-medium text-zinc-200">
+                    {p.inicioNorm} - {p.fimNorm}
                   </span>
-                  <span className="truncate pr-2 text-zinc-200">
-                    {getDescricaoMotivo(p.motivoCodigo)}
-                  </span>
-                  <span className="text-[11px] text-zinc-500 text-right truncate">
-                    {getNomeMaquina(p.maquinaId)}
-                  </span>
-                  
-                  {/* BOTÃO DE DELETAR RESTAURADO */}
-                  <div className="flex justify-center">
-                    {deletarParada && (
-                      <button 
-                        onClick={() => deletarParada(p.id)}
-                        className="text-zinc-600 hover:text-red-500 transition-colors"
-                        title="Excluir"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
+                  <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded w-fit text-xs font-bold
+                    ${p.isCritico ? 'bg-red-500/20 text-red-400' : p.isProducao ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                    <Timer size={12} /> {p.duracaoMinutos} min
                   </div>
-                </li>
-              ))}
-            </ul>
+                </div>
+
+                {/* Coluna 2: Motivo */}
+                <div className="min-w-0 flex flex-col justify-center">
+                  <span className={`text-sm font-semibold block truncate ${p.isCritico ? 'text-red-200' : p.isProducao ? 'text-emerald-200' : 'text-zinc-200'}`}>
+                    {p.descNorm}
+                  </span>
+                  <span className="text-xs text-zinc-500 font-mono mt-0.5">
+                    {p.motivoNorm}
+                  </span>
+                </div>
+
+                {/* Coluna 3: Máquina */}
+                <div className="text-right truncate flex items-center justify-end">
+                  <span className="text-xs font-medium text-zinc-400 bg-zinc-900 px-2 py-1 rounded-lg border border-zinc-800 truncate max-w-full">
+                    {getNomeMaquina(p.maquinaNorm)}
+                  </span>
+                </div>
+
+                {/* Coluna 4: Ação */}
+                <div className="flex justify-center">
+                  {deletarParada && (
+                    <button
+                      onClick={() => deletarParada(p.id)}
+                      className="p-2.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Excluir Registro"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>

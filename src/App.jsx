@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 import { db } from "./services/firebase";
-
+import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 
 import {
   Activity, AlertOctagon, ArrowRight, BarChart3, Box,
@@ -48,6 +48,8 @@ import {
 import { ColunaKanban } from "./components/ColunaKanban";
 import OeeDashboard from './components/OeeDashboard';
 import { ParadasScreen } from './components/ParadasScreen';
+import { ProducaoScreen } from "./components/ProducaoScreen";
+
 
 
 // --- DADOS ---
@@ -263,6 +265,7 @@ export default function App() {
   const [formApontProdQtd, setFormApontProdQtd] = useState('');
   const [formApontProdDestino, setFormApontProdDestino] = useState('Estoque');
   const [producaoEmEdicaoId, setProducaoEmEdicaoId] = useState(null);
+  const [formApontProdMaquina, setFormApontProdMaquina] = useState('');
 
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(hoje);
@@ -402,9 +405,24 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
 
   
 useEffect(() => {
+  // --- MODO DEV: CARREGAR JSON LOCAL ---
+  // Verifica se você está rodando no computador (localhost)
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    console.log("🏠 Modo Dev detectado: Carregando dados do arquivo local...");
+    
+    // Injeta os dados do JSON direto nos estados
+    setFilaProducao(dadosLocais.romaneios || []);
+    setHistoricoProducaoReal(dadosLocais.producao || []);
+    setHistoricoParadas(dadosLocais.paradas || []);
+    
+    return; // 🛑 PARE AQUI! Isso impede que ele tente conectar no Firebase
+  }
+
+  // --- MODO PROD: CARREGAR FIREBASE ---
+  // Se chegou aqui, é porque está na Vercel/Produção
   const carregarDados = async () => {
     try {
-      console.log("🔄 Buscando dados do Firebase...");
+      console.log("☁️ Modo Produção: Buscando dados do Firebase...");
 
       // 1. Romaneios
       const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
@@ -418,9 +436,9 @@ useEffect(() => {
       const producaoSnapshot = await getDocs(collection(db, "producao"));
       const listaProducao = producaoSnapshot.docs.map((docSnap) => {
         const data = docSnap.data();
-        const { id, ...rest } = data; // ignora qualquer campo "id" dentro do doc
+        const { id, ...rest } = data;
         return {
-          id: docSnap.id, // id REAL do Firestore
+          id: docSnap.id,
           ...rest,
         };
       });
@@ -434,21 +452,20 @@ useEffect(() => {
       }));
       setHistoricoParadas(listaParadas);
 
-      console.log("✅ Dados carregados com sucesso!");
+      console.log("✅ Dados da nuvem carregados!");
     } catch (erro) {
       console.error("❌ Erro ao buscar dados:", erro);
     }
   };
 
   carregarDados();
-}, []); // roda só uma vez na montagem
+}, []);
 
-
-const IS_LOCALHOST =
-  typeof window !== "undefined" &&
-  (window.location.hostname === "localhost" ||
-   window.location.hostname === "127.0.0.1" ||
-   window.location.hostname === "");
+// const IS_LOCALHOST =
+//   typeof window !== "undefined" &&
+//   (window.location.hostname === "localhost" ||
+//    window.location.hostname === "127.0.0.1" ||
+//    window.location.hostname === "");
 
 
 
@@ -782,7 +799,8 @@ const salvarApontamentoProducao = async (e) => {
     desc: formApontProdDesc || "Item s/ descrição",
     qtd,
     destino: formApontProdDestino || "Estoque",
-  };
+    maquinaId: formApontProdMaquina || "", 
+    };
 
   try {
     if (apontamentoEmEdicaoId) {
@@ -1565,50 +1583,34 @@ const handleExportBackup = async () => {
 
 
 // --- BACKUP: IMPORTA (SÓ ESCREVE EM PRODUÇÃO) ---
-const handleImportBackup = async (json) => {
+// --- BACKUP: IMPORTAÇÃO LOCAL (MODO PLAYGROUND) ---
+const handleImportBackup = (json) => {
   if (!json) return;
 
-  if (!IS_PRODUCTION) {
-    console.log('[DEV] Import de backup SIMULADO (não grava no Firebase):', json);
-    alert('Import de backup só grava na nuvem no site oficial. No localhost é simulado.');
-    return;
+  console.log("📂 Carregando dados do backup na memória...", json);
+
+  // 1. Atualiza os ROMANEIOS (PCP)
+  if (Array.isArray(json.romaneios)) {
+    setFilaProducao(json.romaneios);
   }
 
-  const romaneios = Array.isArray(json.romaneios) ? json.romaneios : [];
-  const producao  = Array.isArray(json.producao)  ? json.producao  : [];
-  const paradas   = Array.isArray(json.paradas)   ? json.paradas   : [];
-
-  if (!romaneios.length && !producao.length && !paradas.length) {
-    alert('Arquivo de backup sem dados válidos (romaneios / producao / paradas).');
-    return;
+  // 2. Atualiza a PRODUÇÃO (Apontamentos)
+  if (Array.isArray(json.producao)) {
+    // Garante que o campo 'cod' existe para não quebrar tabelas
+    const prodFormatada = json.producao.map(p => ({
+        ...p,
+        cod: p.cod || p.codigo || '' // fallback se o nome estiver diferente
+    }));
+    setHistoricoProducaoReal(prodFormatada);
   }
 
-  try {
-    // ROMANEIOS
-    for (const r of romaneios) {
-      const { id, sysId, ...rest } = r; // tira ids antigos
-      await safeAddDoc('romaneios', rest);
-    }
-
-    // PRODUÇÃO
-    for (const p of producao) {
-      const { id, ...rest } = p;
-      await safeAddDoc('producao', rest);
-    }
-
-    // PARADAS
-    for (const pa of paradas) {
-      const { id, ...rest } = pa;
-      await safeAddDoc('paradas', rest);
-    }
-
-    alert('Backup importado e gravado no Firebase com sucesso!');
-  } catch (err) {
-    console.error('Erro ao importar backup:', err);
-    alert('Erro ao importar backup. Veja o console (F12).');
+  // 3. Atualiza as PARADAS
+  if (Array.isArray(json.paradas)) {
+    setHistoricoParadas(json.paradas);
   }
+
+  alert('Dados carregados! O app está rodando com os dados do arquivo (Modo Offline).');
 };
-
 
 
 
@@ -1711,14 +1713,17 @@ const handleImportBackup = async (json) => {
         </nav>
 
         {/* --- CONTEÚDO --- */}
+
+
+    
         <div className="flex-1 flex overflow-hidden bg-[#09090b] pb-16 md:pb-0">
           {/* ABA AGENDA */}
           {abaAtiva === 'agenda' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-6 overflow-hidden flex flex-col">
               <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
-  <h1 className="text-2xl font-bold flex gap-3">
-    <Layers className="text-purple-500" size={28} /> Gestão
-  </h1>
+    <h1 className="text-2xl font-bold flex gap-3">
+      <Layers className="text-purple-500" size={28} /> Gestão
+    </h1>
 
   <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto md:items-center">
     <BackupControls
@@ -1783,6 +1788,9 @@ const handleImportBackup = async (json) => {
             </div>
           )}
 
+
+
+
           {/* ABA PCP */}
           {abaAtiva === 'planejamento' && (
     <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
@@ -1836,93 +1844,36 @@ const handleImportBackup = async (json) => {
     </div>
 )}
 
-          {/* ABA PRODUÇÃO */}
-          {abaAtiva === 'producao' && (
-             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
-                <header className="mb-6"><h1 className="text-2xl md:text-3xl font-bold flex gap-3 text-white"><Factory className="text-emerald-500" size={32} /> Apontamento</h1></header>
-                <div className="flex flex-col md:flex-row gap-6 h-full min-h-0 overflow-y-auto md:overflow-hidden">
-                   <div className="w-full md:w-1/3 bg-zinc-900 rounded-2xl border border-emerald-500/20 p-4 md:p-6 shrink-0">
-                      <h3 className="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2"><Box size={20} /> Registrar Peça</h3>
-                      <div className="space-y-4">
-                         <input type="date" value={formApontProdData} onChange={(e) => setFormApontProdData(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white" />
-                         <select value={formApontProdCod} onChange={handleSelectProdApontamento} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
-                            <option value="">Selecione...</option>{CATALOGO_PRODUTOS.map((p) => <option key={p.cod} value={p.cod}>{p.cod} - {p.desc}</option>)}
-                         </select>
-                         <div className="grid grid-cols-2 gap-4">
-                            <input type="number" placeholder="Qtd" value={formApontProdQtd} onChange={(e) => setFormApontProdQtd(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-right font-bold text-lg" />
-                            <select value={formApontProdDestino} onChange={(e) => setFormApontProdDestino(e.target.value)} className="w-full bg-black border border-white/10 rounded p-3 text-white text-sm">
-                               <option value="Estoque">Estoque</option><option value="Cometa 04">Cometa 04</option><option value="Serra 06">Serra 06</option>
-                            </select>
-                         </div>
-<button
-  onClick={salvarApontamentoProducao}
-  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2"
->
-  <CheckCircle2 size={20} />
-  {producaoEmEdicaoId ? 'Atualizar apontamento' : 'Confirmar'}
-</button>
+          {/* ABA PRODUCAO */}
+{abaAtiva === "producao" && (
+  <ProducaoScreen
+    formApontProdData={formApontProdData}
+    setFormApontProdData={setFormApontProdData}
+    formApontProdCod={formApontProdCod}
+    setFormApontProdCod={setFormApontProdCod}
+    formApontProdQtd={formApontProdQtd}
+    setFormApontProdQtd={setFormApontProdQtd}
+    formApontProdDestino={formApontProdDestino}
+    setFormApontProdDestino={setFormApontProdDestino}
+    
+    // --- LINHAS ADICIONADAS PARA MÁQUINA ---
+    catalogoMaquinas={CATALOGO_MAQUINAS}             // <--- NOVO: Envia a lista
+    formApontProdMaquina={formApontProdMaquina}      // <--- NOVO: Envia o valor selecionado
+    setFormApontProdMaquina={setFormApontProdMaquina} // <--- NOVO: Envia a função de atualizar
+    // ---------------------------------------
 
-{producaoEmEdicaoId && (
-  <button
-    type="button"
-    onClick={limparFormApontamentoProducao}
-    className="mt-2 w-full bg-zinc-700 hover:bg-zinc-600 text-white py-2 rounded-lg text-sm"
-  >
-    Cancelar edição
-  </button>
+    handleSelectProdApontamento={handleSelectProdApontamento}
+    salvarApontamentoProducao={salvarApontamentoProducao}
+    apontamentoEmEdicaoId={apontamentoEmEdicaoId}
+    limparFormApontamentoProducao={limparFormApontamentoProducao}
+    historicoProducaoReal={historicoProducaoReal}
+    iniciarEdicaoProducao={iniciarEdicaoProducao}
+    deletarProducaoReal={deletarProducaoReal}
+    handleUploadApontamentoProducao={handleUploadApontamentoProducao}
+    handleDownloadModeloApontProd={handleDownloadModeloApontProd}
+  />
 )}
-                      </div>
-                   </div>
-                   <div className="flex-1 bg-zinc-900 rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[300px]">
-    <div className="p-4 border-b border-white/10 bg-white/5"><h3 className="font-bold text-white flex gap-2"><History size={18} /> Histórico Hoje</h3></div>
-    <div className="flex-1 overflow-y-auto">
-        <table className="w-full text-left text-sm">
-            <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur">
-                <tr>
-                    <th className="p-4">Item</th>
-                    <th className="p-4 text-center">Qtd</th>
-                    {/* ➡️ NOVA COLUNA PARA O ID DO FIREBASE */}
-                    <th className="p-4 text-xs font-mono">ID</th>
-                    <th className="p-4 text-right">#</th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-                {historicoProducaoReal.filter(p => p.data === formApontProdData).map((p) => (
-                    <tr key={p.id}>
-                        <td className="p-4">
-                            <div className="font-mono text-emerald-400">{p.cod}</div>
-                            <div className="text-zinc-400 text-xs">{p.desc}</div>
-                        </td>
-                        <td className="p-4 text-center font-bold">{p.qtd}</td>
-                        
-                        {/* ➡️ CÉLULA EXIBINDO O ID DO FIREBASE (p.id) */}
-                        <td className="p-4 text-zinc-500 font-mono text-xs w-[120px] overflow-hidden truncate">{p.id}</td>
-                        
-                        <td className="p-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                                <button
-                                    onClick={() => iniciarEdicaoProducao(p)}
-                                    className="text-zinc-500 hover:text-emerald-400"
-                                >
-                                    <Pencil size={16} />
-                                </button>
-                                <button
-                                    onClick={() => deletarProducaoReal(p.id)}
-                                    className="text-zinc-600 hover:text-red-500"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    </div>
-</div>
-                </div>
-             </div>
-          )}
+
 
           
           {/* ABA PARADAS */}
