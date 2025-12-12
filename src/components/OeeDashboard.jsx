@@ -255,8 +255,24 @@ export default function OeeDashboard({
 
     const tempoTotalTurnoMin = diasNoPeriodo * (Number(turnoHoras) || 0) * 60;
     
+    const getDuracaoMin = (p) => {
+      const direto = Number(p.duracao) || Number(p.duracaoMinutos);
+      if (direto) return direto;
+
+      const paraMin = (hhmm) => {
+        if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return 0;
+        const [h, m] = hhmm.split(":").map((v) => Number(v));
+        return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+      };
+
+      const inicio = p.horaInicio || p.inicio;
+      const fim = p.horaFim || p.fim;
+      const diff = paraMin(fim) - paraMin(inicio);
+      return diff > 0 ? diff : 0;
+    };
+
     const tempoParadoMin = perdasDeDisponibilidade.reduce(
-      (acc, p) => acc + (Number(p.duracao) || Number(p.duracaoMinutos) || 0),
+      (acc, p) => acc + getDuracaoMin(p),
       0
     );
 
@@ -323,7 +339,7 @@ export default function OeeDashboard({
     
     perdasDeDisponibilidade.forEach((p) => { 
       const key = p.descMotivo || p.descNorm || "Motivo não informado";
-      const dur = Number(p.duracao) || Number(p.duracaoMinutos) || 0;
+      const dur = getDuracaoMin(p);
       motivosMap[key] = (motivosMap[key] || 0) + dur;
     });
 
@@ -621,7 +637,7 @@ export default function OeeDashboard({
           </div>
 
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
               <BarChart data={dailyProductionData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                 <XAxis dataKey="label" stroke="#a1a1aa" />
@@ -661,7 +677,7 @@ export default function OeeDashboard({
             Top 5 motivos de parada
           </h2>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
               <BarChart
                 data={paretoParadasData}
                 layout="vertical"

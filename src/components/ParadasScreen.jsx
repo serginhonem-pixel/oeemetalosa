@@ -145,11 +145,21 @@ export const ParadasScreen = ({
       if (!window.confirm("Conflito de horário nesta máquina. Salvar mesmo assim?")) return;
     }
 
+    const duracaoMin = calcularDuracao(horaInicio, horaFim);
+    if (duracaoMin <= 0) {
+      alert("NÇõo foi possÇ­vel calcular a duraÇõÇœo da parada.");
+      return;
+    }
+
     const novaParada = {
       data: dataSelecionada,
       maquinaId,
       horaInicio,
       horaFim,
+      inicio: horaInicio,
+      fim: horaFim,
+      duracao: duracaoMin,
+      duracaoMinutos: duracaoMin,
       motivoCodigo,
       descMotivo: getDescricaoMotivo(motivoCodigo),
     };

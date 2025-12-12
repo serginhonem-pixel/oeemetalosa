@@ -1,4 +1,4 @@
-import {
+﻿import {
   addDoc,
   collection,
   deleteDoc,
@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx';
 import { db } from "./services/firebase";
 import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
 import {
   Activity, AlertOctagon, ArrowRight, BarChart3, Box,
@@ -27,7 +28,7 @@ import BackupControls from './components/BackupControls';
 import { safeAddDoc, safeUpdateDoc, safeDeleteDoc } from './services/firebaseSafeWrites';
 
 
-// --- GRÁFICOS (RECHARTS) ---
+// --- GRÃFICOS (RECHARTS) ---
 import {
   Area,
   Bar,
@@ -40,10 +41,10 @@ import {
   XAxis, YAxis
 } from 'recharts';
 
-// --- COMPONENTES VELHOS (Mantenha isso se ainda tiver código antigo na tela) ---
+// --- COMPONENTES VELHOS (Mantenha isso se ainda tiver cÃ³digo antigo na tela) ---
 
 
-// ⚠️ Certifique-se de que criou o arquivo na pasta 'components'
+// âš ï¸ Certifique-se de que criou o arquivo na pasta 'components'
 import { ColunaKanban } from "./components/ColunaKanban";
 import OeeDashboard from './components/OeeDashboard';
 import { ParadasScreen } from './components/ParadasScreen';
@@ -58,6 +59,9 @@ import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 
 
 const DEV_CACHE_KEY = getDevCacheKey();
+const FORCE_FIREBASE = Boolean(import.meta.env?.VITE_FORCE_FIREBASE);
+const DEFAULT_MAQUINA_ID = 'CONFORMADORA_TELHAS';
+GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 
 const formatarDataBR = (dataISO) => {
@@ -82,7 +86,7 @@ const normalizarHoraExcel = (valorBruto) => {
       return `${h}:${min}`;
     }
 
-    // pode vir número em texto (fração do dia)
+    // pode vir nÃºmero em texto (fraÃ§Ã£o do dia)
     const num = Number(limpa.replace(',', '.'));
     if (!Number.isNaN(num) && num > 0 && num < 2) {
       const totalMin = Math.round(num * 24 * 60);
@@ -101,7 +105,7 @@ const normalizarHoraExcel = (valorBruto) => {
     return `${h}:${m}`;
   }
 
-  // Número: fração do dia (padrão Excel)
+  // NÃºmero: fraÃ§Ã£o do dia (padrÃ£o Excel)
   if (typeof valorBruto === 'number') {
     const totalMin = Math.round(valorBruto * 24 * 60);
     const h = String(Math.floor(totalMin / 60)).padStart(2, '0');
@@ -131,7 +135,7 @@ const processarDataExcel = (valorBruto) => {
     if (typeof valorBruto === 'string') {
       const limpa = valorBruto.trim();
 
-      // já vem em YYYY-MM-DD
+      // jÃ¡ vem em YYYY-MM-DD
       if (/^\d{4}-\d{2}-\d{2}$/.test(limpa)) return limpa;
 
       // formato BR  dd/mm/aaaa
@@ -148,7 +152,7 @@ const processarDataExcel = (valorBruto) => {
       return getLocalISODate(valorBruto);
     }
 
-    // Número Excel (serial de data)
+    // NÃºmero Excel (serial de data)
     if (typeof valorBruto === 'number') {
       const dataBase = new Date(1899, 11, 30); // 30/12/1899
       const dataFinal = new Date(dataBase.getTime() + valorBruto * 86400000);
@@ -179,7 +183,7 @@ const processarHoraExcel = (valorBruto) => {
       }
     }
 
-    // Número Excel (fração do dia)
+    // NÃºmero Excel (fraÃ§Ã£o do dia)
     if (typeof valorBruto === 'number') {
       const totalMin = Math.round(valorBruto * 24 * 60);
       const h = Math.floor(totalMin / 60);
@@ -205,6 +209,20 @@ const encontrarValorNaLinha = (row, possiveisNomes) => {
     if (chave) return row[chave];
   }
   return undefined;
+};
+
+// Garante que registros antigos recebam uma mÃ‡Â­quina padrÃ‡Â£o
+const preencherMaquinaSeVazia = (lista, fallbackId = DEFAULT_MAQUINA_ID) => {
+  if (!Array.isArray(lista)) return [];
+  return lista.map((item) => {
+    const maquinaId =
+      item.maquinaId ||
+      item.maquina ||
+      item.maquinaid ||
+      (item.maquinaNome ? item.maquinaNome : null) ||
+      fallbackId;
+    return { ...item, maquinaId, maquina: item.maquina || maquinaId };
+  });
 };
 
 
@@ -274,6 +292,9 @@ export default function App() {
   const [formApontProdDestino, setFormApontProdDestino] = useState('Estoque');
   const [producaoEmEdicaoId, setProducaoEmEdicaoId] = useState(null);
   const [formApontProdMaquina, setFormApontProdMaquina] = useState('');
+  const [dadosCarregados, setDadosCarregados] = useState(false);
+  const [syncEmAndamento, setSyncEmAndamento] = useState(false);
+  const [ultimoSyncFirebase, setUltimoSyncFirebase] = useState(null);
 
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(primeiroDiaMesAtual);
@@ -287,12 +308,12 @@ const [dataFimInd, setDataFimInd] = useState(hoje);
   const [showModalSelecaoMaquina, setShowModalSelecaoMaquina] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
   const [novaDataReprogramacao, setNovaDataReprogramacao] = useState('');
-const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
+const [itensReprogramados, setItensReprogramados] = useState([]); // jÃ¡ fizemos
 
 
     useEffect(() => {
     if (showModalNovaOrdem) {
-      // ao abrir o modal, limpa a seleção
+      // ao abrir o modal, limpa a seleÃ§Ã£o
       setSelectedItemIds([]);
       setNovaDataReprogramacao('');
     }
@@ -301,12 +322,13 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
 
 
   const [romaneioEmEdicaoId, setRomaneioEmEdicaoId] = useState(null);
-  const [formRomaneioId, setFormRomaneioId] = useState(''); 
-  const [formCliente, setFormCliente] = useState('');
-  const [formTotvs, setFormTotvs] = useState(''); 
-  const [formDataProducao, setFormDataProducao] = useState(hoje);
-  const [itensNoPedido, setItensNoPedido] = useState([]);
-  const [isEstoque, setIsEstoque] = useState(false); 
+const [formRomaneioId, setFormRomaneioId] = useState(''); 
+const [formCliente, setFormCliente] = useState('');
+const [formTotvs, setFormTotvs] = useState(''); 
+const [formDataProducao, setFormDataProducao] = useState(hoje);
+const [formRomaneioPdf, setFormRomaneioPdf] = useState(null);
+const [itensNoPedido, setItensNoPedido] = useState([]);
+const [isEstoque, setIsEstoque] = useState(false); 
 
   // Form Item
   const [formCod, setFormCod] = useState('');
@@ -335,24 +357,67 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
 const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);   
 
 
-// ... seus useStates estão aqui em cima ...
+// ... seus useStates estÃ£o aqui em cima ...
 
   // --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
 
-  const salvarCacheLocal = (override = {}) => {
-  if (!IS_LOCALHOST) return;
+  const carregarDadosDoFirebase = async () => {
+    console.log("🔥 Modo Produção/Sync: Buscando dados do Firebase...");
 
-  try {
-    const payload = {
-      producao: override.producao ?? historicoProducaoReal,
-      paradas: override.paradas ?? historicoParadas,
-      // se quiser, adiciona fila de romaneios aqui depois
-    };
-    localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(payload));
-  } catch (err) {
-    console.error("Erro ao salvar cache local:", err);
-  }
-};
+    const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
+    const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
+      sysId: docSnap.id,
+      ...docSnap.data(),
+    }));
+    setFilaProducao(listaRomaneios);
+
+    const producaoSnapshot = await getDocs(collection(db, "producao"));
+    const listaProducao = producaoSnapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      const { id, ...rest } = data;
+      return {
+        id: docSnap.id,
+        ...rest,
+      };
+    });
+    setHistoricoProducaoReal(preencherMaquinaSeVazia(listaProducao));
+
+    const paradasSnapshot = await getDocs(collection(db, "paradas"));
+    const listaParadas = paradasSnapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    }));
+    setHistoricoParadas(preencherMaquinaSeVazia(listaParadas));
+  };
+
+  const sincronizarDoFirebase = async () => {
+    setSyncEmAndamento(true);
+    try {
+      await carregarDadosDoFirebase();
+      setUltimoSyncFirebase(new Date().toISOString());
+    } catch (erro) {
+      console.error("Erro ao sincronizar com Firebase:", erro);
+      alert("Erro ao sincronizar com Firebase. Veja o console.");
+    } finally {
+      setSyncEmAndamento(false);
+      setDadosCarregados(true);
+    }
+  };
+
+  const salvarCacheLocal = (override = {}) => {
+    if (!IS_LOCALHOST) return;
+
+    try {
+      const payload = {
+        producao: override.producao ?? historicoProducaoReal,
+        paradas: override.paradas ?? historicoParadas,
+        // se quiser, adiciona fila de romaneios aqui depois
+      };
+      localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(payload));
+    } catch (err) {
+      console.error("Erro ao salvar cache local:", err);
+    }
+  };
 
   
     const CustomTooltip = ({ active, payload, label }) => {
@@ -361,7 +426,7 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
     const plan = payload.find(p => p.dataKey === 'pesoPlanejado')?.value || 0;
     const exec = payload.find(p => p.dataKey === 'pesoExecutado')?.value || 0;
 
-    // Meta diária em kg: usa o state; se der problema, cai pra 15000
+    // Meta diÃ¡ria em kg: usa o state; se der problema, cai pra 15000
     const metaDiaria = Number(capacidadeDiaria) || 15000;
 
     const saldoVsMeta = exec - metaDiaria;
@@ -433,82 +498,53 @@ useEffect(() => {
     // ------------------------------
     // MODO DEV (localhost)
     // ------------------------------
-    if (IS_LOCALHOST) {
-      console.log("🏠 Modo Dev detectado... tentando ler do localStorage");
+    if (IS_LOCALHOST && !FORCE_FIREBASE) {
+      console.log("ðŸ  Modo Dev detectado... tentando ler do localStorage");
 
       try {
         const salvo = localStorage.getItem(DEV_CACHE_KEY);
 
         if (salvo) {
           const parsed = JSON.parse(salvo);
-          console.log("🔄 Cache local encontrado, carregando...");
+          console.log("ðŸ”„ Cache local encontrado, carregando...");
 
           setFilaProducao(parsed.romaneios || []);
-          setHistoricoProducaoReal(parsed.producao || []);
-          setHistoricoParadas(parsed.paradas || []);
+          setHistoricoProducaoReal(preencherMaquinaSeVazia(parsed.producao || []));
+          setHistoricoParadas(preencherMaquinaSeVazia(parsed.paradas || []));
 
-          return; // já carregou do cache, não precisa ir pro JSON nem Firebase
+          return; // jÃ¡ carregou do cache, nÃ£o precisa ir pro JSON nem Firebase
         }
       } catch (err) {
         console.error("Erro ao ler cache local:", err);
       }
 
-      // Se não tiver nada no localStorage, usa o JSON da pasta (como você já fazia)
-      console.log("📁 Sem cache local, carregando do backup JSON...");
+      // Se nÃ£o tiver nada no localStorage, usa o JSON da pasta (como vocÃª jÃ¡ fazia)
+      console.log("ðŸ“ Sem cache local, carregando do backup JSON...");
       setFilaProducao(dadosLocais.romaneios || []);
-      setHistoricoProducaoReal(dadosLocais.producao || []);
-      setHistoricoParadas(dadosLocais.paradas || []);
-      return; // importante: não ir para o bloco do Firebase
+      setHistoricoProducaoReal(preencherMaquinaSeVazia(dadosLocais.producao || []));
+      setHistoricoParadas(preencherMaquinaSeVazia(dadosLocais.paradas || []));
+      return; // importante: nÃ£o ir para o bloco do Firebase
     }
 
     // ------------------------------
     // MODO PRODUÇÃO (Vercel / nuvem)
     // ------------------------------
     try {
-      console.log("☁️ Modo Produção: Buscando dados do Firebase...");
-
-      // 1. Romaneios
-      const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
-      const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
-        sysId: docSnap.id,
-        ...docSnap.data(),
-      }));
-      setFilaProducao(listaRomaneios);
-
-      // 2. Produção Real
-      const producaoSnapshot = await getDocs(collection(db, "producao"));
-      const listaProducao = producaoSnapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        const { id, ...rest } = data;
-        return {
-          id: docSnap.id,
-          ...rest,
-        };
-      });
-      setHistoricoProducaoReal(listaProducao);
-
-      // 3. Paradas
-      const paradasSnapshot = await getDocs(collection(db, "paradas"));
-      const listaParadas = paradasSnapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
-      setHistoricoParadas(listaParadas);
-
-      console.log("✅ Dados da nuvem carregados!");
+      await carregarDadosDoFirebase();
+      console.log("Dados da nuvem carregados!");
     } catch (erro) {
-      console.error("❌ Erro ao buscar dados:", erro);
+      console.error("âŒ Erro ao buscar dados:", erro);
     }
   };
 
-  carregarDados();
+  carregarDados().finally(() => setDadosCarregados(true));
 }, []);
 
 
 
 
 useEffect(() => {
-  if (!IS_LOCALHOST) return; // em produção não mexe em localStorage
+  if (!IS_LOCALHOST || !dadosCarregados) return; // em produÇõÇœo nÇœo mexe em localStorage
 
   try {
     const payload = {
@@ -518,16 +554,16 @@ useEffect(() => {
     };
 
     localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(payload));
-    // console.log("💾 Cache local atualizado");
+    // console.log("ðŸ’¾ Cache local atualizado");
   } catch (err) {
     console.error("Erro ao salvar cache local:", err);
   }
-}, [filaProducao, historicoProducaoReal, historicoParadas]);
+}, [filaProducao, historicoProducaoReal, historicoParadas, dadosCarregados]);
 
 
 
 
-  // --- IMPORTAÇÃO EXCEL ---
+  // --- IMPORTAÃ‡ÃƒO EXCEL ---
   const handleFileUpload = (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -541,15 +577,15 @@ useEffect(() => {
     const novosRomaneiosMap = {};
 
     data.forEach((row) => {
-      const id = encontrarValorNaLinha(row, ['ID', 'ROMANEIO', 'PEDIDO', 'ORDEM', 'Nº']);
+      const id = encontrarValorNaLinha(row, ['ID', 'ROMANEIO', 'PEDIDO', 'ORDEM', 'NÂº']);
       if (!id) return;
       const idStr = String(id).trim();
 
-      // 🔹 Data REAL daquela linha
+      // ðŸ”¹ Data REAL daquela linha
       const rawDate = encontrarValorNaLinha(row, ['DATA', 'DT', 'ENTREGA', 'EMISSAO']);
       const cleanDate = processarDataExcel(rawDate);
 
-      // 🔹 Usa ID + DATA como chave interna
+      // ðŸ”¹ Usa ID + DATA como chave interna
       const mapKey = `${idStr}__${cleanDate}`;
 
       if (!novosRomaneiosMap[mapKey]) {
@@ -557,11 +593,11 @@ useEffect(() => {
         const totvs = encontrarValorNaLinha(row, ['TOTVS', 'PC']) || '';
 
         novosRomaneiosMap[mapKey] = {
-          id: idStr,              // continua mostrando só o número do romaneio
+          id: idStr,              // continua mostrando sÃ³ o nÃºmero do romaneio
           sysId: Math.random(),
           cliente,
           totvs,
-          data: cleanDate,        // cada pedaço fica no dia certo
+          data: cleanDate,        // cada pedaÃ§o fica no dia certo
           status: 'PENDENTE',
           itens: []
         };
@@ -574,7 +610,7 @@ useEffect(() => {
       const comp = parseFloat(String(encontrarValorNaLinha(row, ['COMP']) || 0).replace(',', '.'));
       const qtd = parseInt(String(encontrarValorNaLinha(row, ['QTD']) || 0).replace(',', '.'));
 
-      // 🔹 Lê o peso certo da planilha
+      // ðŸ”¹ LÃª o peso certo da planilha
       const pesoBruto = encontrarValorNaLinha(row, ['PESO_TOTAL', 'PESO TOTAL', 'PESO']);
       const pesoTotal = parseFloat(String(pesoBruto || 0).replace(',', '.'));
 
@@ -615,7 +651,7 @@ useEffect(() => {
   };
 
 
-// Modelo de APONTAMENTO DE PRODUÇÃO
+// Modelo de APONTAMENTO DE PRODUÃ‡ÃƒO
 const handleDownloadModeloApontProd = () => {
   const ws = XLSX.utils.json_to_sheet([
     {
@@ -641,7 +677,7 @@ const handleDownloadModeloParadas = () => {
       DATA: hojeISO,      // data da parada
       INICIO: '07:00',    // hora inicial
       FIM: '07:30',       // hora final
-      COD_MOTIVO: dicionarioLocal[0]?.codigo || '001', // código do dicionário
+      COD_MOTIVO: dicionarioLocal[0]?.codigo || '001', // cÃ³digo do dicionÃ¡rio
       OBS: 'Parada de exemplo'
     }
   ];
@@ -659,14 +695,14 @@ const handleDownloadModeloParadas = () => {
   
   const handleSelectProduto = (e) => {
     const codigo = e.target.value; setFormCod(codigo);
-    // Proteção para caso o catálogo não carregue
+    // ProteÃ§Ã£o para caso o catÃ¡logo nÃ£o carregue
     if (CATALOGO_PRODUTOS) {
         const p = CATALOGO_PRODUTOS.find(x => x.cod === codigo);
         if (p) { setDadosProdutoAtual(p); setFormDesc(p.desc); setFormPerfil(p.perfil); setFormMaterial(p.material); setIsCustomLength(p.custom); setFormComp(p.custom?'':p.comp); }
         else { setDadosProdutoAtual(null); if(!codigo) resetItemFields(); }
     }
   };
-  const resetItemFields = () => { setFormCod(''); setFormDesc(''); setFormPerfil(''); setFormMaterial(''); setFormComp(''); setFormQtd(''); setIsCustomLength(false); setDadosProdutoAtual(null); };
+const resetItemFields = () => { setFormCod(''); setFormDesc(''); setFormPerfil(''); setFormMaterial(''); setFormComp(''); setFormQtd(''); setIsCustomLength(false); setDadosProdutoAtual(null); };
   const adicionarItemNaLista = () => {
     if (!formDesc || !formQtd) return alert("Preencha dados.");
     const qtd = parseInt(formQtd); const comp = parseFloat(formComp) || 0;
@@ -675,11 +711,93 @@ const handleDownloadModeloParadas = () => {
     resetItemFields();
   };
   const removerItemDaLista = (id) => setItensNoPedido(itensNoPedido.filter(i => i.tempId !== id));
+  const extrairItensDoPdf = async (file) => {
+    const buffer = await file.arrayBuffer();
+    const pdf = await getDocument({ data: buffer }).promise;
+    let texto = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      texto += ' ' + content.items.map((it) => it.str).join(' ');
+    }
+    return texto;
+  };
+
+  const parseItensRomaneio = (textoBruto) => {
+    if (!textoBruto) return [];
+    let clean = textoBruto
+      .replace(/[ -]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .toUpperCase();
+
+    // tenta pegar romaneio e cliente
+    const romMatch = clean.match(/ROMAN\w*[:\s]+([A-Z]?\d{3,})/);
+    if (romMatch && !formRomaneioId) {
+      setFormRomaneioId(romMatch[1]);
+    }
+    const cliMatch = clean.match(/CLIENTE[:\s]+(.{3,80}?)(?= TELEFONE| ENDERE| CGC| CPF|$)/);
+    if (cliMatch) {
+      const blocoCli = cliMatch[1].trim();
+      const rotulo = romMatch ? `${romMatch[1]} - ${blocoCli}` : blocoCli;
+      if (rotulo) setFormCliente(rotulo);
+    }
+
+    // normaliza separadores e corta a partir de DESC
+    clean = clean
+      .replace(/DESC(?=\d)/g, 'DESC ')
+      .replace(/(\d,\d{2})(\d{5})/g, '$1 $2');
+
+    const idxDesc = clean.indexOf('DESC');
+    const target = idxDesc > -1 ? clean.slice(idxDesc) : clean;
+
+    const regex = /(?:^|\s)\d{0,2}\s*(\d{5})\s+(.{5,80}?)\s+(\d{1,3},\d{2})\s*\)\s*\w+\s+(\d{1,4},\d{2})/g;
+    const itens = [];
+    let m;
+    while ((m = regex.exec(target)) !== null) {
+      const [_, cod, descRaw, qtdStr, pesoStr] = m;
+      const qtd = parseFloat(qtdStr.replace(',', '.')) || 0;
+      const pesoTotal = parseFloat(pesoStr.replace(',', '.')) || 0;
+      const compMatch = descRaw.match(/(\d+(?:,\d+)?)\s*M(?!M)/);
+      const comp = compMatch ? parseFloat(compMatch[1].replace(',', '.')) : 0;
+      const desc = descRaw.replace(/[^\w\s,.-]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+      itens.push({
+        tempId: Math.random(),
+        cod,
+        desc,
+        comp,
+        qtd,
+        pesoTotal: pesoTotal ? pesoTotal.toFixed(2) : '',
+        perfil: '',
+        material: '',
+      });
+    }
+    return itens;
+  };
+
+  const handleUploadRomaneioPdf = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFormRomaneioPdf(file);
+
+    try {
+      const texto = await extrairItensDoPdf(file);
+      const itens = parseItensRomaneio(texto);
+      if (itens.length) {
+        setItensNoPedido(itens);
+      } else {
+        alert('PDF lido, mas não foi possível identificar itens.');
+      }
+    } catch (err) {
+      console.error('Erro ao ler PDF do romaneio:', err);
+      alert('Não foi possível ler o PDF.');
+    }
+  };
   
   const salvarRomaneio = async () => {
   try {
     if (!maquinaSelecionada) {
-      alert("Selecione a mÇ­quina para esta ordem.");
+      alert("Selecione a mÃ‡Â­quina para esta ordem.");
       return;
     }
     if (!formRomaneioId || !formDataProducao) {
@@ -694,11 +812,11 @@ const handleDownloadModeloParadas = () => {
 
     const agoraISO = new Date().toISOString();
 
-    // 1) ROMANEIO DO DIA ATUAL (já sem os itens reprogramados)
+    // 1) ROMANEIO DO DIA ATUAL (jÃ¡ sem os itens reprogramados)
     const objAtual = {
-      // 🔹 padroniza o nome dos campos
+      // ðŸ”¹ padroniza o nome dos campos
       id: formRomaneioId,
-      romaneioId: formRomaneioId,          // mantém espelho pra não quebrar nada
+      romaneioId: formRomaneioId,          // mantÃ©m espelho pra nÃ£o quebrar nada
       data: formDataProducao,
       dataProducao: formDataProducao,      // idem
 
@@ -754,7 +872,7 @@ const handleDownloadModeloParadas = () => {
 
       await addDoc(collection(db, "romaneios"), objReprogramado);
 
-      console.log("✅ Romaneio reprogramado criado:", objReprogramado);
+      console.log("âœ… Romaneio reprogramado criado:", objReprogramado);
     }
 
     // 4) RECARREGA A FILA TODA DO FIRESTORE
@@ -799,11 +917,12 @@ setIsEstoque((r.id || r.romaneioId) === 'ESTOQUE');
 
   const limparFormularioGeral = () => { setFormRomaneioId(''); setFormCliente(''); setFormTotvs(''); setFormDataProducao(hoje); setItensNoPedido([]); setIsEstoque(false); resetItemFields(); setRomaneioEmEdicaoId(null); };
   const abrirSelecaoMaquina = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
-  const handleEscolherMaquina = (id) => {
-    setMaquinaSelecionada(id);
-    setShowModalSelecaoMaquina(false);
-    setShowModalNovaOrdem(true);
-  };
+const handleEscolherMaquina = (id) => {
+  setMaquinaSelecionada(id);
+  setShowModalSelecaoMaquina(false);
+  setShowModalNovaOrdem(true);
+  setFormRomaneioPdf(null);
+};
 const deletarRomaneio = async (sysId) => {
   const ok = window.confirm("Excluir esse romaneio?");
   if (!ok) return;
@@ -816,7 +935,7 @@ const deletarRomaneio = async (sysId) => {
     await deleteDoc(doc(db, "romaneios", String(sysId)));
   } catch (err) {
     console.error("Erro ao apagar romaneio no Firebase:", err);
-    alert("Erro ao apagar no servidor. Dá uma olhada no console (F12).");
+    alert("Erro ao apagar no servidor. DÃ¡ uma olhada no console (F12).");
   }
 };
 
@@ -828,7 +947,7 @@ const deletarRomaneio = async (sysId) => {
         const produto = CATALOGO_PRODUTOS.find(p => p.cod === codigo);
         if(produto) {
           setFormApontProdDesc(produto.desc);
-          // sugere o comprimento padrÇ½o ou limpa para sob medida
+          // sugere o comprimento padrÃ‡Â½o ou limpa para sob medida
           setFormApontProdComp(produto.custom ? '' : (produto.comp || ''));
         } else {
           setFormApontProdDesc('');
@@ -864,13 +983,13 @@ const salvarApontamentoProducao = async (e) => {
   e.preventDefault();
 
   if (!formApontProdCod || !formApontProdQtd) {
-    alert("Preencha código e quantidade.");
+    alert("Preencha cÃ³digo e quantidade.");
     return;
   }
 
   const qtd = parseInt(formApontProdQtd, 10) || 0;
   if (!qtd) {
-    alert("Quantidade inválida.");
+    alert("Quantidade invÃ¡lida.");
     return;
   }
 
@@ -906,14 +1025,15 @@ const salvarApontamentoProducao = async (e) => {
   const obj = {
     data: dataISO,
     cod: formApontProdCod,
-    desc: formApontProdDesc || "Item s/ descrição",
+    desc: formApontProdDesc || "Item s/ descriÃ§Ã£o",
     qtd,
     comp: compNumero,
     pesoTotal,
     pesoPorPeca,
     m2Total,
     destino: formApontProdDestino || "Estoque",
-    maquinaId: formApontProdMaquina || "",
+    maquinaId: formApontProdMaquina || DEFAULT_MAQUINA_ID,
+    maquina: formApontProdMaquina || DEFAULT_MAQUINA_ID,
     };
 
   try {
@@ -921,14 +1041,18 @@ const salvarApontamentoProducao = async (e) => {
       await safeUpdateDoc("producao", String(apontamentoEmEdicaoId), obj);
 
       setHistoricoProducaoReal((prev) =>
-        prev.map((p) =>
-          p.id === apontamentoEmEdicaoId ? { ...p, ...obj } : p
+        preencherMaquinaSeVazia(
+          prev.map((p) =>
+            p.id === apontamentoEmEdicaoId ? { ...p, ...obj } : p
+          )
         )
       );
     } else {
       const docRef = await safeAddDoc("producao", obj);
       const newId = docRef?.id || `local-${Date.now()}`;
-      setHistoricoProducaoReal((prev) => [{ id: newId, ...obj }, ...prev]);
+      setHistoricoProducaoReal((prev) =>
+        preencherMaquinaSeVazia([{ id: newId, ...obj }, ...prev])
+      );
     }
 
     // limpa o form
@@ -940,7 +1064,7 @@ const salvarApontamentoProducao = async (e) => {
     setFormApontProdDestino("Estoque");
     // se quiser, pode voltar a data pra hoje aqui
   } catch (err) {
-    console.error("Erro ao salvar produção:", err);
+    console.error("Erro ao salvar produÃ§Ã£o:", err);
     alert("Erro ao salvar no servidor. Veja o console (F12).");
   }
 };
@@ -955,7 +1079,7 @@ const deletarProducaoReal = async (id) => {
   try {
     await safeDeleteDoc("producao", id);
   } catch (err) {
-    console.error("Erro ao apagar produção:", err);
+    console.error("Erro ao apagar produÃ§Ã£o:", err);
     alert("Erro ao apagar no servidor. Veja o console (F12).");
   }
 };
@@ -1004,39 +1128,53 @@ const deletarProducaoReal = async (id) => {
           encontrarValorNaLinha(row, ["DESTINO", "LOCAL", "ARMAZEM"]) ||
             "Estoque"
         ).trim();
+        const maquinaBruta = encontrarValorNaLinha(row, [
+          "MAQUINA",
+          "MAQUINAID",
+          "MACHINE",
+          "LINHA",
+          "EQUIPAMENTO",
+        ]);
+        const maquinaLinha =
+          String(maquinaBruta || DEFAULT_MAQUINA_ID).trim() || DEFAULT_MAQUINA_ID;
 
         if (!cod || !qtd) return null;
 
         return {
           data: dataISO,
           cod,
-          desc: desc || "Item s/ descrição",
+          desc: desc || "Item s/ descriÃ§Ã£o",
           qtd,
           destino,
+          maquinaId: maquinaLinha,
+          maquina: maquinaLinha,
         };
       })
       .filter(Boolean);
 
     if (!novos.length) {
-      alert("Nenhuma linha válida encontrada no arquivo de produção.");
+      alert("Nenhuma linha vÃ¡lida encontrada no arquivo de produÃ§Ã£o.");
       return;
     }
 
     try {
       const salvos = await Promise.all(
         novos.map(async (item) => {
-          const docRef = await addDoc(collection(db, "producao"), item);
-          return { id: docRef.id, ...item };
+          const itemComMaquina = preencherMaquinaSeVazia([item])[0];
+          const docRef = await addDoc(collection(db, "producao"), itemComMaquina);
+          return { id: docRef.id, ...itemComMaquina };
         })
       );
 
-      setHistoricoProducaoReal((prev) => [...salvos, ...prev]);
+      setHistoricoProducaoReal((prev) =>
+        preencherMaquinaSeVazia([...salvos, ...prev])
+      );
       alert(
-        `${salvos.length} apontamentos de produção importados e salvos na nuvem.`
+        `${salvos.length} apontamentos de produÃ§Ã£o importados e salvos na nuvem.`
       );
     } catch (err) {
-      console.error("Erro ao importar apontamentos de produção:", err);
-      alert("Erro ao salvar apontamentos de produção no servidor.");
+      console.error("Erro ao importar apontamentos de produÃ§Ã£o:", err);
+      alert("Erro ao salvar apontamentos de produÃ§Ã£o no servidor.");
     }
   };
 
@@ -1086,7 +1224,7 @@ const deletarParada = async (id) => {
         evento: String(encontrarValorNaLinha(r, ['EVENTO','DESC','MOTIVO'])||''),
         grupo: String(encontrarValorNaLinha(r, ['GRUPO','TIPO'])||'GERAL')
       })).filter(i=>i.codigo&&i.evento);
-      if(novoDic.length>0) { setDicionarioLocal(novoDic); alert("Dicionário atualizado!"); }
+      if(novoDic.length>0) { setDicionarioLocal(novoDic); alert("DicionÃ¡rio atualizado!"); }
     };
     reader.readAsBinaryString(file);
     e.target.value = null;
@@ -1116,7 +1254,7 @@ const deletarParada = async (id) => {
       ]);
       const rawInicio = encontrarValorNaLinha(row, [
         "INICIO",
-        "INÍCIO",
+        "INÃCIO",
         "HR_INICIO",
         "HORA_INICIO",
         "START",
@@ -1129,7 +1267,7 @@ const deletarParada = async (id) => {
       ]);
       const rawCod = encontrarValorNaLinha(row, [
         "COD_MOTIVO",
-        "CÓD_MOTIVO",
+        "CÃ“D_MOTIVO",
         "CODIGO_MOTIVO",
         "CODIGO",
         "COD",
@@ -1138,7 +1276,7 @@ const deletarParada = async (id) => {
       const rawObs = encontrarValorNaLinha(row, [
         "OBS",
         "OBSERVACAO",
-        "OBSERVAÇÃO",
+        "OBSERVAÃ‡ÃƒO",
         "DETALHE",
       ]);
 
@@ -1169,6 +1307,16 @@ const deletarParada = async (id) => {
         );
       }
 
+      const maquinaBruta = encontrarValorNaLinha(row, [
+        "MAQUINA",
+        "MAQUINAID",
+        "MACHINE",
+        "LINHA",
+        "EQUIPAMENTO",
+      ]);
+      const maquinaLinha =
+        String(maquinaBruta || DEFAULT_MAQUINA_ID).trim() || DEFAULT_MAQUINA_ID;
+
       novos.push({
         data: dataISO,
         inicio,
@@ -1180,12 +1328,14 @@ const deletarParada = async (id) => {
           : codMotivo || "Desconhecido",
         grupo: motivo ? motivo.grupo || "Geral" : "Geral",
         obs: rawObs ? String(rawObs) : "",
+        maquinaId: maquinaLinha,
+        maquina: maquinaLinha,
       });
     });
 
     if (!novos.length) {
       alert(
-        "Nenhuma linha válida encontrada no arquivo de paradas.\n\n" +
+        "Nenhuma linha vÃ¡lida encontrada no arquivo de paradas.\n\n" +
           "Confere se o arquivo tem pelo menos as colunas DATA, INICIO e FIM preenchidas."
       );
       return;
@@ -1194,12 +1344,15 @@ const deletarParada = async (id) => {
     try {
       const salvos = await Promise.all(
         novos.map(async (item) => {
-          const docRef = await addDoc(collection(db, "paradas"), item);
-          return { id: docRef.id, ...item };
+          const itemComMaquina = preencherMaquinaSeVazia([item])[0];
+          const docRef = await addDoc(collection(db, "paradas"), itemComMaquina);
+          return { id: docRef.id, ...itemComMaquina };
         })
       );
 
-      setHistoricoParadas((prev) => [...salvos, ...prev]);
+      setHistoricoParadas((prev) =>
+        preencherMaquinaSeVazia([...salvos, ...prev])
+      );
       alert(
         `${salvos.length} apontamentos de parada importados e salvos na nuvem.`
       );
@@ -1223,11 +1376,19 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
   futuro: filaProducao.filter((r) => getDataRomaneio(r) > amanha),
 };
 
+  // Presets para a tela de Carga (visual ativo nos botões)
+  const inicio7Dias = getLocalISODate(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
+  const inicioAnoAtual = getLocalISODate(new Date(hojeDate.getFullYear(), 0, 1));
+  const isPresetHoje = dataInicioInd === hoje && dataFimInd === hoje;
+  const isPreset7Dias = dataInicioInd === inicio7Dias && dataFimInd === hoje;
+  const isPresetMes = dataInicioInd === primeiroDiaMesAtual && dataFimInd === hoje;
+  const isPresetAno = dataInicioInd === inicioAnoAtual && dataFimInd === hoje;
+
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
 
   // --- DASHBOARD E OEE ---
-  // --- DASHBOARD E OEE (Lógica Atualizada) ---
-  // --- DASHBOARD E OEE (Lógica Atualizada com Filtros) ---
+  // --- DASHBOARD E OEE (LÃ³gica Atualizada) ---
+  // --- DASHBOARD E OEE (LÃ³gica Atualizada com Filtros) ---
   // --- SUBSTITUA O SEU 'const dadosIndicadores' ATUAL POR ESTE INTEIRO ---
   const dadosIndicadores = useMemo(() => { 
   const agrupadoPorDia = {};
@@ -1267,21 +1428,36 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
   const producaoNoPeriodo = historicoProducaoReal.filter(
     p => p.data >= dataInicioInd && p.data <= dataFimInd
   );
-  producaoNoPeriodo.forEach(p => {
+  const calcularPesoExecutado = (item) => {
+    const qtdNum = Number(item.qtd) || 0;
+    if (!qtdNum) return 0;
+
+    const pesoRegistrado = Number(item.pesoTotal);
+    if (Number.isFinite(pesoRegistrado) && pesoRegistrado > 0) {
+      return pesoRegistrado;
+    }
+
+    const prodCatalogo = CATALOGO_PRODUTOS?.find((cat) => cat.cod === item.cod);
+    if (prodCatalogo) {
+      if (prodCatalogo.custom) {
+        const compNum =
+          Number(item.comp || item.compMetros || prodCatalogo.comp || 0) || 0;
+        const kgMetro = Number(prodCatalogo.kgMetro || 0);
+        return qtdNum * compNum * kgMetro;
+      }
+      return qtdNum * Number(prodCatalogo.pesoUnit || 0);
+    }
+    return 0;
+  };
+
+  producaoNoPeriodo.forEach((p) => {
     const d = String(p.data);
     if (agrupadoPorDia[d]) {
-      let pesoItem = 0;
-      if (CATALOGO_PRODUTOS) {
-        const prodCatalogo = CATALOGO_PRODUTOS.find(cat => cat.cod === p.cod);
-        if (prodCatalogo) {
-          pesoItem = (prodCatalogo.pesoUnit || 0) * p.qtd;
-        }
-      }
-      agrupadoPorDia[d].pesoExecutado += pesoItem;
+      agrupadoPorDia[d].pesoExecutado += calcularPesoExecutado(p);
     }
   });
 
-  // 4. Array para o gráfico (sem FDS e sem dias totalmente vazios)
+  // 4. Array para o grÃ¡fico (sem FDS e sem dias totalmente vazios)
   const arrayGrafico = Object.keys(agrupadoPorDia)
     .sort()
     .map(data => ({ data, ...agrupadoPorDia[data] }))
@@ -1293,7 +1469,7 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
       return !(isFimDeSemana || isVazio);
     });
 
-  // 5. Totais do período selecionado
+  // 5. Totais do perÃ­odo selecionado
   const totalPesoPlanejado = romaneiosNoPeriodo.reduce(
     (acc, r) => acc + r.itens.reduce(
       (sum, i) => sum + parseFloat(i.pesoTotal || 0), 
@@ -1302,67 +1478,75 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
     0
   );
 
-  const totalPesoExecutado = producaoNoPeriodo.reduce((acc, p) => {
-    const prod = CATALOGO_PRODUTOS?.find(c => c.cod === p.cod);
-    return acc + ((prod?.pesoUnit || 0) * p.qtd);
-  }, 0);
+  const totalPesoExecutado = producaoNoPeriodo.reduce(
+    (acc, p) => acc + calcularPesoExecutado(p),
+    0
+  );
 
-  // ================= META vs EXECUTADO CORRIDO ==================
+  // ================= META vs EXECUTADO (alinhado ao perÃ­odo selecionado) ==================
   const capacidadeNum = Number(capacidadeDiaria) || 0;
 
-  // datas pra cálculo de dias úteis até o fim do mês
-  const inicioPeriodo = new Date(dataInicioInd + 'T12:00:00');
+  const contarDiasUteis = (inicioIso, fimIso) => {
+    const ini = new Date(inicioIso + 'T12:00:00');
+    const fim = new Date(fimIso + 'T12:00:00');
+    let dias = 0;
+    for (let d = new Date(ini); d <= fim; d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay();
+      if (dow === 0 || dow === 6) continue;
+      dias++;
+    }
+    return dias || 1; // evita divisÃ£o por zero
+  };
+
+  // meta e saldo restritos ao perÃ­odo do filtro
+  const diasUteisPeriodo = Math.max(contarDiasUteis(dataInicioInd, dataFimInd), 1);
+  const metaPeriodo = capacidadeNum * diasUteisPeriodo;
+  const saldoTotal = totalPesoExecutado - metaPeriodo;
+
+  // cÃ¡lculo mensal mantido para projeÃ§Ã£o
+  const inicioPeriodoMes = new Date(dataInicioInd + 'T12:00:00');
   const hojeDate = new Date(hojeISO + 'T12:00:00');
   const lastDayOfMonth = new Date(
-    inicioPeriodo.getFullYear(), 
-    inicioPeriodo.getMonth() + 1, 
+    inicioPeriodoMes.getFullYear(),
+    inicioPeriodoMes.getMonth() + 1,
     0
   );
 
   let diasUteisMes = 0;
-  let diasUteisPassados = 0;
-
-  for (let d = new Date(inicioPeriodo); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(inicioPeriodoMes); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    if (dow === 0 || dow === 6) continue; // pula sábado/domingo
-
+    if (dow === 0 || dow === 6) continue;
     diasUteisMes++;
-    if (d <= hojeDate) diasUteisPassados++;
   }
 
-  if (diasUteisPassados === 0) diasUteisPassados = 1;
-
-  // Meta acumulada até hoje (pra saldo corrido)
-  const metaAteHoje = capacidadeNum * diasUteisPassados;
-
-  // Meta até o fim do mês (é isso que vai no CARD como "Meta")
   const metaAteFimMes = capacidadeNum * diasUteisMes;
 
-  // Média diária REAL até hoje
-  const mediaAtual = totalPesoExecutado / diasUteisPassados;
+  // Média diária REAL no período selecionado
+  const mediaAtual = totalPesoExecutado / diasUteisPeriodo;
 
-  // Projeção até o fim do mês = média diária * todos os dias úteis do mês
+  // ProjeÃ§Ã£o atÃ© o fim do mÃªs usando a mÃ©dia atual
   const projecaoFinal = mediaAtual * diasUteisMes;
 
-  // Saldo corrido vs meta (executado - meta até hoje)
-  const saldoTotal = totalPesoExecutado - metaAteHoje;
-
-  // Ritmo necessário pra bater a meta do mês (se quiser manter esse indicador)
-  const diasRestantes = Math.max(diasUteisMes - diasUteisPassados, 0);
+  // Ritmo necess?rio pra meta do M?S (dias ?teis restantes at? o fim do m?s)
+  const lastDayOfMonthISO = getLocalISODate(lastDayOfMonth);
+  const diasRestantesMes = Math.max(contarDiasUteis(hojeISO, lastDayOfMonthISO), 1);
   let ritmoNecessario = 0;
-  if (diasRestantes > 0 && capacidadeNum > 0) {
-    const falta = metaAteFimMes - totalPesoExecutado;
-    ritmoNecessario = falta > 0 ? falta / diasRestantes : 0;
+  if (diasRestantesMes > 0) {
+    const faltaMes = metaAteFimMes - totalPesoExecutado;
+    ritmoNecessario = faltaMes > 0 ? faltaMes / diasRestantesMes : 0;
+  } else if (diasUteisPeriodo > 0) {
+    // se n?oo houver dias ?teis no m?s, usa a m?dia do per?odo selecionado
+    ritmoNecessario = metaPeriodo / diasUteisPeriodo;
   }
 
   return { 
     arrayGrafico,
-    totalPesoPlanejado,    // continua disponível se quiser ver “planejado x executado”
+    totalPesoPlanejado,    // continua disponÃ­vel se quiser ver â€œplanejado x executadoâ€
     totalPesoExecutado,
     saldoTotal,            // agora vs meta corrida
     ritmoNecessario,
-    projecaoFinal,         // projeção até o fim do mês
-    metaAteFimMes          // meta até o fim do mês (capacidade * dias úteis)
+    projecaoFinal,         // projeÃ§Ã£o atÃ© o fim do mÃªs
+    metaAteFimMes          // meta atÃ© o fim do mÃªs (capacidade * dias Ãºteis)
   };
 }, [
   filaProducao,
@@ -1374,15 +1558,15 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
 
 
 
-// --- Helper: evento de tempo útil (máquina rodando) -----------------
+// --- Helper: evento de tempo Ãºtil (mÃ¡quina rodando) -----------------
 const ehTempoUtil = (evento) => {
   const grupo = String(evento.grupo || '').toUpperCase().trim();
   const cod   = String(evento.codMotivo || evento.codigo || '').toUpperCase().trim();
 
-  // Grupo TU cadastrado no dicionário
+  // Grupo TU cadastrado no dicionÃ¡rio
   if (grupo === 'TU') return true;
 
-  // Segurança extra: códigos TU01, TU02 etc
+  // SeguranÃ§a extra: cÃ³digos TU01, TU02 etc
   if (cod.startsWith('TU')) return true;
 
   return false;
@@ -1407,7 +1591,7 @@ const handleReprogramarItensSelecionados = () => {
   );
 
   if (itensParaMover.length === 0) {
-    alert("Nenhum item válido encontrado para reprogramar.");
+    alert("Nenhum item vÃ¡lido encontrado para reprogramar.");
     return;
   }
 
@@ -1415,7 +1599,7 @@ const handleReprogramarItensSelecionados = () => {
   setItensReprogramados(itensParaMover);
 
   console.log(
-    "🔁 Itens marcados para reprogramar em",
+    "ðŸ” Itens marcados para reprogramar em",
     novaDataReprogramacao,
     itensParaMover
   );
@@ -1428,24 +1612,27 @@ const handleReprogramarItensSelecionados = () => {
 
 
 const handleRegistrarParada = async (novaParada) => {
-  // gera um ID temporário local
+  const paradaNormalizada = preencherMaquinaSeVazia([novaParada || {}])[0];
+  // gera um ID temporÃ¡rio local
   const paradaLocal = {
     id: `par_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    ...novaParada,
+    ...paradaNormalizada,
   };
 
-  // 1) SEMPRE joga no histórico local
-  setHistoricoParadas((prev) => [...prev, paradaLocal]);
+  // 1) SEMPRE joga no histÃ³rico local
+  setHistoricoParadas((prev) =>
+    preencherMaquinaSeVazia([...prev, paradaLocal])
+  );
 
-  // 2) Em localhost, não chama Firebase
+  // 2) Em localhost, nÃ£o chama Firebase
   if (IS_LOCALHOST) {
-    console.info("[Paradas] Rodando em localhost, não salvando no Firebase.");
+    console.info("[Paradas] Rodando em localhost, nÃ£o salvando no Firebase.");
     return;
   }
 
-  // 3) Em produção, salva e troca o id temporário pelo id real
+  // 3) Em produÃ§Ã£o, salva e troca o id temporÃ¡rio pelo id real
   try {
-    const idGerado = await salvarApontamentoParada(novaParada);
+    const idGerado = await salvarApontamentoParada(paradaNormalizada);
 
     if (idGerado) {
       setHistoricoParadas((prev) =>
@@ -1472,7 +1659,7 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
 
 
     const dadosOEE = useMemo(() => {
-    // Se não tiver dado nenhum, já volta zerado
+    // Se nÃ£o tiver dado nenhum, jÃ¡ volta zerado
     if (!Array.isArray(historicoParadas) || !historicoParadas.length) {
       return {
         oee: 0,
@@ -1497,7 +1684,7 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
     const inicio = parseISODate(dataInicioInd);
     const fim = parseISODate(dataFimInd);
 
-    // Se as datas estiverem zoada, não calcula nada
+    // Se as datas estiverem zoada, nÃ£o calcula nada
     if (!inicio || !fim || fim < inicio) {
       return {
         oee: 0,
@@ -1516,13 +1703,13 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
     const diasPeriodo = Math.floor((fim - inicio) / MS_DIA) + 1;
 
     const turnoHorasNum = Number(turnoHoras) || 0;
-    const tempoTurnoTotal = diasPeriodo * turnoHorasNum * 60; // minutos de turno no período
+    const tempoTurnoTotal = diasPeriodo * turnoHorasNum * 60; // minutos de turno no perÃ­odo
 
-    // Convenção: códigos que começam com "TU" = máquina rodando
+    // ConvenÃ§Ã£o: cÃ³digos que comeÃ§am com "TU" = mÃ¡quina rodando
     const ehCodigoRodando = (cod) =>
       String(cod || "").toUpperCase().startsWith("TU");
 
-    // Filtrar eventos de parada / funcionamento dentro do período
+    // Filtrar eventos de parada / funcionamento dentro do perÃ­odo
     const eventosPeriodo = historicoParadas.filter((p) => {
       if (!p?.data) return false;
       const d = parseISODate(p.data);
@@ -1537,19 +1724,19 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
     eventosPeriodo.forEach((p) => {
       const dur = Number(p.duracao) || 0;
       const cod = p.codMotivo || "";
-      const desc = p.descMotivo || cod || "Motivo não informado";
+      const desc = p.descMotivo || cod || "Motivo nÃ£o informado";
 
       if (ehCodigoRodando(cod)) {
-        // TU = máquina rodando
+        // TU = mÃ¡quina rodando
         tempoProduzindoMin += dur;
       } else {
-        // Qualquer outro código = parada
+        // Qualquer outro cÃ³digo = parada
         tempoParadoMin += dur;
         mapaPareto[desc] = (mapaPareto[desc] || 0) + dur;
       }
     });
 
-    // Se por algum motivo não tiver TU apontado, mas tiver turno configurado,
+    // Se por algum motivo nÃ£o tiver TU apontado, mas tiver turno configurado,
     // assume que o resto do turno foi tempo rodando
     if (!tempoProduzindoMin && tempoTurnoTotal > 0) {
       tempoProduzindoMin = Math.max(tempoTurnoTotal - tempoParadoMin, 0);
@@ -1568,7 +1755,7 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
     // OEE = A * P * Q
     const oee = (disponibilidade * performance * qualidade) / 10000;
 
-    // Pareto só com PARADAS (sem TU)
+    // Pareto sÃ³ com PARADAS (sem TU)
     const listaPareto = Object.entries(mapaPareto)
       .map(([motivo, tempo]) => ({ motivo, tempo }))
       .sort((a, b) => b.tempo - a.tempo)
@@ -1595,18 +1782,18 @@ const migrarDadosParaNuvem = async () => {
       return;
 
     try {
-      console.log("Iniciando migração...");
+      console.log("Iniciando migraÃ§Ã£o...");
 
       // 1. Subir Romaneios (PCP)
       console.log("Subindo Romaneios...");
       for (const item of filaProducao) {
-        // removemos o sysId local para o Firebase criar o ID dele automático
+        // removemos o sysId local para o Firebase criar o ID dele automÃ¡tico
         const { sysId, ...dados } = item; 
         await addDoc(collection(db, "romaneios"), dados);
       }
 
-      // 2. Subir Histórico de Produção
-      console.log("Subindo Produção...");
+      // 2. Subir HistÃ³rico de ProduÃ§Ã£o
+      console.log("Subindo ProduÃ§Ã£o...");
       for (const item of historicoProducaoReal) {
   const { id, ...rest } = item; // tira o id local
   await addDoc(collection(db, "producao"), rest);
@@ -1618,20 +1805,20 @@ const migrarDadosParaNuvem = async () => {
         await addDoc(collection(db, "paradas"), item);
       }
 
-      alert("SUCESSO! Todos os dados estão no Firebase agora. 🚀");
+      alert("SUCESSO! Todos os dados estÃ£o no Firebase agora. ðŸš€");
     } catch (erro) {
-      console.error("Erro na migração:", erro);
+      console.error("Erro na migraÃ§Ã£o:", erro);
       alert("Erro ao subir dados. Veja o console (F12).");
     }
   };
 
 
   // Exemplo simples de export
-// --- BACKUP: EXPORTA TODAS AS COLEÇÕES PRINCIPAIS ---
-// --- BACKUP: EXPORTA TODAS AS COLEÇÕES PRINCIPAIS ---
+// --- BACKUP: EXPORTA TODAS AS COLEÃ‡Ã•ES PRINCIPAIS ---
+// --- BACKUP: EXPORTA TODAS AS COLEÃ‡Ã•ES PRINCIPAIS ---
 const handleExportBackup = async () => {
   try {
-    // Lê direto do Firestore (do projeto DEV ou PROD, conforme firebase.js)
+    // LÃª direto do Firestore (do projeto DEV ou PROD, conforme firebase.js)
     const [romSnap, prodSnap, parSnap] = await Promise.all([
       getDocs(collection(db, 'romaneios')),
       getDocs(collection(db, 'producao')),
@@ -1663,34 +1850,34 @@ const handleExportBackup = async () => {
 
 
 
-// --- BACKUP: IMPORTA (SÓ ESCREVE EM PRODUÇÃO) ---
-// --- BACKUP: IMPORTAÇÃO LOCAL (MODO PLAYGROUND) ---
+// --- BACKUP: IMPORTA (SÃ“ ESCREVE EM PRODUÃ‡ÃƒO) ---
+// --- BACKUP: IMPORTAÃ‡ÃƒO LOCAL (MODO PLAYGROUND) ---
 const handleImportBackup = (json) => {
   if (!json) return;
 
-  console.log("📂 Carregando dados do backup na memória...", json);
+  console.log("ðŸ“‚ Carregando dados do backup na memÃ³ria...", json);
 
   // 1. Atualiza os ROMANEIOS (PCP)
   if (Array.isArray(json.romaneios)) {
     setFilaProducao(json.romaneios);
   }
 
-  // 2. Atualiza a PRODUÇÃO (Apontamentos)
+  // 2. Atualiza a PRODUÃ‡ÃƒO (Apontamentos)
   if (Array.isArray(json.producao)) {
-    // Garante que o campo 'cod' existe para não quebrar tabelas
+    // Garante que o campo 'cod' existe para nÃ£o quebrar tabelas
     const prodFormatada = json.producao.map(p => ({
         ...p,
         cod: p.cod || p.codigo || '' // fallback se o nome estiver diferente
     }));
-    setHistoricoProducaoReal(prodFormatada);
+    setHistoricoProducaoReal(preencherMaquinaSeVazia(prodFormatada));
   }
 
   // 3. Atualiza as PARADAS
   if (Array.isArray(json.paradas)) {
-    setHistoricoParadas(json.paradas);
+    setHistoricoParadas(preencherMaquinaSeVazia(json.paradas));
   }
 
-  alert('Dados carregados! O app está rodando com os dados do arquivo (Modo Offline).');
+  alert('Dados carregados! O app estÃ¡ rodando com os dados do arquivo (Modo Offline).');
 };
 
 
@@ -1700,17 +1887,17 @@ const handleImportBackup = (json) => {
     <>
       <PrintStyles />
 
-      {/* --- ÁREA DE IMPRESSÃO --- */}
+      {/* --- ÃREA DE IMPRESSÃƒO --- */}
       <div id="printable-area" className="print-page-container">
     <div className="page-title text-center text-xl font-serif mb-6 border-b border-gray-400 pb-2">
-        PROGRAMAÇÃO DE PRODUÇÃO - DATA: {formatarDataBR(dataFiltroImpressao)}
+        PROGRAMAÃ‡ÃƒO DE PRODUÃ‡ÃƒO - DATA: {formatarDataBR(dataFiltroImpressao)}
     </div>
     
     {filaProducao
         // 1. Filtro por Data (Garantindo que a data exista)
       .filter((r) => getDataRomaneio(r) === dataFiltroImpressao)
         
-        // 2. Filtro de Segurança: Remove Romaneios sem itens ou com peso zero (para eliminar 'ESTOQUE 04' vazios)
+        // 2. Filtro de SeguranÃ§a: Remove Romaneios sem itens ou com peso zero (para eliminar 'ESTOQUE 04' vazios)
         .filter((r) => {
             const temItens = Array.isArray(r.itens) && r.itens.length > 0;
             if (!temItens) return false;
@@ -1719,14 +1906,14 @@ const handleImportBackup = (json) => {
             return pesoTotal > 0;
         })
         
-        // 3. Ordenação por Cliente
+        // 3. OrdenaÃ§Ã£o por Cliente
         .sort((a, b) => (a.cliente || '').localeCompare(b.cliente || ''))
         
         .map((r) => (
-            // Usa o sysId como chave e adiciona uma margem inferior clara para separação
+            // Usa o sysId como chave e adiciona uma margem inferior clara para separaÃ§Ã£o
             <div key={r.sysId} className="romaneio-container border border-gray-300 mb-6 p-4 rounded shadow-md break-after-page">
                 
-                {/* Cabeçalho do Cliente: Mais formal e claro */}
+                {/* CabeÃ§alho do Cliente: Mais formal e claro */}
                 <div className="client-header bg-gray-100 p-2 mb-3 flex justify-between items-center text-sm font-bold border-b border-gray-300">
                     <span className="text-gray-700 uppercase">CLIENTE: {r.cliente || 'ESTOQUE / MANUAL'}</span>
                     <span className="text-blue-700 font-mono">ROMANEIO ID: {r.id}</span>
@@ -1735,8 +1922,8 @@ const handleImportBackup = (json) => {
                 <table className="simple-table w-full border-collapse text-sm">
                     <thead>
                         <tr className="bg-gray-50 border-b border-gray-300">
-                            <th className="py-2 px-3 text-left w-[10%]">CÓDIGO</th>
-                            <th className="py-2 px-3 text-left w-[60%]">DESCRIÇÃO / MEDIDA</th>
+                            <th className="py-2 px-3 text-left w-[10%]">CÃ“DIGO</th>
+                            <th className="py-2 px-3 text-left w-[60%]">DESCRIÃ‡ÃƒO / MEDIDA</th>
                             <th className="py-2 px-3 text-center w-[10%]">QTD</th>
                             <th className="py-2 px-3 text-right w-[10%]">PESO (kg)</th>
                             <th className="py-2 px-3 text-center w-[10%]">CHK</th>
@@ -1759,7 +1946,7 @@ const handleImportBackup = (json) => {
                     </tbody>
                 </table>
                 
-                {/* Rodapé Total */}
+                {/* RodapÃ© Total */}
                 <div className="block-footer mt-3 pt-2 border-t-2 border-blue-200 flex justify-end">
                     <span className="text-lg font-bold text-gray-800">
                         TOTAL DO ROMANEIO: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg
@@ -1772,7 +1959,7 @@ const handleImportBackup = (json) => {
       {/* --- APP CONTAINER --- */}
       <div className="app-container flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
         
-        {/* --- MENU DE NAVEGAÇÃO (CORRIGIDO COM OEE) --- */}
+        {/* --- MENU DE NAVEGAÃ‡ÃƒO (CORRIGIDO COM OEE) --- */}
         <nav className="
             bg-[#09090b] border-t md:border-t-0 md:border-r border-white/10 z-50 shrink-0
             fixed bottom-0 w-full h-16 flex flex-row justify-around items-center px-2
@@ -1786,14 +1973,14 @@ const handleImportBackup = (json) => {
             <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
             <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
             
-            {/* --- OEE ESTÁ DE VOLTA AQUI --- */}
+            {/* --- OEE ESTÃ DE VOLTA AQUI --- */}
             <BotaoMenu ativo={abaAtiva === 'oee'} onClick={() => setAbaAtiva('oee')} icon={<Activity size={20} />} label="OEE" />
             
             <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
           </div>
         </nav>
 
-        {/* --- CONTEÚDO --- */}
+        {/* --- CONTEÃšDO --- */}
 
 
     
@@ -1802,9 +1989,9 @@ const handleImportBackup = (json) => {
           {abaAtiva === 'agenda' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-6 overflow-hidden flex flex-col">
               <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
-    <h1 className="text-2xl font-bold flex gap-3">
-      <Layers className="text-purple-500" size={28} /> Gestão
-    </h1>
+      <h1 className="text-2xl font-bold flex gap-3">
+       <Layers className="text-purple-500" size={28} /> Gestão
+      </h1>
 
   <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto md:items-center">
     <BackupControls
@@ -1853,14 +2040,14 @@ const handleImportBackup = (json) => {
                     onEdit={abrirModalEdicao} 
                 />
                 
-                {/* Coluna PRÓXIMOS com altura mínima corrigida */}
+                {/* Coluna PROXIMOS */}
                 <div className="flex flex-col min-h-[400px] md:h-full bg-zinc-900/30 rounded-2xl border border-white/5 overflow-hidden">
                   <div className="p-4 border-b border-white/5 bg-zinc-900/80">
-                    <h2 className="text-lg font-black text-zinc-400">PRÓXIMOS</h2>
+                    <h2 className="text-lg font-black text-zinc-400">PROXIMOS</h2>
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {colunasAgenda.futuro.map((r) => (
-                        <CardRomaneio key={r.sysId} romaneio={r} onEdit={() => abrirModalEdicao(r)} />
+                      <CardRomaneio key={r.sysId} romaneio={r} onEdit={() => abrirModalEdicao(r)} />
                     ))}
                   </div>
                 </div>
@@ -1886,7 +2073,7 @@ const handleImportBackup = (json) => {
         <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[600px]">
                 <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
-                    <th className="p-4">ID FIREBASE</th> {/* Título da coluna atualizado */}
+                    <th className="p-4">ID FIREBASE</th> {/* TÃ­tulo da coluna atualizado */}
                     <th className="p-4">Data</th>
                     <th className="p-4">Cliente</th>
                     <th className="p-4 text-center">Peso</th>
@@ -1894,28 +2081,28 @@ const handleImportBackup = (json) => {
                 </tr></thead>
                 <tbody className="divide-y divide-white/5">
                     {filaProducao
-                        // 1. Cria uma cópia e ordena: mais recente (b) - mais antigo (a)
+                        // 1. Cria uma cÃ³pia e ordena: mais recente (b) - mais antigo (a)
                         .slice() 
 .sort((a, b) => new Date(getDataRomaneio(b)) - new Date(getDataRomaneio(a)))
-                        // 2. Limita a 50 itens para exibição
+                        // 2. Limita a 50 itens para exibiÃ§Ã£o
                         .slice(0, 300) 
                         .map((r) => (
                            <tr key={r.sysId} className="hover:bg-white/5">
-                                 {/* Exibindo o ID do Firebase (assumindo que está em r.sysId) */}
+                                 {/* Exibindo o ID do Firebase (assumindo que estÃ¡ em r.sysId) */}
                                 <td className="p-4 text-blue-400 font-mono text-xs">#{r.sysId}</td> 
 <td className="p-4 text-zinc-300">
   {formatarDataBR(getDataRomaneio(r))}
 </td>                                <td className="p-4">{r.cliente}</td>
                                 <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
                                 <td className="p-4 text-right">
-                                    {/* Verifica se o r.sysId é válido antes de renderizar o botão */}
+                                    {/* Verifica se o r.sysId Ã© vÃ¡lido antes de renderizar o botÃ£o */}
                                     {r.sysId && (typeof r.sysId === 'string' && r.sysId.length > 5) ? (
                                         <button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500">
                                             <Trash2 size={16} />
                                         </button>
                                     ) : (
-                                        // Se o ID for inválido (como no Estoque Interno), exibe um placeholder ou nada
-                                        <span className="text-zinc-600 cursor-not-allowed">—</span>
+                                        // Se o ID for invÃ¡lido (como no Estoque Interno), exibe um placeholder ou nada
+                                        <span className="text-zinc-600 cursor-not-allowed">â€”</span>
                                     )}
                                 </td>                           </tr>
                         ))}
@@ -1942,7 +2129,7 @@ const handleImportBackup = (json) => {
     // --- LINHAS ADICIONADAS PARA MÁQUINA ---
     catalogoMaquinas={CATALOGO_MAQUINAS}             // <--- NOVO: Envia a lista
     formApontProdMaquina={formApontProdMaquina}      // <--- NOVO: Envia o valor selecionado
-    setFormApontProdMaquina={setFormApontProdMaquina} // <--- NOVO: Envia a função de atualizar
+    setFormApontProdMaquina={setFormApontProdMaquina} // <--- NOVO: Envia a funÃ§Ã£o de atualizar
     // ---------------------------------------
 
     handleSelectProdApontamento={handleSelectProdApontamento}
@@ -1967,23 +2154,18 @@ const handleImportBackup = (json) => {
     deletarParada={deletarParada}
   />
 )}
-
-
-
-          {/* ABA OEE (AQUI ESTÁ ELA!) */}
+          {/* ABA OEE */}
+          {/* ABA OEE */}
           {abaAtiva === "oee" && (
-  <OeeDashboard
-    historicoProducaoReal={historicoProducaoReal}
-    historicoParadas={historicoParadas}
-    dataInicioInd={dataInicioInd}
-    dataFimInd={dataFimInd}
-    capacidadeDiaria={capacidadeDiaria}
-    turnoHoras={turnoHoras}
-  />
-)}
-
-
-          {/* ABA CARGA MÁQUINA */}
+            <OeeDashboard
+              historicoProducaoReal={historicoProducaoReal}
+              historicoParadas={historicoParadas}
+              dataInicioInd={dataInicioInd}
+              dataFimInd={dataFimInd}
+              capacidadeDiaria={capacidadeDiaria}
+              turnoHoras={turnoHoras}
+            />
+          )}
           {abaAtiva === 'indicadores' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto flex flex-col">
               
@@ -1999,7 +2181,7 @@ const handleImportBackup = (json) => {
                         setDataInicioInd(hoje);
                         setDataFimInd(hoje);
                       }}
-                      className="px-3 py-1.5 text-zinc-400 hover:bg-white/5"
+                      className={`px-3 py-1.5 ${isPresetHoje ? 'bg-emerald-500 text-black font-semibold' : 'text-zinc-400 hover:bg-white/5'}`}
                     >
                       Hoje
                     </button>
@@ -2009,7 +2191,7 @@ const handleImportBackup = (json) => {
                         setDataInicioInd(inicio);
                         setDataFimInd(hoje);
                       }}
-                      className="px-3 py-1.5 text-zinc-400 hover:bg-white/5"
+                      className={`px-3 py-1.5 ${isPreset7Dias ? 'bg-emerald-500 text-black font-semibold' : 'text-zinc-400 hover:bg-white/5'}`}
                     >
                       7 Dias
                     </button>
@@ -2018,7 +2200,7 @@ const handleImportBackup = (json) => {
                         setDataInicioInd(primeiroDiaMesAtual);
                         setDataFimInd(hoje);
                       }}
-                      className="px-3 py-1.5 bg-emerald-500 text-black font-semibold"
+                      className={`px-3 py-1.5 ${isPresetMes ? 'bg-emerald-500 text-black font-semibold' : 'text-zinc-400 hover:bg-white/5'}`}
                     >
                       Mês
                     </button>
@@ -2028,7 +2210,7 @@ const handleImportBackup = (json) => {
                         setDataInicioInd(inicioAno);
                         setDataFimInd(hoje);
                       }}
-                      className="px-3 py-1.5 text-zinc-400 hover:bg-white/5"
+                      className={`px-3 py-1.5 ${isPresetAno ? 'bg-emerald-500 text-black font-semibold' : 'text-zinc-400 hover:bg-white/5'}`}
                     >
                       Ano
                     </button>
@@ -2036,7 +2218,7 @@ const handleImportBackup = (json) => {
 
                   <div className="grid grid-cols-2 md:flex gap-3 bg-zinc-900/50 p-3 rounded-xl border border-white/10 shadow-xl items-center">
                     <div className="col-span-1">
-                      <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Início</label>
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">InÃ­cio</label>
                       <input type="date" value={dataInicioInd} onChange={(e) => setDataInicioInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
                     </div>
                     <div className="col-span-1">
@@ -2058,7 +2240,7 @@ const handleImportBackup = (json) => {
                 <div className="bg-zinc-900/50 border border-white/10 p-4 rounded-xl flex items-center gap-4 relative overflow-hidden">
                   <div className={`absolute right-0 top-0 bottom-0 w-1 ${dadosIndicadores.totalPesoExecutado >= dadosIndicadores.totalPesoPlanejado ? 'bg-emerald-500' : 'bg-yellow-500'}`}></div>
                   <div className="p-3 bg-zinc-950 rounded-lg border border-white/5"><Activity size={24} className={dadosIndicadores.totalPesoExecutado >= dadosIndicadores.totalPesoPlanejado ? "text-emerald-500" : "text-yellow-500"} /></div>
-                  <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Aderência</div><div className="text-2xl font-black text-white">{dadosIndicadores.totalPesoPlanejado > 0 ? ((dadosIndicadores.totalPesoExecutado / dadosIndicadores.totalPesoPlanejado) * 100).toFixed(0) : 0}%</div></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase font-bold">AderÃªncia</div><div className="text-2xl font-black text-white">{dadosIndicadores.totalPesoPlanejado > 0 ? ((dadosIndicadores.totalPesoExecutado / dadosIndicadores.totalPesoPlanejado) * 100).toFixed(0) : 0}%</div></div>
                 </div>
                 <div className="bg-zinc-900/50 border border-white/10 p-4 rounded-xl flex flex-col justify-center">
                   <div className="flex justify-between items-center mb-2"><span className="text-[10px] text-zinc-500 font-bold uppercase">Meta Global</span><span className="text-xs font-mono text-pink-400">{(capacidadeDiaria/1000).toFixed(1)}t/dia</span></div>
@@ -2066,44 +2248,45 @@ const handleImportBackup = (json) => {
                 </div>
               </div>
 
-              {/* Cards Avançados (2) */}
+              {/* Cards Avancados */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className={`p-4 rounded-xl border flex items-center gap-4 ${dadosIndicadores.saldoTotal >= 0 ? 'bg-emerald-950/20 border-emerald-500/20' : 'bg-red-950/20 border-red-500/20'}`}>
                   <div className={`p-3 rounded-lg border ${dadosIndicadores.saldoTotal >= 0 ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}>
                     {dadosIndicadores.saldoTotal >= 0 ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
                   </div>
-                  <div><div className="text-zinc-400 text-[10px] uppercase font-bold">Saldo</div><div className={`text-2xl font-black ${dadosIndicadores.saldoTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{dadosIndicadores.saldoTotal > 0 ? '+' : ''}{(dadosIndicadores.saldoTotal / 1000).toFixed(1)} t</div></div>
+                  <div>
+                    <div className="text-zinc-400 text-[10px] uppercase font-bold">Saldo</div>
+                    <div className={`text-2xl font-black ${dadosIndicadores.saldoTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {dadosIndicadores.saldoTotal > 0 ? '+' : ''}{(dadosIndicadores.saldoTotal / 1000).toFixed(1)} t
+                    </div>
+                  </div>
                 </div>
+
                 <div className="bg-zinc-900 p-4 rounded-xl border border-white/10 flex items-center gap-4">
                   <div className="p-3 bg-zinc-950 rounded-lg border border-white/5 text-amber-500"><Activity size={24} /></div>
-                  <div><div className="text-zinc-500 text-[10px] uppercase font-bold">Ritmo Necessário</div><div className="text-2xl font-black text-white">{(dadosIndicadores.ritmoNecessario / 1000).toFixed(1)} <span className="text-sm font-normal text-zinc-500">t/dia</span></div></div>
+                  <div>
+                    <div className="text-zinc-500 text-[10px] uppercase font-bold">Ritmo Necessario</div>
+                    <div className="text-2xl font-black text-white">
+                      {(dadosIndicadores.ritmoNecessario / 1000).toFixed(1)} <span className="text-sm font-normal text-zinc-500">t/dia</span>
+                    </div>
+                  </div>
                 </div>
+
                 <div className="bg-zinc-900 p-4 rounded-xl border border-white/10 flex flex-col justify-center gap-2">
-  <div className="flex justify-between items-end">
-    <div>
-      <div className="text-zinc-500 text-[10px] uppercase font-bold">
-        Projeção até fim do mês
-      </div>
-      <div
-        className={`text-xl font-black ${
-          dadosIndicadores.projecaoFinal >= dadosIndicadores.metaAteFimMes
-            ? 'text-emerald-400'
-            : 'text-zinc-200'
-        }`}
-      >
-        {(dadosIndicadores.projecaoFinal / 1000).toFixed(0)} t
-      </div>
-    </div>
-
-    <div className="text-right">
-      <div className="text-[10px] text-zinc-500">Meta do mês (dias úteis)</div>
-      <div className="text-sm font-bold text-zinc-400">
-        {(dadosIndicadores.metaAteFimMes / 1000).toFixed(0)} t
-      </div>
-    </div>
-  </div>
-
-  {/* Barra de progresso: projeção / meta */}
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <div className="text-zinc-500 text-[10px] uppercase font-bold">Projecao ate fim do mes</div>
+                      <div className={`text-xl font-black ${dadosIndicadores.projecaoFinal >= dadosIndicadores.metaAteFimMes ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                        {(dadosIndicadores.projecaoFinal / 1000).toFixed(0)} t
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-zinc-500">Meta do mes (dias uteis)</div>
+                      <div className="text-sm font-bold text-zinc-400">
+                        {(dadosIndicadores.metaAteFimMes / 1000).toFixed(0)} t
+                      </div>
+                    </div>
+                  </div>
                   <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
                     <div
                       className="h-full bg-emerald-500"
@@ -2116,62 +2299,62 @@ const handleImportBackup = (json) => {
                     ></div>
                   </div>
                 </div>
-
               </div>
 
-
-              {/* Gráfico Side-by-Side */}
-              <div className="flex-1 bg-zinc-900/40 rounded-2xl border border-white/10 p-4 md:p-6 relative flex flex-col min-h-[400px]">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-bold text-zinc-400 flex items-center gap-2"><BarChart3 size={16} /> Evolução Diária</h3>
-                </div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dadosIndicadores.arrayGrafico} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barGap={2}>
-                    <defs>
-                      <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={1}/><stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.8}/></linearGradient>
-                      <linearGradient id="grayArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#52525b" stopOpacity={0.4}/><stop offset="90%" stopColor="#52525b" stopOpacity={0.05}/></linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                    <XAxis dataKey="data" tickFormatter={(val) => formatarDataBR(val).slice(0, 5)} stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                    <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val/1000).toFixed(0)}`} />
-                    <Tooltip cursor={{ fill: '#ffffff05' }} content={<CustomTooltip />} />
-                    <ReferenceLine y={capacidadeDiaria} stroke="#be185d" strokeDasharray="3 3" strokeOpacity={0.6} />
-                    
-                    <Area type="monotone" dataKey="pesoPlanejado" fill="url(#grayArea)" stroke="#71717a" strokeWidth={2} dot={{ r: 3, fill: "#3f3f46", strokeWidth: 0 }} >
-                        {/* Rótulo para Peso Planejado (Linha) */}
-                        <LabelList 
-                            dataKey="pesoPlanejado" 
-                            position="top" 
-                            formatter={(val) => `${(val / 1000).toFixed(1)}t`}
-                            style={{ fill: '#71717a', fontSize: 9 }} 
-                            dy={-10}
+              {/* Grafico carga */}
+              <div className="flex flex-col">
+                <div className="flex-1 bg-zinc-900/40 rounded-2xl border border-white/10 p-4 md:p-6 relative flex flex-col min-h-[400px]">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-bold text-zinc-400 flex items-center gap-2"><BarChart3 size={16} /> Evolucao Diaria</h3>
+                  </div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={dadosIndicadores.arrayGrafico} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barGap={2}>
+                      <defs>
+                        <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#2563eb" stopOpacity={1} />
+                          <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.8} />
+                        </linearGradient>
+                        <linearGradient id="grayArea" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#52525b" stopOpacity={0.4} />
+                          <stop offset="90%" stopColor="#52525b" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                      <XAxis dataKey="data" tickFormatter={(val) => formatarDataBR(val).slice(0, 5)} stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                      <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val/1000).toFixed(0)}`} />
+                      <Tooltip cursor={{ fill: '#ffffff05' }} content={<CustomTooltip />} />
+                      <ReferenceLine y={capacidadeDiaria} stroke="#be185d" strokeDasharray="3 3" strokeOpacity={0.6} />
+                      <Area type="monotone" dataKey="pesoPlanejado" fill="url(#grayArea)" stroke="#71717a" strokeWidth={2} dot={{ r: 3, fill: "#3f3f46", strokeWidth: 0 }}>
+                        <LabelList
+                          dataKey="pesoPlanejado"
+                          position="top"
+                          formatter={(val) => `${(val / 1000).toFixed(1)}t`}
+                          style={{ fill: '#71717a', fontSize: 9 }}
+                          dy={-10}
                         />
-                    </Area>
-                    
-                    <Bar dataKey="pesoExecutado" barSize={30} fill="url(#blueGradient)" radius={[4, 4, 0, 0]}>
-                        {/* Rótulo para Peso Executado (Barras) */}
-                        <LabelList 
-                            dataKey="pesoExecutado" 
-                            position="top" 
-                            formatter={(val) => `${(val / 1000).toFixed(1)}t`}
-                            style={{ fill: '#ffffff', fontSize: 10, fontWeight: 'bold' }} 
-                            dy={-10}
+                      </Area>
+                      <Bar dataKey="pesoExecutado" barSize={30} fill="url(#blueGradient)" radius={[4, 4, 0, 0]}>
+                        <LabelList
+                          dataKey="pesoExecutado"
+                          position="top"
+                          formatter={(val) => `${(val / 1000).toFixed(1)}t`}
+                          style={{ fill: '#ffffff', fontSize: 10, fontWeight: 'bold' }}
+                          dy={-10}
                         />
-                    </Bar>
-
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
+                      </Bar>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ABA PRODUTOS */}
           {abaAtiva === 'produtos' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
-              <h1 className="text-2xl font-bold mb-8 text-white">Catálogo</h1>
+              <h1 className="text-2xl font-bold mb-8 text-white">CatÃ¡logo</h1>
               <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
                 <table className="w-full text-left text-sm min-w-[300px]">
-                  <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10"><th className="p-4">Código</th><th className="p-4">Descrição</th></tr></thead>
+                  <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10"><th className="p-4">CÃ³digo</th><th className="p-4">DescriÃ§Ã£o</th></tr></thead>
                   <tbody className="divide-y divide-white/5">
                     {CATALOGO_PRODUTOS && CATALOGO_PRODUTOS.map((p) => (<tr key={p.cod}><td className="p-4 text-emerald-400 font-mono">{p.cod}</td><td className="p-4 text-white">{p.desc}</td></tr>))}
                   </tbody>
@@ -2182,44 +2365,60 @@ const handleImportBackup = (json) => {
         </div>
       </div>
 
-      {/* --- MODAL ORDEM --- */}
-      {showModalNovaOrdem && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-zinc-900 rounded-2xl w-full md:max-w-4xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center p-4 md:p-6 border-b border-white/10 bg-white/5">
-              <h3 className="text-lg md:text-xl font-bold text-white">{romaneioEmEdicaoId ? 'Editar Romaneio' : 'Novo Romaneio'}</h3>
-              <button onClick={() => setShowModalNovaOrdem(false)} className="text-zinc-400 hover:text-white"><X /></button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div className="md:col-span-3">
-                        <label className="text-xs font-bold text-blue-400 block mb-1">Romaneio</label>
-                        <div className="flex gap-2">
-                            <input value={formRomaneioId} onChange={(e) => setFormRomaneioId(e.target.value)} className="w-full bg-black/50 border border-blue-500/30 rounded p-2 text-white font-bold" readOnly={isEstoque} />
-                            <button type="button" onClick={toggleEstoque} className="px-2 border rounded text-xs">{isEstoque ? 'EST' : 'PED'}</button>
+          {/* --- MODAL ORDEM --- */}
+          {showModalNovaOrdem && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+              <div className="bg-zinc-900 rounded-2xl w-full md:max-w-4xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+                <div className="flex justify-between items-center p-4 md:p-6 border-b border-white/10 bg-white/5">
+                  <h3 className="text-lg md:text-xl font-bold text-white">{romaneioEmEdicaoId ? 'Editar Romaneio' : 'Novo Romaneio'}</h3>
+                  <button onClick={() => setShowModalNovaOrdem(false)} className="text-zinc-400 hover:text-white"><X /></button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        <div className="md:col-span-3">
+                            <label className="text-xs font-bold text-blue-400 block mb-1">Romaneio</label>
+                            <div className="flex gap-2">
+                                <input value={formRomaneioId} onChange={(e) => setFormRomaneioId(e.target.value)} className="w-full bg-black/50 border border-blue-500/30 rounded p-2 text-white font-bold" readOnly={isEstoque} />
+                                <button type="button" onClick={toggleEstoque} className="px-2 border rounded text-xs">{isEstoque ? 'EST' : 'PED'}</button>
+                            </div>
                         </div>
-                    </div>
-                    <div className="md:col-span-3">
-                        <label className="text-xs font-bold text-zinc-500 block mb-1">Data</label>
-                        <input type="date" value={formDataProducao} onChange={(e) => setFormDataProducao(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" />
-                    </div>
-                    <div className="md:col-span-4">
-                        <label className="text-xs font-bold text-zinc-500 block mb-1">Cliente</label>
-                        <input value={formCliente} onChange={(e) => setFormCliente(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" readOnly={isEstoque} />
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="text-xs font-bold text-zinc-500 block mb-1">TOTVS</label>
-                        <input
+                        <div className="md:col-span-3">
+                            <label className="text-xs font-bold text-zinc-500 block mb-1">Data</label>
+                            <input type="date" value={formDataProducao} onChange={(e) => setFormDataProducao(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" />
+                        </div>
+                        <div className="md:col-span-4">
+                            <label className="text-xs font-bold text-zinc-500 block mb-1">Cliente</label>
+                            <input value={formCliente} onChange={(e) => setFormCliente(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-2 text-white" readOnly={isEstoque} />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="text-xs font-bold text-zinc-500 block mb-1">TOTVS</label>
+                            <input
   value={formTotvs}
   onChange={(e) => setFormTotvs(e.target.value)}
   className="w-full bg-black/50 border border-white/10 rounded p-2 text-white"
 />
 
+                        </div>
+                        <div className="md:col-span-12">
+                          <label className="text-xs font-bold text-zinc-500 block mb-1">Anexar Romaneio (PDF)</label>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <input
+                              type="file"
+                              accept="application/pdf"
+                              onChange={handleUploadRomaneioPdf}
+                              className="text-xs text-white"
+                            />
+                            {formRomaneioPdf && (
+                              <span className="text-[11px] text-emerald-400 font-semibold truncate">
+                                {formRomaneioPdf.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                     </div>
-                </div>
-                
-                <div className="w-full h-px bg-white/10 my-2"></div>
+                    
+                    <div className="w-full h-px bg-white/10 my-2"></div>
                 
                 <div className="bg-zinc-800/30 p-4 rounded-xl border border-white/5 space-y-4">
                     <div className="flex flex-col md:flex-row gap-4">
@@ -2229,7 +2428,7 @@ const handleImportBackup = (json) => {
                             <div className="w-[80px]"><label className="text-[10px] font-bold text-zinc-500 block mb-1">Qtd</label><input type="number" value={formQtd} onChange={(e) => setFormQtd(e.target.value)} className="w-full bg-black border border-blue-500/50 rounded p-2 text-white text-sm text-right" /></div>
                         </div>
                     </div>
-                    <div><label className="text-[10px] font-bold text-zinc-500 block mb-1">Descrição</label><input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm" /></div>
+                    <div><label className="text-[10px] font-bold text-zinc-500 block mb-1">DescriÃ§Ã£o</label><input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-white text-sm" /></div>
                     <div className="flex justify-end"><button onClick={adicionarItemNaLista} className="px-6 py-2 bg-emerald-600 text-white rounded font-bold flex items-center gap-2"><PlusCircle size={18} /> Add</button></div>
                 </div>
 
@@ -2285,7 +2484,7 @@ const handleImportBackup = (json) => {
 </div>
 
 
-{/* Barra de reprogramação de itens selecionados */}
+{/* Barra de reprogramaÃ§Ã£o de itens selecionados */}
 <div className="mt-3 flex flex-col md:flex-row items-center justify-between gap-3 bg-zinc-900/60 border border-white/10 rounded-xl px-4 py-3">
   <div className="text-xs text-zinc-400">
     {selectedItemIds.length === 0 ? (
@@ -2329,12 +2528,12 @@ const handleImportBackup = (json) => {
         </div>
       )}
 
-      {/* --- MODAL SELEÇÃO DE MÁQUINA --- */}
+      {/* --- MODAL SELEÃ‡ÃƒO DE MÃQUINA --- */}
       {showModalSelecaoMaquina && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-              <h3 className="text-lg font-bold text-white">Escolha a máquina</h3>
+              <h3 className="text-lg font-bold text-white">Escolha a mÃ¡quina</h3>
               <button
                 onClick={() => setShowModalSelecaoMaquina(false)}
                 className="text-zinc-400 hover:text-white"
@@ -2366,7 +2565,7 @@ const handleImportBackup = (json) => {
             </div>
 
             <div className="p-4 border-t border-white/10 bg-white/5 text-[12px] text-zinc-400">
-              Selecione primeiro a máquina para abrir o formulário de romaneio.
+              Selecione primeiro a mÃ¡quina para abrir o formulÃ¡rio de romaneio.
             </div>
           </div>
         </div>
@@ -2393,7 +2592,7 @@ const handleImportBackup = (json) => {
           />
         </div>
 
-        {/* SELECT AJUSTADO COM CÓDIGO + MOTIVO */}
+        {/* SELECT AJUSTADO COM CÃ“DIGO + MOTIVO */}
         <select
   value={formParadaMotivoCod}
   onChange={(e) => setFormParadaMotivoCod(e.target.value)}
@@ -2402,8 +2601,8 @@ const handleImportBackup = (json) => {
   <option value="">Motivo...</option>
 
   {dicionarioLocal
-    .slice() // copia pra não mexer no array original
-    .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo))) // ordena pelo código
+    .slice() // copia pra nÃ£o mexer no array original
+    .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo))) // ordena pelo cÃ³digo
     .map((p) => (
       <option key={p.codigo} value={p.codigo}>
         {p.codigo} - {p.evento}
@@ -2434,7 +2633,7 @@ const handleImportBackup = (json) => {
           onClick={limparFormApontamentoProducao}
           className="mt-2 w-full bg-zinc-700 hover:bg-zinc-600 text-white py-2 rounded-lg text-sm"
         >
-          Cancelar edição
+          Cancelar ediÃ§Ã£o
         </button>
       )}
 
