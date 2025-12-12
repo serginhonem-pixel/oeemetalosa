@@ -22,6 +22,7 @@ import {
   TrendingDown, TrendingUp,
   Upload, X
 } from 'lucide-react';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
 import BackupControls from './components/BackupControls';
 import { safeAddDoc, safeUpdateDoc, safeDeleteDoc } from './services/firebaseSafeWrites';
@@ -56,6 +57,11 @@ import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 
+
+GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
 
 const DEV_CACHE_KEY = getDevCacheKey();
 
@@ -207,6 +213,262 @@ const encontrarValorNaLinha = (row, possiveisNomes) => {
   return undefined;
 };
 
+const numeroFromText = (valor) => {
+  if (valor === undefined || valor === null) return 0;
+  const limpo = String(valor).replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(limpo);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const extrairCompDoTexto = (texto) => {
+  if (!texto) return 0;
+  const m = String(texto).match(/(\d+[.,]\d+)\s*m/i);
+  return m ? numeroFromText(m[1]) : 0;
+};
+
+const inferirPerfilMaterial = (desc) => {
+  if (!desc) return { perfil: '', material: '' };
+  const perfilMatch = desc.match(/\bTP\s*0?(\d+)/i);
+  const materialMatch = desc.match(/\b(GALV|GALVALUME|ALUZINC|ZINC)\b/i);
+  return {
+    perfil: perfilMatch ? `TP${perfilMatch[1]}` : '',
+    material: materialMatch ? materialMatch[1].toUpperCase() : '',
+  };
+};
+
+const extrairLinhasDoPdf = async (file) => {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await getDocument({ data }).promise;
+  const linhas = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const grouped = {};
+
+    content.items.forEach((item) => {
+      const y = Math.round(item.transform[5]);
+      grouped[y] = grouped[y] || [];
+      grouped[y].push(item.str);
+    });
+
+    Object.entries(grouped)
+      .sort((a, b) => b[0] - a[0])
+      .forEach(([, parts]) => {
+        const line = parts.join(' ').replace(/\s+/g, ' ').trim();
+        if (line) linhas.push(line);
+      });
+  }
+
+  return linhas;
+};
+
+const extrairTextoPorOcr = async (file) => {
+  try {
+    const mod = await import('tesseract.js');
+    const Tesseract = mod.default || mod;
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    const pdf = await getDocument({ data }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const result = await Tesseract.recognize(canvas, 'por');
+    return result?.data?.text || '';
+  } catch (err) {
+    console.error('OCR indisponível ou falhou:', err);
+    return '';
+  }
+};
+
+const parseLinhasParaItens = (linhas, textoCompleto) => {
+  const itens = [];
+  const unitRegex = /^(PC|KG|M|UN|UNID|PCS?)$/i;
+
+  // Tenta interpretar cada linha individualmente, juntando com a próxima se for só a unidade
+  for (let idx = 0; idx < linhas.length; idx++) {
+    const raw = linhas[idx];
+    let linha = raw.replace(/\s+/g, ' ').trim();
+    if (!linha) continue;
+
+    // ignora cabeçalhos e linhas de endereço/rodapé
+    if (/^(IT\s+CÓD|PESO TOTAL|ENDEREÇO|OBSERVAÇÃO|ROMANEIO:)/i.test(linha)) continue;
+    if (/^(Rod\.|Telefone:|e-mail:|Site:)/i.test(linha)) continue;
+    if (/^(Cliente:|Vendedor:|Transportadora:|Redespacho:|CGC:|INS\. EST\.:|EMISSÃO:|DIGITADOR:)/i.test(linha)) continue;
+    const upper = linha.toUpperCase();
+    if (upper.includes('CLIENTE')) continue;
+    if (upper.includes('TELEFONE')) continue;
+    if (upper.includes('CGC')) continue;
+    if (upper.includes('EMISSÃO')) continue;
+    if (upper.includes('DIGITADOR')) continue;
+    if (upper.includes('ROMANEIO')) continue;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(linha)) continue; // linha que é só data
+
+    // Só processa linhas que começam com índice + código
+    if (!/^\d{1,3}\s+\d{4,6}[A-Z]?/.test(linha)) continue;
+    const matchItem = linha.match(/^(\d{1,3})\s+(\d{4,6}[A-Z]?)(\s+.+)$/);
+    if (!matchItem) continue;
+
+    // Se a próxima linha for apenas a unidade, concatena
+    const prox = linhas[idx + 1]?.replace(/\s+/g, ' ').trim();
+    const proximaEhUnidade = prox && unitRegex.test(prox);
+    if (proximaEhUnidade) {
+      linha = `${linha} ${prox}`;
+      idx += 1;
+    }
+
+    // Captura quantidade dentro de parênteses (padrão do PDF)
+    const qtdParenteses = (() => {
+      const m = raw.match(/\(\s*([\d.,]+)\s*\)/);
+      return m ? numeroFromText(m[1]) : 0;
+    })();
+
+    const cod = matchItem[2];
+    // Remove o prefixo índice+código da descrição
+    const descParte = matchItem[3].trim();
+
+    // Extrai números da linha (quantidade/peso)
+    const numeros = [...linha.matchAll(/(\d+[.,]\d+)/g)].map((n) => numeroFromText(n[1]));
+    // Usando heurística: se houver 3+ números (casos com comprimento), assume penúltimo = qtd, último = peso
+    let qtd = 0;
+    let pesoTotal = 0;
+    if (numeros.length >= 3) {
+      qtd = numeros[numeros.length - 2];
+      pesoTotal = numeros[numeros.length - 1];
+    } else if (numeros.length === 2) {
+      qtd = numeros[0];
+      pesoTotal = numeros[1];
+    } else {
+      qtd = numeros[0] || 0;
+      pesoTotal = 0;
+    }
+
+    // Se achou quantidade entre parênteses, prioriza ela
+    const qtdFinal = qtdParenteses > 0 ? qtdParenteses : qtd;
+    const descSemParenteses = descParte.replace(/\(\s*[\d.,]+\s*\)/g, '').trim();
+
+    const compDesc = extrairCompDoTexto(descSemParenteses);
+    const produtoCatalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === cod);
+    const perfilMaterial = inferirPerfilMaterial(descSemParenteses);
+
+    const comp = compDesc || produtoCatalogo?.comp || 0;
+    const pesoCalculadoCatalogo = produtoCatalogo
+      ? produtoCatalogo.custom
+        ? comp * (produtoCatalogo.kgMetro || 0) * qtdFinal
+        : (produtoCatalogo.pesoUnit || 0) * qtdFinal
+      : 0;
+
+    // Peso sempre prioriza catálogo; só usa o lido se não houver catálogo
+    const pesoTotalFinal = produtoCatalogo ? pesoCalculadoCatalogo : pesoTotal;
+    const descBase = produtoCatalogo?.desc || descSemParenteses;
+    const descFinal =
+      produtoCatalogo?.custom && comp > 0
+        ? `${descBase} ${comp.toFixed(2)}m`
+        : descBase;
+    const unidadeFinal = proximaEhUnidade ? prox.toUpperCase() : 'UN';
+
+    itens.push({
+      tempId: Math.random(),
+      cod,
+      desc: descFinal,
+      perfil: produtoCatalogo?.perfil || perfilMaterial.perfil,
+      material: produtoCatalogo?.material || perfilMaterial.material,
+      comp,
+      qtd: qtdFinal,
+      pesoTotal: (pesoTotalFinal || 0).toFixed(2),
+      unidade: unidadeFinal,
+    });
+  }
+
+  // Fallback: se nada lido linha a linha, tenta regex no texto inteiro
+  if (itens.length === 0) {
+    const flat = textoCompleto.replace(/\s+/g, ' ');
+    const regex = /\b(\d{1,3})\s+(\d{4,6}[A-Z]?)\s+(.+?)\s+(PC|KG|UN|UNID|PCS?|M)\s+(\d+[.,]\d+)(?:\s+(\d+[.,]\d+))?/gi;
+    let m;
+    while ((m = regex.exec(flat))) {
+      const cod = m[2];
+      const descRaw = m[3].trim();
+      const unidade = m[4].toUpperCase();
+      const qtd = numeroFromText(m[5]) || 0;
+      const pesoTotal = numeroFromText(m[6]) || 0;
+
+      const compDesc = extrairCompDoTexto(descRaw);
+      const produtoCatalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === cod);
+      const perfilMaterial = inferirPerfilMaterial(descRaw);
+
+      const comp = compDesc || produtoCatalogo?.comp || 0;
+      const pesoCalculadoCatalogo = produtoCatalogo
+        ? produtoCatalogo.custom
+          ? comp * (produtoCatalogo.kgMetro || 0) * qtd
+          : (produtoCatalogo.pesoUnit || 0) * qtd
+        : 0;
+
+      const pesoTotalFinal = produtoCatalogo ? pesoCalculadoCatalogo : pesoTotal;
+      const descFinal =
+        produtoCatalogo?.custom && comp > 0
+          ? `${produtoCatalogo?.desc || descRaw} ${comp.toFixed(2)}m`
+          : produtoCatalogo?.desc || descRaw;
+
+      itens.push({
+        tempId: Math.random(),
+        cod,
+        desc: descFinal,
+        perfil: produtoCatalogo?.perfil || perfilMaterial.perfil,
+        material: produtoCatalogo?.material || perfilMaterial.material,
+        comp,
+        qtd,
+        pesoTotal: (pesoTotalFinal || 0).toFixed(2),
+        unidade,
+      });
+    }
+  }
+
+  return itens;
+};
+
+const parseRomaneioPdf = async (file) => {
+  const linhas = await extrairLinhasDoPdf(file);
+  const textoCompleto = linhas.join('\n');
+
+  const idMatch = textoCompleto.match(/ROMANEIO:\s*([A-Z0-9]+)/i);
+  const clienteMatch = textoCompleto.match(/Cliente:\s*([^\n]+)/i);
+
+  const romaneioId = idMatch ? idMatch[1].trim() : '';
+  const clienteRaw = clienteMatch ? clienteMatch[1].trim() : '';
+  const cliente = clienteRaw
+    ? `${clienteRaw}${romaneioId ? ` - ${romaneioId}` : ''}`
+    : romaneioId || '';
+
+  let itens = parseLinhasParaItens(linhas, textoCompleto);
+
+  // Fallback OCR: se nada lido, tenta reconhecer texto da primeira página
+  if (itens.length === 0) {
+    try {
+      const ocrText = await extrairTextoPorOcr(file);
+      if (ocrText) {
+        const linhasOcr = ocrText
+          .split(/\n+/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        itens = parseLinhasParaItens(linhasOcr, linhasOcr.join('\n'));
+      }
+    } catch (ocrErr) {
+      console.error('OCR falhou:', ocrErr);
+    }
+  }
+
+  return {
+    id: romaneioId,
+    cliente,
+    itens,
+  };
+};
+
 
 // --- ESTILOS COMPLETO (RESTAURADO) ---
 
@@ -307,6 +569,13 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [formDataProducao, setFormDataProducao] = useState(hoje);
   const [itensNoPedido, setItensNoPedido] = useState([]);
   const [isEstoque, setIsEstoque] = useState(false); 
+
+  // PDF Romaneio
+  const [pdfItensEncontrados, setPdfItensEncontrados] = useState([]);
+  const [pdfItensSelecionados, setPdfItensSelecionados] = useState([]);
+  const [pdfInfoRomaneio, setPdfInfoRomaneio] = useState(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfErro, setPdfErro] = useState('');
 
   // Form Item
   const [formCod, setFormCod] = useState('');
@@ -608,6 +877,57 @@ useEffect(() => {
   e.target.value = null;
 };
 
+  const handleUploadPdfRomaneio = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPdfErro('');
+    setPdfLoading(true);
+
+    try {
+      const parsed = await parseRomaneioPdf(file);
+
+      if (!parsed?.itens?.length) {
+        throw new Error('Nenhum item encontrado no PDF.');
+      }
+
+      setPdfInfoRomaneio({ id: parsed.id, cliente: parsed.cliente });
+      setPdfItensEncontrados(parsed.itens);
+      setPdfItensSelecionados(parsed.itens.map((i) => i.tempId));
+
+      if (parsed.id && !formRomaneioId) setFormRomaneioId(parsed.id);
+      if (parsed.cliente) setFormCliente(parsed.cliente);
+    } catch (err) {
+      console.error('Erro ao ler PDF do romaneio:', err);
+      setPdfErro(`Não consegui ler o PDF (${err?.message || 'erro desconhecido'}). Veja o console para detalhes.`);
+    } finally {
+      setPdfLoading(false);
+      e.target.value = null;
+    }
+  };
+
+  const togglePdfItemSelecionado = (tempId) => {
+    setPdfItensSelecionados((prev) =>
+      prev.includes(tempId) ? prev.filter((id) => id !== tempId) : [...prev, tempId]
+    );
+  };
+
+  const adicionarItensPdfSelecionados = () => {
+    const selecionados = pdfItensEncontrados.filter((i) =>
+      pdfItensSelecionados.includes(i.tempId)
+    );
+
+    if (!selecionados.length) {
+      alert('Selecione ao menos um item do PDF.');
+      return;
+    }
+
+    setItensNoPedido((prev) => [...prev, ...selecionados]);
+    setPdfItensEncontrados([]);
+    setPdfItensSelecionados([]);
+    setPdfInfoRomaneio(null);
+  };
+
 
   const handleDownloadModelo = () => {
     const ws = XLSX.utils.json_to_sheet([{ ID: '5001', CLIENTE: 'EXEMPLO', DATA: '2025-12-08', TOTVS: 'PC-1', COD: '02006', DESC: 'TELHA', PERFIL: 'TP40', MATERIAL: 'GALV', COMP: 6.00, QTD: 10, PESO_TOTAL: 225.6 }]);
@@ -717,6 +1037,39 @@ const handleDownloadModeloParadas = () => {
       novaDataReprogramacao,
     });
 
+    // Modo localhost: apenas atualiza estado/localStorage, sem Firebase
+    if (IS_LOCALHOST) {
+      let sysIdAtual = romaneioEmEdicaoId || `LOCAL-${Date.now()}`;
+      const atualizada = romaneioEmEdicaoId
+        ? filaProducao.map((r) =>
+            r.sysId === romaneioEmEdicaoId ? { ...r, ...objAtual, sysId: sysIdAtual } : r
+          )
+        : [...filaProducao, { ...objAtual, sysId: sysIdAtual }];
+
+      let comReprogramado = atualizada;
+      if (itensReprogramados && itensReprogramados.length > 0 && novaDataReprogramacao) {
+        const objReprogramado = {
+          ...objAtual,
+          itens: itensReprogramados,
+          data: novaDataReprogramacao,
+          dataProducao: novaDataReprogramacao,
+          origemReprogramacao: sysIdAtual,
+          createdFromReprogramacao: true,
+          createdAt: agoraISO,
+          sysId: `LOCAL-${Date.now()}-R`,
+        };
+        comReprogramado = [...atualizada, objReprogramado];
+      }
+
+      setFilaProducao(comReprogramado);
+      setItensReprogramados([]);
+      setSelectedItemIds([]);
+      setNovaDataReprogramacao("");
+      alert("Romaneio salvo (modo local).");
+      setShowModalNovaOrdem(false);
+      return;
+    }
+
     // 2) GRAVA / ATUALIZA ROMANEIO ATUAL
     let sysIdAtual = romaneioEmEdicaoId || null;
 
@@ -783,21 +1136,39 @@ const handleDownloadModeloParadas = () => {
 
 
 const abrirModalNovo = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
-  const abrirModalEdicao = (r) => {
-  setRomaneioEmEdicaoId(r.sysId);          // id do doc no Firebase
-setMaquinaSelecionada(r.maquinaId || r.maquina || '');
-setFormRomaneioId(r.id || r.romaneioId || '');
-  setFormCliente(r.cliente);
-  setFormTotvs(r.totvs || '');
-setFormDataProducao(getDataRomaneio(r));
-  setItensNoPedido(
-    (r.itens || []).map((i) => ({ ...i, tempId: Math.random() }))
-  );
-setIsEstoque((r.id || r.romaneioId) === 'ESTOQUE');
-  setShowModalNovaOrdem(true);
-};
+const abrirModalEdicao = (r) => {
+    setPdfItensEncontrados([]);
+    setPdfItensSelecionados([]);
+    setPdfInfoRomaneio(null);
+    setPdfErro('');
 
-  const limparFormularioGeral = () => { setFormRomaneioId(''); setFormCliente(''); setFormTotvs(''); setFormDataProducao(hoje); setItensNoPedido([]); setIsEstoque(false); resetItemFields(); setRomaneioEmEdicaoId(null); };
+    setRomaneioEmEdicaoId(r.sysId); // id do doc no Firebase
+    setMaquinaSelecionada(r.maquinaId || r.maquina || '');
+    setFormRomaneioId(r.id || r.romaneioId || '');
+    setFormCliente(r.cliente);
+    setFormTotvs(r.totvs || '');
+    setFormDataProducao(getDataRomaneio(r));
+    setItensNoPedido(
+      (r.itens || []).map((i) => ({ ...i, tempId: Math.random() }))
+    );
+    setIsEstoque((r.id || r.romaneioId) === 'ESTOQUE');
+    setShowModalNovaOrdem(true);
+  };
+
+  const limparFormularioGeral = () => {
+    setFormRomaneioId('');
+    setFormCliente('');
+    setFormTotvs('');
+    setFormDataProducao(hoje);
+    setItensNoPedido([]);
+    setIsEstoque(false);
+    resetItemFields();
+    setRomaneioEmEdicaoId(null);
+    setPdfItensEncontrados([]);
+    setPdfItensSelecionados([]);
+    setPdfInfoRomaneio(null);
+    setPdfErro('');
+  };
   const abrirSelecaoMaquina = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
   const handleEscolherMaquina = (id) => {
     setMaquinaSelecionada(id);
@@ -2192,6 +2563,65 @@ const handleImportBackup = (json) => {
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                <div className="bg-zinc-900/40 border border-white/10 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div className="flex flex-col md:flex-row md:items-center gap-3">
+                      <div className="text-xs font-bold text-zinc-400 uppercase tracking-wide">PDF do romaneio</div>
+                      <label className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded cursor-pointer text-sm w-fit">
+                        <Upload size={16} />
+                        {pdfLoading ? 'Lendo...' : 'Escolher PDF'}
+                        <input type="file" accept="application/pdf" onChange={handleUploadPdfRomaneio} className="hidden" />
+                      </label>
+                      {pdfInfoRomaneio && (
+                        <span className="text-xs text-emerald-400">
+                          #{pdfInfoRomaneio.id || 'ROMANEIO'} - {pdfItensEncontrados.length} itens
+                        </span>
+                      )}
+                      {pdfErro && <span className="text-xs text-red-400">{pdfErro}</span>}
+                    </div>
+                    <div className="text-[11px] text-zinc-500">
+                      Escolha a data e máquina na hora; o PDF só preenche os dados.
+                    </div>
+                  </div>
+
+                  {pdfItensEncontrados.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-zinc-400">Selecione quais itens incluir na ordem:</div>
+                      <div className="max-h-52 overflow-y-auto bg-black/30 border border-white/10 rounded-lg divide-y divide-white/5">
+                        {pdfItensEncontrados.map((item) => (
+                          <label
+                            key={item.tempId}
+                            className="flex items-start gap-3 p-3 hover:bg-white/5 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 accent-emerald-500"
+                              checked={pdfItensSelecionados.includes(item.tempId)}
+                              onChange={() => togglePdfItemSelecionado(item.tempId)}
+                            />
+                            <div className="flex-1">
+                              <div className="text-sm text-white font-semibold">{item.desc}</div>
+                              <div className="text-[11px] text-zinc-400">
+                                Cod {item.cod} / Qtd {item.qtd} / Peso {item.pesoTotal}kg{' '}
+                                {item.comp ? `/ ${item.comp.toFixed(2)}m` : ''}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={adicionarItensPdfSelecionados}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold"
+                        >
+                          Adicionar itens selecionados
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-3">
                         <label className="text-xs font-bold text-blue-400 block mb-1">Romaneio</label>
