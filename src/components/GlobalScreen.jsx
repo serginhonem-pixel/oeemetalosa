@@ -39,7 +39,7 @@ import {
   doc,
   limit,
   onSnapshot,
-  orderBy, // Mantido apenas se for usar em query simples
+  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -48,6 +48,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../services/firebase';
+import { IS_LOCALHOST } from '../utils/env';
 
 // ===== Helpers =====
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -82,10 +83,48 @@ const GlobalScreen = () => {
     return list;
   }, []);
 
-  // ===== STATES =====
-  const [config, setConfig] = useState({ diasUteis: 22 });
-  const [maquinas, setMaquinas] = useState([]);
-  const [lancamentos, setLancamentos] = useState([]);
+  // ===== STATES (Com suporte a LocalStorage se IS_LOCALHOST) =====
+  
+  // Config
+  const [config, setConfig] = useState(() => {
+    if (IS_LOCALHOST) {
+        const saved = localStorage.getItem('local_config');
+        return saved ? JSON.parse(saved) : { diasUteis: 22 };
+    }
+    return { diasUteis: 22 };
+  });
+
+  // Máquinas
+  const [maquinas, setMaquinas] = useState(() => {
+    if (IS_LOCALHOST) {
+        const saved = localStorage.getItem('local_maquinas');
+        return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
+  // Lançamentos
+  const [lancamentos, setLancamentos] = useState(() => {
+    if (IS_LOCALHOST) {
+        const saved = localStorage.getItem('local_lancamentos');
+        return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
+  // ===== Efeitos para Salvar no LocalStorage (Apenas Localhost) =====
+  useEffect(() => {
+    if (IS_LOCALHOST) localStorage.setItem('local_config', JSON.stringify(config));
+  }, [config]);
+
+  useEffect(() => {
+    if (IS_LOCALHOST) localStorage.setItem('local_maquinas', JSON.stringify(maquinas));
+  }, [maquinas]);
+
+  useEffect(() => {
+    if (IS_LOCALHOST) localStorage.setItem('local_lancamentos', JSON.stringify(lancamentos));
+  }, [lancamentos]);
+
 
   // ===== Form / filtros =====
   const [novoDiaISO, setNovoDiaISO] = useState('');
@@ -104,10 +143,10 @@ const GlobalScreen = () => {
   const [exportando, setExportando] = useState(false);
   const [progressoExport, setProgressoExport] = useState('');
 
-  // ====== Firestore subscriptions ======
-  
-  // 1. Configuração Mensal
+  // ====== Firestore subscriptions (Só roda se NÃO for localhost) ======
   useEffect(() => {
+    if (IS_LOCALHOST) return; // Pula se for local
+
     const cfgRef = doc(db, 'global_config_mensal', mesRef);
     const unsubCfg = onSnapshot(cfgRef, (snap) => {
       if (!snap.exists()) {
@@ -116,41 +155,39 @@ const GlobalScreen = () => {
       }
       const data = snap.data();
       setConfig({ diasUteis: Number(data?.diasUteis) || 22 });
-    }, (error) => {
-        console.error("Erro config:", error);
-    });
+    }, (error) => console.error("Erro config:", error));
 
     return () => unsubCfg();
   }, [mesRef]);
 
-  // 2. Máquinas
   useEffect(() => {
-    // Aqui usamos orderBy simples, então não precisa de índice composto
-    const qMaq = query(collection(db, 'global_maquinas'), orderBy('nome', 'asc'));
+    if (IS_LOCALHOST) return;
+
+    // Sem orderBy composto para evitar erro de índice
+    const qMaq = query(collection(db, 'global_maquinas'));
     const unsubMaq = onSnapshot(qMaq, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Ordenação no cliente
+      arr.sort((a, b) => a.nome.localeCompare(b.nome));
       setMaquinas(arr);
-    }, (error) => {
-        console.error("Erro máquinas:", error);
-    });
+    }, (error) => console.error("Erro maquinas:", error));
 
     return () => unsubMaq();
   }, []);
 
-  // 3. Lançamentos (CORREÇÃO AQUI: Removemos orderBy da query)
   useEffect(() => {
+    if (IS_LOCALHOST) return;
+
     const qLanc = query(
       collection(db, 'global_lancamentos'),
       where('mesRef', '==', mesRef),
-      // orderBy('createdAt', 'desc'), // <--- REMOVIDO PARA EVITAR ERRO DE ÍNDICE
       limit(500)
     );
 
     const unsubLanc = onSnapshot(qLanc, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       
-      // Ordenação feita aqui no Javascript (lado do cliente)
-      // Garante que os mais recentes fiquem no topo da lista
+      // Ordenação no cliente para evitar erro de índice composto
       const ordenado = arr
         .map((x) => ({ ...x, real: Number(x.real) || 0 }))
         .sort((a, b) => {
@@ -160,9 +197,7 @@ const GlobalScreen = () => {
         });
 
       setLancamentos(ordenado);
-    }, (error) => {
-        console.error("Erro lançamentos:", error);
-    });
+    }, (error) => console.error("Erro lancamentos:", error));
 
     return () => unsubLanc();
   }, [mesRef]);
@@ -337,13 +372,23 @@ const GlobalScreen = () => {
     );
   };
 
-  // ====== Actions ======
+  // ====== Actions (Dual Mode: Local vs Firebase) ======
   const handleAddLancamento = async (e) => {
     e.preventDefault();
     const diaDDMM = toDDMM(novoDiaISO);
     if (!diaDDMM || !novoValor) return;
     const maqFinal = novaMaquinaForm || (maquinas[0] ? maquinas[0].nome : '');
     if (!maqFinal) return alert('Cadastre uma máquina antes de lançar.');
+
+    if (IS_LOCALHOST) {
+        setLancamentos((prev) => [
+          { id: `local-${Date.now()}`, dia: diaDDMM, real: Number(novoValor), maquina: maqFinal, mesRef, createdAt: { seconds: Date.now() / 1000 } }, 
+          ...prev,
+        ]);
+        setNovoDiaISO('');
+        setNovoValor('');
+        return;
+    }
 
     try {
       await addDoc(collection(db, 'global_lancamentos'), {
@@ -363,6 +408,10 @@ const GlobalScreen = () => {
 
   const handleDeleteLancamento = async (id) => {
     if (!id) return;
+    if (IS_LOCALHOST) {
+        setLancamentos((prev) => prev.filter((item) => item.id !== id));
+        return;
+    }
     try {
       await deleteDoc(doc(db, 'global_lancamentos', id));
     } catch (error) {
@@ -375,6 +424,14 @@ const GlobalScreen = () => {
     const nome = String(inputNomeMaquina || '').trim();
     if (!nome) return;
     if (maquinas.some((m) => m.nome === nome)) return alert('Máquina já existe!');
+
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => [...prev, { id: `local-${Date.now()}`, nome, meta: Number(inputMetaMaquina), unidade: inputUnidadeMaquina }]);
+        setInputNomeMaquina('');
+        setInputMetaMaquina(100);
+        setInputUnidadeMaquina('pç');
+        return;
+    }
 
     try {
         await addDoc(collection(db, 'global_maquinas'), {
@@ -395,6 +452,12 @@ const GlobalScreen = () => {
   const handleRemoveMaquina = async (nomeParaRemover) => {
     const maq = maquinas.find((m) => m.nome === nomeParaRemover);
     if (!maq) return;
+    
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => prev.filter((m) => m.nome !== nomeParaRemover));
+        return;
+    }
+
     try {
         await deleteDoc(doc(db, 'global_maquinas', maq.id));
     } catch (error) {
@@ -406,31 +469,43 @@ const GlobalScreen = () => {
   const handleUpdateMeta = async (nomeMaquina, novaMeta) => {
     const valor = Number(novaMeta);
     if (!Number.isFinite(valor)) return;
+    
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
+        return;
+    }
+
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
     
-    // Atualização otimista
+    // Optimistic update
     setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
     
     try {
         await updateDoc(doc(db, 'global_maquinas', maq.id), { meta: valor });
     } catch (error) {
-        console.error("Erro ao atualizar meta", error);
+        console.error("Erro meta", error);
     }
   };
 
   const handleUpdateUnidade = async (nomeMaquina, novaUnidade) => {
     if (!novaUnidade) return;
+
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade: novaUnidade } : m)));
+        return;
+    }
+
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
 
-    // Atualização otimista
+    // Optimistic
     setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade: novaUnidade } : m)));
 
     try {
         await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
     } catch (error) {
-        console.error("Erro ao atualizar unidade", error);
+        console.error("Erro unidade", error);
     }
   };
 
@@ -438,12 +513,17 @@ const GlobalScreen = () => {
     const d = Number(dias);
     if (!Number.isFinite(d) || d <= 0) return;
     
-    setConfig((prev) => ({ ...prev, diasUteis: d }));
+    if (IS_LOCALHOST) {
+        setConfig((prev) => ({ ...prev, diasUteis: d }));
+        return;
+    }
+
+    setConfig((prev) => ({ ...prev, diasUteis: d })); // Optimistic
 
     try {
         await setDoc(doc(db, 'global_config_mensal', mesRef), { diasUteis: d, updatedAt: serverTimestamp() }, { merge: true });
     } catch (error) {
-        console.error("Erro ao salvar dias úteis", error);
+        console.error("Erro dias uteis", error);
     }
   };
 
@@ -466,7 +546,7 @@ const GlobalScreen = () => {
         setProgressoExport(`Gerando página ${i + 1} de ${maquinas.length}: ${nome}`);
         
         setFiltroMaquina(nome);
-        await sleep(200); 
+        await sleep(250); 
         await new Promise(requestAnimationFrame);
 
         const canvas = await html2canvas(chartExportRef.current, {
@@ -858,8 +938,8 @@ const GlobalScreen = () => {
           </div>
         </div>
 
-        {/* COLUNA DIREITA (GRÁFICO) */}
-        <div className="lg:col-span-9 flex flex-col min-h-[600px]">
+        {/* COLUNA DIREITA (GRÁFICO) - CORRIGIDO LAYOUT (min-w-0) */}
+        <div className="lg:col-span-9 flex flex-col min-h-[600px] min-w-0">
           <div
             ref={chartExportRef}
             className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl flex-1 flex flex-col relative overflow-hidden"
@@ -924,7 +1004,6 @@ const GlobalScreen = () => {
                     margin={{ top: 60, right: 20, left: 10, bottom: 20 }}
                     barCategoryGap={20}
                   >
-                    {/* Visual: Cores com degradê (agora sem erros) */}
                     <defs>
                         <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
