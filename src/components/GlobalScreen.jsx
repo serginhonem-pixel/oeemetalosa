@@ -27,8 +27,7 @@ import {
   Download,
   Loader2,
   FileText,
-  Projector, // Trocamos Presentation por Projector para evitar conflito
-  Activity
+  Projector // Ícone seguro (substituindo Presentation)
 } from 'lucide-react';
 
 import html2canvas from 'html2canvas';
@@ -104,7 +103,7 @@ const GlobalScreen = () => {
 
   // Variáveis de controle UI
   const [busy, setBusy] = useState(false);
-  const [exportando, setExportando] = useState(false);
+  const [exportando, setExportando] = useState(false); // Definido aqui no escopo principal
   const [statusMsg, setStatusMsg] = useState('');
   const [showConfig, setShowConfig] = useState(false);
 
@@ -576,9 +575,11 @@ const GlobalScreen = () => {
   const captureChartPNG = async () => {
     const el = chartCaptureRef.current;
     if (!el) throw new Error('chartCaptureRef não encontrado');
+    
+    // Captura com escala maior para qualidade
     const canvas = await html2canvas(el, {
       backgroundColor: '#09090b',
-      scale: 3,
+      scale: 3, 
       useCORS: true,
     });
     return canvas.toDataURL('image/png');
@@ -587,9 +588,10 @@ const GlobalScreen = () => {
   // ===== EXPORT PDF (Graficos) ======
   const exportPDFGraficos = async () => {
     if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
-    if (exportando) return;
+    if (exportando) return; // Evita clique duplo
 
     setExportando(true);
+    setBusy(true);
     toast('Gerando PDF...', 0);
     const filtroOriginal = filtroMaquina;
 
@@ -601,8 +603,9 @@ const GlobalScreen = () => {
         for (let i = 0; i < maquinas.length; i++) {
             const m = maquinas[i];
             setFiltroMaquina(m.nome);
-            // Tempo maior para o label aparecer
-            await sleep(1000); 
+            
+            // Tempo suficiente para o gráfico renderizar sem animação
+            await sleep(500); 
             await new Promise((r) => requestAnimationFrame(r));
             
             const imgData = await captureChartPNG();
@@ -613,21 +616,18 @@ const GlobalScreen = () => {
             pdf.setFillColor(9, 9, 11);
             pdf.rect(0, 0, pageW, pageH, 'F');
 
-            // Ajuste imagem
             const margin = 20;
             const imgW = pageW - (margin * 2);
-            // Calcula altura proporcional
             const imgProps = pdf.getImageProperties(imgData);
             const imgH = (imgProps.height * imgW) / imgProps.width;
 
             pdf.addImage(imgData, 'PNG', margin, 70, imgW, imgH);
 
-            // Texto Header
             pdf.setTextColor(255, 255, 255);
             pdf.setFontSize(18);
             pdf.text(`Gráfico de Performance: ${m.nome}`, margin, 40);
             
-            pdf.setTextColor(156, 163, 175); // zinc-400
+            pdf.setTextColor(156, 163, 175); 
             pdf.setFontSize(10);
             pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 55);
         }
@@ -648,9 +648,10 @@ const GlobalScreen = () => {
   // ===== EXPORT PPTX (Relatório) ======
   const exportPPTX = async () => {
     if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
-    if (exportando) return;
+    if (exportando) return; // Evita clique duplo
 
     setExportando(true);
+    setBusy(true);
     toast('Gerando PPTX...', 0);
 
     try {
@@ -658,7 +659,6 @@ const GlobalScreen = () => {
       pptx.layout = 'LAYOUT_16x9'; 
       pptx.author = 'GlobalScreen';
       
-      // Master Dark
       pptx.defineSlideMaster({
         title: "MASTER_DARK",
         background: { color: "09090b" },
@@ -668,7 +668,7 @@ const GlobalScreen = () => {
 
       // 1. Slide Resumo
       setFiltroMaquina('TODAS');
-      await sleep(1000); // 1s para renderizar labels
+      await sleep(600); // Tempo para renderizar estático
       await new Promise((r) => requestAnimationFrame(r));
       const imgResumo = await captureChartPNG();
 
@@ -688,14 +688,16 @@ const GlobalScreen = () => {
 
           { text: `Aderência (Ritmo): `, options: { color: '9CA3AF', fontSize: 14 } },
           { text: `${dadosGrafico.aderenciaMeta.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 18, bold: true } }
-      ], { x: 0.3, y: 1.0, w: 3.5, h: 4.5, valign: 'top' });
+      ], { x: 0.3, y: 1.0, w: 3.0, h: 4.5, valign: 'top' });
 
-      slideResumo.addImage({ data: imgResumo, x: 3.8, y: 1.0, w: 6.0, h: 4.0 });
+      // Imagem do Gráfico - Ajustada para não sobrepor texto e caber no slide
+      // Slide 16x9 tem 10 polegadas de largura por 5.625 de altura
+      slideResumo.addImage({ data: imgResumo, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
 
       // 2. Slides Máquinas
       for (const m of maquinas) {
         setFiltroMaquina(m.nome);
-        await sleep(1000);
+        await sleep(600);
         await new Promise((r) => requestAnimationFrame(r));
         const img = await captureChartPNG();
 
@@ -708,7 +710,6 @@ const GlobalScreen = () => {
         const lancMaq = lancamentos.filter((l) => l.maquina === m.nome);
         const realMes = lancMaq.reduce((acc, x) => acc + (Number(x.real) || 0), 0);
         
-        // Aderência individual
         const diasProd = [...new Set(lancMaq.map(l => l.dia))].length;
         const mediaReal = diasProd > 0 ? realMes / diasProd : 0;
         const aderencia = metaDia > 0 ? (mediaReal / metaDia) * 100 : 0;
@@ -731,9 +732,9 @@ const GlobalScreen = () => {
 
             { text: `Aderência: `, options: { color: '9CA3AF', fontSize: 12 } },
             { text: `${aderencia.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 16, bold: true } }
-        ], { x: 0.3, y: 1.0, w: 3.5, h: 5.2, valign: 'top' });
+        ], { x: 0.3, y: 1.0, w: 3.0, h: 5.2, valign: 'top' });
 
-        slide.addImage({ data: img, x: 3.8, y: 1.0, w: 6.0, h: 4.0 });
+        slide.addImage({ data: img, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
       }
 
       setFiltroMaquina(filtroOriginal);
@@ -1170,6 +1171,7 @@ const GlobalScreen = () => {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
+                  {/* isAnimationActive={false} para garantir exportação correta da imagem */}
                   <ComposedChart
                     data={dadosGrafico.dados}
                     margin={{ top: 80, right: 20, left: 10, bottom: 20 }}
@@ -1220,7 +1222,6 @@ const GlobalScreen = () => {
                       }}
                     />
 
-                    {/* IMPORTANTE: isAnimationActive={false} para o HTML2Canvas capturar os labels corretamente */}
                     <Bar isAnimationActive={false} dataKey="valorPlotado" barSize={barSize} radius={[4, 4, 0, 0]}>
                       {dadosGrafico.dados.map((entry, index) => (
                         <Cell 
