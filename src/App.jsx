@@ -49,6 +49,7 @@ import { ColunaKanban } from "./components/ColunaKanban";
 import OeeDashboard from './components/OeeDashboard';
 import { ParadasScreen } from './components/ParadasScreen';
 import { ProducaoScreen } from "./components/ProducaoScreen";
+import GlobalScreen from './components/GlobalScreen';
 
 
 
@@ -2244,8 +2245,19 @@ const handleImportBackup = (json) => {
             <BotaoMenu ativo={abaAtiva === 'oee'} onClick={() => setAbaAtiva('oee')} icon={<Activity size={20} />} label="OEE" />
             
             <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
+            <BotaoMenu
+              ativo={abaAtiva === 'global'}
+              onClick={() => setAbaAtiva('global')}
+              icon={<TrendingUp size={20} />}   // ou outro ícone
+              label="Global"
+            />
+
           </div>
         </nav>
+        {abaAtiva === 'global' && (
+  <GlobalScreen />
+)}
+
 
         {/* --- CONTEÚDO --- */}
 

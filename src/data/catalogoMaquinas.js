@@ -26,3 +26,4 @@ export const CATALOGO_MAQUINAS = [
     ativo: true,
   },
 ];
+  
