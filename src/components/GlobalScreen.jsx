@@ -48,7 +48,8 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../services/firebase';
-import { IS_LOCALHOST } from '../utils/env';
+// Removido o uso restritivo do IS_LOCALHOST para permitir conexão com banco
+// import { IS_LOCALHOST } from '../utils/env'; 
 
 /**
  * Firestore Collections
@@ -91,13 +92,9 @@ const GlobalScreen = () => {
     return list;
   }, []);
 
-  // ===== Config mensal =====
+  // ===== STATES =====
   const [config, setConfig] = useState({ diasUteis: 22 });
-
-  // ===== Máquinas =====
   const [maquinas, setMaquinas] = useState([]);
-
-  // ===== Lançamentos =====
   const [lancamentos, setLancamentos] = useState([]);
 
   // ===== Form / filtros =====
@@ -117,10 +114,8 @@ const GlobalScreen = () => {
   const [exportando, setExportando] = useState(false);
   const [progressoExport, setProgressoExport] = useState('');
 
-  // ====== Firestore subscriptions ======
+  // ====== Firestore subscriptions (AGORA RODA SEMPRE) ======
   useEffect(() => {
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) return;
-
     const cfgRef = doc(db, 'global_config_mensal', mesRef);
     const unsubCfg = onSnapshot(cfgRef, (snap) => {
       if (!snap.exists()) {
@@ -129,26 +124,27 @@ const GlobalScreen = () => {
       }
       const data = snap.data();
       setConfig({ diasUteis: Number(data?.diasUteis) || 22 });
+    }, (error) => {
+        console.error("Erro ao ler config:", error);
     });
 
     return () => unsubCfg();
   }, [mesRef]);
 
   useEffect(() => {
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) return;
-
     const qMaq = query(collection(db, 'global_maquinas'), orderBy('nome', 'asc'));
     const unsubMaq = onSnapshot(qMaq, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMaquinas(arr);
+    }, (error) => {
+        console.error("Erro ao ler máquinas:", error);
     });
 
     return () => unsubMaq();
   }, []);
 
   useEffect(() => {
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) return;
-
+    // Nota: Certifique-se que o índice composto existe no Firebase Console se der erro aqui
     const qLanc = query(
       collection(db, 'global_lancamentos'),
       where('mesRef', '==', mesRef),
@@ -159,6 +155,8 @@ const GlobalScreen = () => {
     const unsubLanc = onSnapshot(qLanc, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setLancamentos(arr.map((x) => ({ ...x, real: Number(x.real) || 0 })));
+    }, (error) => {
+        console.error("Erro ao ler lançamentos:", error);
     });
 
     return () => unsubLanc();
@@ -334,7 +332,7 @@ const GlobalScreen = () => {
     );
   };
 
-  // ====== Actions ======
+  // ====== Actions (Sempre Firebase) ======
   const handleAddLancamento = async (e) => {
     e.preventDefault();
     const diaDDMM = toDDMM(novoDiaISO);
@@ -343,35 +341,29 @@ const GlobalScreen = () => {
     if (!maqFinal) return alert('Cadastre uma máquina antes de lançar.');
 
     try {
-      if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-        setLancamentos((prev) => [
-          ...prev,
-          { id: `local-${Date.now()}`, dia: diaDDMM, real: Number(novoValor), maquina: maqFinal, mesRef },
-        ]);
-      } else {
-        await addDoc(collection(db, 'global_lancamentos'), {
-          dia: diaDDMM,
-          real: Number(novoValor),
-          maquina: maqFinal,
-          mesRef,
-          createdAt: serverTimestamp(),
-        });
-      }
+      await addDoc(collection(db, 'global_lancamentos'), {
+        dia: diaDDMM,
+        real: Number(novoValor),
+        maquina: maqFinal,
+        mesRef,
+        createdAt: serverTimestamp(),
+      });
       setNovoDiaISO('');
       setNovoValor('');
     } catch (error) {
       console.error(error);
-      alert('Erro ao salvar lançamento');
+      alert('Erro ao salvar lançamento no Firebase');
     }
   };
 
   const handleDeleteLancamento = async (id) => {
     if (!id) return;
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-      setLancamentos((prev) => prev.filter((item) => item.id !== id));
-      return;
+    try {
+      await deleteDoc(doc(db, 'global_lancamentos', id));
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao deletar");
     }
-    await deleteDoc(doc(db, 'global_lancamentos', id));
   };
 
   const handleAddMaquina = async () => {
@@ -380,66 +372,75 @@ const GlobalScreen = () => {
     if (maquinas.some((m) => m.nome === nome)) return alert('Máquina já existe!');
 
     try {
-        if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-            setMaquinas((prev) => [...prev, { id: `local-${Date.now()}`, nome, meta: Number(inputMetaMaquina), unidade: inputUnidadeMaquina }]);
-          } else {
-            await addDoc(collection(db, 'global_maquinas'), {
-              nome,
-              meta: Number(inputMetaMaquina),
-              unidade: inputUnidadeMaquina,
-              createdAt: serverTimestamp(),
-            });
-          }
-          setInputNomeMaquina('');
-          setInputMetaMaquina(100);
-          setInputUnidadeMaquina('pç');
+        await addDoc(collection(db, 'global_maquinas'), {
+            nome,
+            meta: Number(inputMetaMaquina),
+            unidade: inputUnidadeMaquina,
+            createdAt: serverTimestamp(),
+        });
+        setInputNomeMaquina('');
+        setInputMetaMaquina(100);
+        setInputUnidadeMaquina('pç');
     } catch (error) {
         console.error(error);
-        alert("Erro ao adicionar máquina")
+        alert("Erro ao adicionar máquina no Firebase")
     }
   };
 
   const handleRemoveMaquina = async (nomeParaRemover) => {
     const maq = maquinas.find((m) => m.nome === nomeParaRemover);
     if (!maq) return;
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-      setMaquinas((prev) => prev.filter((m) => m.nome !== nomeParaRemover));
-      return;
+    try {
+        await deleteDoc(doc(db, 'global_maquinas', maq.id));
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao remover máquina");
     }
-    await deleteDoc(doc(db, 'global_maquinas', maq.id));
   };
 
   const handleUpdateMeta = async (nomeMaquina, novaMeta) => {
     const valor = Number(novaMeta);
     if (!Number.isFinite(valor)) return;
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-      setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
-      return;
-    }
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
-    await updateDoc(doc(db, 'global_maquinas', maq.id), { meta: valor });
+    
+    // Atualização otimista local para UX fluida
+    setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
+    
+    try {
+        await updateDoc(doc(db, 'global_maquinas', maq.id), { meta: valor });
+    } catch (error) {
+        console.error("Erro ao atualizar meta", error);
+    }
   };
 
   const handleUpdateUnidade = async (nomeMaquina, novaUnidade) => {
     if (!novaUnidade) return;
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-      setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade: novaUnidade } : m)));
-      return;
-    }
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
-    await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
+
+    // Atualização otimista
+    setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade: novaUnidade } : m)));
+
+    try {
+        await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
+    } catch (error) {
+        console.error("Erro ao atualizar unidade", error);
+    }
   };
 
   const saveDiasUteisMes = async (dias) => {
     const d = Number(dias);
     if (!Number.isFinite(d) || d <= 0) return;
-    if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
-      setConfig((prev) => ({ ...prev, diasUteis: d }));
-      return;
+    
+    // Atualização otimista
+    setConfig((prev) => ({ ...prev, diasUteis: d }));
+
+    try {
+        await setDoc(doc(db, 'global_config_mensal', mesRef), { diasUteis: d, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (error) {
+        console.error("Erro ao salvar dias úteis", error);
     }
-    await setDoc(doc(db, 'global_config_mensal', mesRef), { diasUteis: d, updatedAt: serverTimestamp() }, { merge: true });
   };
 
   // ===== Export PDF =====
@@ -519,7 +520,6 @@ const GlobalScreen = () => {
   }, [dadosGrafico]);
 
   return (
-    // FIX DE ROLAGEM: h-screen + overflow-y-auto na div principal para forçar barra de rolagem
     <div className="w-full h-screen overflow-y-auto bg-[#09090b] text-zinc-100 font-sans selection:bg-blue-500/30 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
       
       {/* OVERLAY DE EXPORTAÇÃO (LOADING) */}
@@ -531,7 +531,7 @@ const GlobalScreen = () => {
         </div>
       )}
 
-      {/* HEADER STICKY (Fica preso dentro do container com scroll) */}
+      {/* HEADER STICKY */}
       <div className="sticky top-0 z-40 bg-[#09090b]/80 backdrop-blur-md border-b border-zinc-800 shadow-sm">
         <div className="w-full max-w-[1920px] mx-auto px-4 md:px-6 py-3 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-3">
@@ -920,7 +920,6 @@ const GlobalScreen = () => {
                     margin={{ top: 60, right: 20, left: 10, bottom: 20 }}
                     barCategoryGap={20}
                   >
-                    {/* AQUI ESTÁ A CORREÇÃO: TAGS EM MINÚSCULO */}
                     <defs>
                         <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
