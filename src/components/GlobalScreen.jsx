@@ -39,7 +39,7 @@ import {
   doc,
   limit,
   onSnapshot,
-  orderBy,
+  orderBy, // Mantido apenas se for usar em query simples
   query,
   setDoc,
   updateDoc,
@@ -48,13 +48,6 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../services/firebase';
-
-/**
- * Firestore Collections
- * - global_maquinas
- * - global_lancamentos
- * - global_config_mensal (docId = YYYY-MM) { diasUteis }
- */
 
 // ===== Helpers =====
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -67,7 +60,6 @@ function monthLabel(yyyyMM) {
   return dt.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
-// input date "YYYY-MM-DD" -> "dd/mm"
 function toDDMM(dateStr) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-');
@@ -133,6 +125,7 @@ const GlobalScreen = () => {
 
   // 2. Máquinas
   useEffect(() => {
+    // Aqui usamos orderBy simples, então não precisa de índice composto
     const qMaq = query(collection(db, 'global_maquinas'), orderBy('nome', 'asc'));
     const unsubMaq = onSnapshot(qMaq, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -144,25 +137,26 @@ const GlobalScreen = () => {
     return () => unsubMaq();
   }, []);
 
-  // 3. Lançamentos (CORRIGIDO: Ordenação via JS para evitar erro de índice)
+  // 3. Lançamentos (CORREÇÃO AQUI: Removemos orderBy da query)
   useEffect(() => {
     const qLanc = query(
       collection(db, 'global_lancamentos'),
       where('mesRef', '==', mesRef),
-      // orderBy('createdAt', 'desc'), // REMOVIDO PARA EVITAR ERRO DE ÍNDICE
+      // orderBy('createdAt', 'desc'), // <--- REMOVIDO PARA EVITAR ERRO DE ÍNDICE
       limit(500)
     );
 
     const unsubLanc = onSnapshot(qLanc, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       
-      // Ordenação feita aqui no cliente
+      // Ordenação feita aqui no Javascript (lado do cliente)
+      // Garante que os mais recentes fiquem no topo da lista
       const ordenado = arr
         .map((x) => ({ ...x, real: Number(x.real) || 0 }))
         .sort((a, b) => {
             const tA = a.createdAt?.seconds || 0;
             const tB = b.createdAt?.seconds || 0;
-            return tB - tA; // Decrescente (mais novo primeiro)
+            return tB - tA; // Decrescente
         });
 
       setLancamentos(ordenado);
@@ -930,6 +924,7 @@ const GlobalScreen = () => {
                     margin={{ top: 60, right: 20, left: 10, bottom: 20 }}
                     barCategoryGap={20}
                   >
+                    {/* Visual: Cores com degradê (agora sem erros) */}
                     <defs>
                         <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
@@ -1018,7 +1013,7 @@ const GlobalScreen = () => {
                           value: 'META 100%', 
                           fill: '#fbbf24', 
                           fontSize: 10, 
-                          fontWeight: 'bold',
+                          fontWeight: 'bold', 
                           dy: -10 
                       }}
                       stroke="#fbbf24"
