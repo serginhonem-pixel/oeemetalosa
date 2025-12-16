@@ -48,8 +48,6 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../services/firebase';
-// Removido o uso restritivo do IS_LOCALHOST para permitir conexão com banco
-// import { IS_LOCALHOST } from '../utils/env'; 
 
 /**
  * Firestore Collections
@@ -114,7 +112,9 @@ const GlobalScreen = () => {
   const [exportando, setExportando] = useState(false);
   const [progressoExport, setProgressoExport] = useState('');
 
-  // ====== Firestore subscriptions (AGORA RODA SEMPRE) ======
+  // ====== Firestore subscriptions ======
+  
+  // 1. Configuração Mensal
   useEffect(() => {
     const cfgRef = doc(db, 'global_config_mensal', mesRef);
     const unsubCfg = onSnapshot(cfgRef, (snap) => {
@@ -125,38 +125,49 @@ const GlobalScreen = () => {
       const data = snap.data();
       setConfig({ diasUteis: Number(data?.diasUteis) || 22 });
     }, (error) => {
-        console.error("Erro ao ler config:", error);
+        console.error("Erro config:", error);
     });
 
     return () => unsubCfg();
   }, [mesRef]);
 
+  // 2. Máquinas
   useEffect(() => {
     const qMaq = query(collection(db, 'global_maquinas'), orderBy('nome', 'asc'));
     const unsubMaq = onSnapshot(qMaq, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMaquinas(arr);
     }, (error) => {
-        console.error("Erro ao ler máquinas:", error);
+        console.error("Erro máquinas:", error);
     });
 
     return () => unsubMaq();
   }, []);
 
+  // 3. Lançamentos (CORRIGIDO: Ordenação via JS para evitar erro de índice)
   useEffect(() => {
-    // Nota: Certifique-se que o índice composto existe no Firebase Console se der erro aqui
     const qLanc = query(
       collection(db, 'global_lancamentos'),
       where('mesRef', '==', mesRef),
-      orderBy('createdAt', 'desc'),
+      // orderBy('createdAt', 'desc'), // REMOVIDO PARA EVITAR ERRO DE ÍNDICE
       limit(500)
     );
 
     const unsubLanc = onSnapshot(qLanc, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setLancamentos(arr.map((x) => ({ ...x, real: Number(x.real) || 0 })));
+      
+      // Ordenação feita aqui no cliente
+      const ordenado = arr
+        .map((x) => ({ ...x, real: Number(x.real) || 0 }))
+        .sort((a, b) => {
+            const tA = a.createdAt?.seconds || 0;
+            const tB = b.createdAt?.seconds || 0;
+            return tB - tA; // Decrescente (mais novo primeiro)
+        });
+
+      setLancamentos(ordenado);
     }, (error) => {
-        console.error("Erro ao ler lançamentos:", error);
+        console.error("Erro lançamentos:", error);
     });
 
     return () => unsubLanc();
@@ -332,7 +343,7 @@ const GlobalScreen = () => {
     );
   };
 
-  // ====== Actions (Sempre Firebase) ======
+  // ====== Actions ======
   const handleAddLancamento = async (e) => {
     e.preventDefault();
     const diaDDMM = toDDMM(novoDiaISO);
@@ -352,7 +363,7 @@ const GlobalScreen = () => {
       setNovoValor('');
     } catch (error) {
       console.error(error);
-      alert('Erro ao salvar lançamento no Firebase');
+      alert('Erro ao salvar lançamento');
     }
   };
 
@@ -383,7 +394,7 @@ const GlobalScreen = () => {
         setInputUnidadeMaquina('pç');
     } catch (error) {
         console.error(error);
-        alert("Erro ao adicionar máquina no Firebase")
+        alert("Erro ao adicionar máquina")
     }
   };
 
@@ -404,7 +415,7 @@ const GlobalScreen = () => {
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
     
-    // Atualização otimista local para UX fluida
+    // Atualização otimista
     setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
     
     try {
@@ -433,7 +444,6 @@ const GlobalScreen = () => {
     const d = Number(dias);
     if (!Number.isFinite(d) || d <= 0) return;
     
-    // Atualização otimista
     setConfig((prev) => ({ ...prev, diasUteis: d }));
 
     try {
