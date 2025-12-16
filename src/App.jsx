@@ -1610,166 +1610,221 @@ const parseNumberBR = (v) => {
   // --- DASHBOARD E OEE (Lógica Atualizada) ---
   // --- DASHBOARD E OEE (Lógica Atualizada com Filtros) ---
   // --- SUBSTITUA O SEU 'const dadosIndicadores' ATUAL POR ESTE INTEIRO ---
-  const dadosIndicadores = useMemo(() => { 
+  const dadosIndicadores = useMemo(() => {
   const agrupadoPorDia = {};
-  
-  // Datas base
-  let currDate = new Date(dataInicioInd + 'T12:00:00');
-  const lastDate = new Date(dataFimInd + 'T12:00:00');
 
-  // 1. Cria chaves dia a dia
+  // ========= helpers =========
+  const toISO = (d) => new Date(d).toISOString().split("T")[0];
+
+  const isDiaUtil = (iso) => {
+    const dow = new Date(iso + "T12:00:00").getDay();
+    return dow !== 0 && dow !== 6;
+  };
+
+  const MAQUINA_SEM = "SEM_MAQUINA";
+
+  const getMaquina = (p) => {
+    const m = (p.maquina ?? p.nomeMaquina ?? p.eqp ?? p.equipamento ?? "")
+      .toString()
+      .trim();
+    return m || MAQUINA_SEM;
+  };
+
+  // peso executado: usa pesoTotal se existir; senão fallback catálogo
+  const calcPesoExecutadoKg = (p) => {
+    const pesoDireto = Number(p.pesoTotal || 0);
+    if (pesoDireto > 0) return pesoDireto;
+
+    const prod = CATALOGO_PRODUTOS?.find((c) => c.cod === p.cod);
+    if (!prod) return 0;
+
+    const qtd = Number(p.qtd || 0);
+
+    if (prod.pesoUnit != null) {
+      return Number(prod.pesoUnit || 0) * qtd;
+    }
+
+    if (prod.kgMetro != null) {
+      const metros = Number(p.metros || p.comp || p.comprimento || 0);
+      return Number(prod.kgMetro || 0) * metros * qtd;
+    }
+
+    return 0;
+  };
+
+  // ========= 1) cria range dia a dia (para o gráfico) =========
+  let currDate = new Date(dataInicioInd + "T12:00:00");
+  const lastDate = new Date(dataFimInd + "T12:00:00");
+
   while (currDate <= lastDate) {
-    const dStr = currDate.toISOString().split('T')[0];
-    agrupadoPorDia[dStr] = { 
-      pesoPlanejado: 0, 
-      itensPlanejados: 0, 
-      pesoExecutado: 0, 
-      itensExecutados: 0 
-    };
+    const iso = toISO(currDate);
+    agrupadoPorDia[iso] = { pesoPlanejado: 0, pesoExecutado: 0 };
     currDate.setDate(currDate.getDate() + 1);
   }
 
-  // 2. Soma Planejado (continua igual)
+  // ========= 2) planejado no período (romaneio) =========
   const romaneiosNoPeriodo = filaProducao.filter(
-    r => r.data >= dataInicioInd && r.data <= dataFimInd
+    (r) => r.data >= dataInicioInd && r.data <= dataFimInd
   );
-  romaneiosNoPeriodo.forEach(r => {
-    const d = String(r.data);
-    if (agrupadoPorDia[d]) {
-      const pesoR = r.itens.reduce(
-        (acc, i) => acc + parseFloat(i.pesoTotal || 0), 
-        0
-      );
-      agrupadoPorDia[d].pesoPlanejado += pesoR;
-    }
+
+  romaneiosNoPeriodo.forEach((r) => {
+    const iso = String(r.data);
+    if (!agrupadoPorDia[iso]) return;
+
+    const pesoDia = (r.itens || []).reduce(
+      (acc, i) => acc + Number(i.pesoTotal || 0),
+      0
+    );
+
+    agrupadoPorDia[iso].pesoPlanejado += pesoDia;
   });
 
-// 3. Soma Executado (prioriza peso real do apontamento; fallback para catálogo)
-const producaoNoPeriodo = historicoProducaoReal.filter(
-  p => p.data >= dataInicioInd && p.data <= dataFimInd
-);
+  // ========= 3) executado no período + filtro por máquina =========
+  const producaoNoPeriodoBase = historicoProducaoReal.filter(
+    (p) => p.data >= dataInicioInd && p.data <= dataFimInd
+  );
 
-producaoNoPeriodo.forEach(p => {
-  const d = String(p.data);
-  if (!agrupadoPorDia[d]) return;
+  const producaoNoPeriodo = producaoNoPeriodoBase.filter((p) => {
+    if (!maquinaSelecionada || maquinaSelecionada === "TODAS") return true;
+    return getMaquina(p) === maquinaSelecionada;
+  });
 
-  // ✅ 1) se o histórico já tem pesoTotal/pesoKg, usa isso (é o correto)
-  // ajuste os nomes aqui conforme o seu objeto real:
-  const pesoDireto =
-    parseNumberBR(p.pesoTotal) ||
-    parseNumberBR(p.pesoKg) ||
-    parseNumberBR(p.peso) ||
-    0;
+  producaoNoPeriodo.forEach((p) => {
+    const iso = String(p.data);
+    if (!agrupadoPorDia[iso]) return;
 
-  if (pesoDireto > 0) {
-    agrupadoPorDia[d].pesoExecutado += pesoDireto;
-    return;
-  }
+    agrupadoPorDia[iso].pesoExecutado += calcPesoExecutadoKg(p);
+  });
 
-  // ✅ 2) fallback: calcula pelo catálogo (menos confiável)
-  const prodCatalogo = CATALOGO_PRODUTOS?.find(cat => cat.cod === p.cod);
-
-  let pesoCalc = 0;
-  if (prodCatalogo) {
-    const qtd = parseNumberBR(p.qtd);
-
-    // Se tiver pesoUnit, ok
-    if (prodCatalogo.pesoUnit != null) {
-      pesoCalc = parseNumberBR(prodCatalogo.pesoUnit) * qtd;
-    } 
-    // Se tiver kgMetro, precisa do comprimento/metragem (se existir no apontamento)
-    else if (prodCatalogo.kgMetro != null) {
-      const metros = parseNumberBR(p.metros || p.comp || p.comprimento);
-      pesoCalc = parseNumberBR(prodCatalogo.kgMetro) * metros * qtd;
-    }
-  }
-
-  agrupadoPorDia[d].pesoExecutado += pesoCalc;
-});
-
-  // 4. Array para o gráfico (sem FDS e sem dias totalmente vazios)
+  // ========= 4) array do gráfico =========
   const arrayGrafico = Object.keys(agrupadoPorDia)
-  .sort()
-  .map(data => ({ data, ...agrupadoPorDia[data] }));
+    .sort()
+    .map((data) => ({ data, ...agrupadoPorDia[data] }));
 
-  // 5. Totais do período selecionado
-  const totalPesoPlanejado = romaneiosNoPeriodo.reduce(
-    (acc, r) => acc + r.itens.reduce(
-      (sum, i) => sum + parseFloat(i.pesoTotal || 0), 
-      0
-    ),
+  // ========= 5) totais do período =========
+  const totalPesoPlanejado = Object.values(agrupadoPorDia).reduce(
+    (acc, d) => acc + d.pesoPlanejado,
     0
   );
 
-  const totalPesoExecutado = producaoNoPeriodo.reduce((acc, p) => {
-    const prod = CATALOGO_PRODUTOS?.find(c => c.cod === p.cod);
-    return acc + ((prod?.pesoUnit || 0) * p.qtd);
-  }, 0);
+  const totalPesoExecutado = Object.values(agrupadoPorDia).reduce(
+    (acc, d) => acc + d.pesoExecutado,
+    0
+  );
 
-  // ================= META vs EXECUTADO CORRIDO ==================
+  // ========= 6) META / SALDO / RITMO / PROJEÇÃO =========
   const capacidadeNum = Number(capacidadeDiaria) || 0;
 
-  // datas pra cálculo de dias úteis até o fim do mês
-  const inicioPeriodo = new Date(dataInicioInd + 'T12:00:00');
-  const hojeDate = new Date(hojeISO + 'T12:00:00');
-  const lastDayOfMonth = new Date(
-    inicioPeriodo.getFullYear(), 
-    inicioPeriodo.getMonth() + 1, 
-    0
-  );
+  // mês de referência = mês do dataInicioInd
+  const baseMes = new Date(dataInicioInd + "T12:00:00");
+  const inicioMes = new Date(baseMes.getFullYear(), baseMes.getMonth(), 1);
+  const fimMes = new Date(baseMes.getFullYear(), baseMes.getMonth() + 1, 0);
 
+  const hojeDate = new Date(hojeISO + "T12:00:00");
+
+  // ---- A) SALDO: ignora dias sem programação (barra clara)
+  // programação do mês inteiro (pra saber quais dias tiveram programação)
+  const planejadoPorDiaMes = {};
+  filaProducao
+    .filter((r) => r.data >= toISO(inicioMes) && r.data <= toISO(fimMes))
+    .forEach((r) => {
+      const pesoDia = (r.itens || []).reduce(
+        (acc, i) => acc + Number(i.pesoTotal || 0),
+        0
+      );
+      planejadoPorDiaMes[r.data] = (planejadoPorDiaMes[r.data] || 0) + pesoDia;
+    });
+
+  // dias úteis COM programação até hoje
+  let diasProgramadosAteHoje = 0;
+  for (
+    let d = new Date(inicioMes);
+    d <= hojeDate;
+    d.setDate(d.getDate() + 1)
+  ) {
+    const iso = toISO(d);
+    if (!isDiaUtil(iso)) continue;
+    if ((planejadoPorDiaMes[iso] || 0) > 0) diasProgramadosAteHoje++;
+  }
+  if (diasProgramadosAteHoje === 0) diasProgramadosAteHoje = 1;
+
+  const metaAteHoje = capacidadeNum * diasProgramadosAteHoje;
+  const saldoTotal = totalPesoExecutado - metaAteHoje; // ✅ saldo “cobrando só dia programado”
+
+  // ---- B) META do mês (dias úteis do CALENDÁRIO)
   let diasUteisMes = 0;
-  let diasUteisPassados = 0;
-
-  for (let d = new Date(inicioPeriodo); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
-    const dow = d.getDay();
-    if (dow === 0 || dow === 6) continue; // pula sábado/domingo
-
+  for (
+    let d = new Date(inicioMes);
+    d <= fimMes;
+    d.setDate(d.getDate() + 1)
+  ) {
+    const iso = toISO(d);
+    if (!isDiaUtil(iso)) continue;
     diasUteisMes++;
-    if (d <= hojeDate) diasUteisPassados++;
+  }
+  if (diasUteisMes === 0) diasUteisMes = 1;
+
+  const metaAteFimMes = capacidadeNum * diasUteisMes; // ✅ agora é calendário
+
+  // ---- C) Ritmo necessário: rateia o déficit pelos dias úteis restantes (CALENDÁRIO)
+  let diasUteisRestantes = 0;
+  const amanha = new Date(hojeDate);
+  amanha.setDate(amanha.getDate() + 1);
+
+  for (
+    let d = new Date(amanha);
+    d <= fimMes;
+    d.setDate(d.getDate() + 1)
+  ) {
+    const iso = toISO(d);
+    if (!isDiaUtil(iso)) continue;
+    diasUteisRestantes++;
   }
 
+  const deficit = Math.max(0, -saldoTotal); // KG
+  const extraPorDia =
+    diasUteisRestantes > 0 ? deficit / diasUteisRestantes : 0;
+
+  const ritmoNecessario = capacidadeNum + extraPorDia;
+
+  // ---- D) Projeção até fim do mês: média diária (dias úteis passados) * dias úteis do mês (CALENDÁRIO)
+  let diasUteisPassados = 0;
+  for (
+    let d = new Date(inicioMes);
+    d <= hojeDate;
+    d.setDate(d.getDate() + 1)
+  ) {
+    const iso = toISO(d);
+    if (!isDiaUtil(iso)) continue;
+    diasUteisPassados++;
+  }
   if (diasUteisPassados === 0) diasUteisPassados = 1;
 
-  // Meta acumulada até hoje (pra saldo corrido)
-  const metaAteHoje = capacidadeNum * diasUteisPassados;
-
-  // Meta até o fim do mês (é isso que vai no CARD como "Meta")
-  const metaAteFimMes = capacidadeNum * diasUteisMes;
-
-  // Média diária REAL até hoje
   const mediaAtual = totalPesoExecutado / diasUteisPassados;
-
-  // Projeção até o fim do mês = média diária * todos os dias úteis do mês
   const projecaoFinal = mediaAtual * diasUteisMes;
 
-  // Saldo corrido vs meta (executado - meta até hoje)
-  const saldoTotal = totalPesoExecutado - metaAteHoje;
-
-  // Ritmo necessário pra bater a meta do mês (se quiser manter esse indicador)
-  const diasRestantes = Math.max(diasUteisMes - diasUteisPassados, 0);
-  let ritmoNecessario = 0;
-  if (diasRestantes > 0 && capacidadeNum > 0) {
-    const falta = metaAteFimMes - totalPesoExecutado;
-    ritmoNecessario = falta > 0 ? falta / diasRestantes : 0;
-  }
-
-  return { 
+  return {
     arrayGrafico,
-    totalPesoPlanejado,    // continua disponível se quiser ver “planejado x executado”
+    totalPesoPlanejado,
     totalPesoExecutado,
-    saldoTotal,            // agora vs meta corrida
+    saldoTotal,
     ritmoNecessario,
-    projecaoFinal,         // projeção até o fim do mês
-    metaAteFimMes          // meta até o fim do mês (capacidade * dias úteis)
+    projecaoFinal,
+    metaAteFimMes,
   };
 }, [
   filaProducao,
   historicoProducaoReal,
   dataInicioInd,
   dataFimInd,
-  capacidadeDiaria
+  capacidadeDiaria,
+  hojeISO,
+  CATALOGO_PRODUTOS,
+  maquinaSelecionada,
 ]);
+
+
+
 
 
 
