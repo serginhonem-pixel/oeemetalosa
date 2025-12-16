@@ -18,6 +18,8 @@ import {
   Trash2,
   Settings,
   TrendingUp,
+  ChevronLeft,
+  ChevronRight,
   X,
   Filter,
   BarChart3,
@@ -750,7 +752,32 @@ const GlobalScreen = () => {
     }
   };
 
-  const lancamentosVisiveis = filtroMaquina === 'TODAS' ? lancamentos : lancamentos.filter((l) => l.maquina === filtroMaquina);
+  // ===== PAGINAÇÃO E DADOS VISÍVEIS =====
+  const lancamentosVisiveis = filtroMaquina === 'TODAS' 
+    ? lancamentos 
+    : lancamentos.filter((l) => l.maquina === filtroMaquina);
+
+  // Estados da paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const ITENS_POR_PAGINA = 10;
+
+  // Reseta para página 1 se mudar o filtro ou o mês
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtroMaquina, mesRef, lancamentos.length]);
+
+  // Cálculos
+  const totalPaginas = Math.ceil(lancamentosVisiveis.length / ITENS_POR_PAGINA);
+  const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
+  const fim = inicio + ITENS_POR_PAGINA;
+  const itensDaPagina = lancamentosVisiveis.slice(inicio, fim);
+
+  // Função de mudar página
+  const mudarPagina = (novaPagina) => {
+    if (novaPagina >= 1 && novaPagina <= totalPaginas) {
+      setPaginaAtual(novaPagina);
+    }
+  };
 
   const barSize = useMemo(() => {
     const n = (dadosGrafico?.dados?.length || 0);
@@ -1050,6 +1077,7 @@ const GlobalScreen = () => {
           </div>
 
           {/* LISTA RECENTES */}
+          {/* LISTA RECENTES COM PAGINAÇÃO */}
           <div className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl flex flex-col flex-1 min-h-[400px] overflow-hidden">
             <div className="p-3 bg-zinc-800/30 border-b border-zinc-800 flex justify-between items-center">
               <span className="font-bold text-zinc-400 text-[10px] uppercase tracking-wider flex items-center gap-2">
@@ -1072,7 +1100,7 @@ const GlobalScreen = () => {
                 </thead>
 
                 <tbody className="divide-y divide-zinc-800/50">
-                  {lancamentosVisiveis.map((l) => (
+                  {itensDaPagina.map((l) => (
                     <tr key={l.id} className="hover:bg-white/[0.03] transition-colors group">
                       <td className="px-4 py-2.5 font-medium text-zinc-300 text-xs">{l.dia}</td>
                       <td className="px-2 py-2.5 text-[11px] text-zinc-500 truncate max-w-[80px] group-hover:text-zinc-300">{l.maquina}</td>
@@ -1090,7 +1118,7 @@ const GlobalScreen = () => {
                       </td>
                     </tr>
                   ))}
-                  {lancamentosVisiveis.length === 0 && (
+                  {itensDaPagina.length === 0 && (
                     <tr>
                       <td colSpan={4} className="px-4 py-12 text-center">
                         <span className="text-xs text-zinc-600">Sem lançamentos</span>
@@ -1100,6 +1128,33 @@ const GlobalScreen = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* RODAPÉ PAGINAÇÃO */}
+            {lancamentosVisiveis.length > 0 && (
+              <div className="p-2 border-t border-zinc-800 bg-zinc-800/30 flex justify-between items-center text-xs">
+                <span className="text-zinc-500 ml-2">
+                  Página <span className="text-zinc-300 font-medium">{paginaAtual}</span> de{" "}
+                  <span className="text-zinc-300 font-medium">{totalPaginas}</span>
+                </span>
+
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => mudarPagina(paginaAtual - 1)}
+                    disabled={paginaAtual === 1}
+                    className="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    onClick={() => mudarPagina(paginaAtual + 1)}
+                    disabled={paginaAtual === totalPaginas}
+                    className="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
