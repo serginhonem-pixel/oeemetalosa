@@ -1594,6 +1594,16 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
   futuro: filaProducao.filter((r) => getDataRomaneio(r) > amanha),
 };
 
+const parseNumberBR = (v) => {
+  if (v == null) return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim();
+  if (!s) return 0;
+  const n = Number(s.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+};
+
+
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
 
   // --- DASHBOARD E OEE ---
@@ -1634,35 +1644,53 @@ const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
     }
   });
 
-  // 3. Soma Executado
-  const producaoNoPeriodo = historicoProducaoReal.filter(
-    p => p.data >= dataInicioInd && p.data <= dataFimInd
-  );
-  producaoNoPeriodo.forEach(p => {
-    const d = String(p.data);
-    if (agrupadoPorDia[d]) {
-      let pesoItem = 0;
-      if (CATALOGO_PRODUTOS) {
-        const prodCatalogo = CATALOGO_PRODUTOS.find(cat => cat.cod === p.cod);
-        if (prodCatalogo) {
-          pesoItem = (prodCatalogo.pesoUnit || 0) * p.qtd;
-        }
-      }
-      agrupadoPorDia[d].pesoExecutado += pesoItem;
+// 3. Soma Executado (prioriza peso real do apontamento; fallback para catálogo)
+const producaoNoPeriodo = historicoProducaoReal.filter(
+  p => p.data >= dataInicioInd && p.data <= dataFimInd
+);
+
+producaoNoPeriodo.forEach(p => {
+  const d = String(p.data);
+  if (!agrupadoPorDia[d]) return;
+
+  // ✅ 1) se o histórico já tem pesoTotal/pesoKg, usa isso (é o correto)
+  // ajuste os nomes aqui conforme o seu objeto real:
+  const pesoDireto =
+    parseNumberBR(p.pesoTotal) ||
+    parseNumberBR(p.pesoKg) ||
+    parseNumberBR(p.peso) ||
+    0;
+
+  if (pesoDireto > 0) {
+    agrupadoPorDia[d].pesoExecutado += pesoDireto;
+    return;
+  }
+
+  // ✅ 2) fallback: calcula pelo catálogo (menos confiável)
+  const prodCatalogo = CATALOGO_PRODUTOS?.find(cat => cat.cod === p.cod);
+
+  let pesoCalc = 0;
+  if (prodCatalogo) {
+    const qtd = parseNumberBR(p.qtd);
+
+    // Se tiver pesoUnit, ok
+    if (prodCatalogo.pesoUnit != null) {
+      pesoCalc = parseNumberBR(prodCatalogo.pesoUnit) * qtd;
+    } 
+    // Se tiver kgMetro, precisa do comprimento/metragem (se existir no apontamento)
+    else if (prodCatalogo.kgMetro != null) {
+      const metros = parseNumberBR(p.metros || p.comp || p.comprimento);
+      pesoCalc = parseNumberBR(prodCatalogo.kgMetro) * metros * qtd;
     }
-  });
+  }
+
+  agrupadoPorDia[d].pesoExecutado += pesoCalc;
+});
 
   // 4. Array para o gráfico (sem FDS e sem dias totalmente vazios)
   const arrayGrafico = Object.keys(agrupadoPorDia)
-    .sort()
-    .map(data => ({ data, ...agrupadoPorDia[data] }))
-    .filter(dia => {
-      const dataObj = new Date(dia.data + 'T12:00:00');
-      const diaSemana = dataObj.getDay(); 
-      const isFimDeSemana = diaSemana === 0 || diaSemana === 6;
-      const isVazio = dia.pesoPlanejado === 0 && dia.pesoExecutado === 0;
-      return !(isFimDeSemana || isVazio);
-    });
+  .sort()
+  .map(data => ({ data, ...agrupadoPorDia[data] }));
 
   // 5. Totais do período selecionado
   const totalPesoPlanejado = romaneiosNoPeriodo.reduce(
