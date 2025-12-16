@@ -26,7 +26,14 @@ import {
   Box,
   Download,
   Loader2,
+  FileText,
+  Projector, // Trocamos Presentation por Projector para evitar conflito
+  Activity
 } from 'lucide-react';
+
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import PptxGenJS from 'pptxgenjs';
 
 import {
   addDoc,
@@ -35,7 +42,6 @@ import {
   doc,
   limit,
   onSnapshot,
-  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -43,37 +49,32 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-import PptxGenJS from 'pptxgenjs';
-import html2canvas from 'html2canvas';
-
 import { db } from '../services/firebase';
+import { IS_LOCALHOST } from '../utils/env';
 
-/**
- * Firestore Collections:
- * - global_maquinas
- * - global_lancamentos
- * - global_config_mensal (docId = YYYY-MM) { diasUteis }
- */
-
-// Helpers mês
+// ===== Helpers =====
 const pad2 = (n) => String(n).padStart(2, '0');
 const toYYYYMM = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 function monthLabel(yyyyMM) {
   const [y, m] = yyyyMM.split('-').map(Number);
   const dt = new Date(y, m - 1, 1);
   return dt.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
+
 function firstDayISO(yyyyMM) {
   const [y, m] = yyyyMM.split('-').map(Number);
   return `${y}-${pad2(m)}-01`;
 }
+
 function lastDayISO(yyyyMM) {
   const [y, m] = yyyyMM.split('-').map(Number);
   const last = new Date(y, m, 0).getDate();
   return `${y}-${pad2(m)}-${pad2(last)}`;
 }
-function isoToDiaLabel(iso, mesRef) {
-  // iso: YYYY-MM-DD -> "DD/mmm" (pt-BR) usando mesRef como referência
+
+function isoToDiaLabel(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
@@ -81,13 +82,10 @@ function isoToDiaLabel(iso, mesRef) {
   return `${pad2(d)}/${mon}`;
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const GlobalScreen = () => {
-  // ====== MÊS ATIVO ======
+  // ===== MÊS ATIVO =====
   const [mesRef, setMesRef] = useState(() => toYYYYMM(new Date()));
 
-  // meses no select
   const opcoesMes = useMemo(() => {
     const base = new Date();
     base.setDate(1);
@@ -99,201 +97,172 @@ const GlobalScreen = () => {
     return list;
   }, []);
 
-  // ====== CONFIG MENSAL ======
+  // ===== STATES =====
   const [config, setConfig] = useState({ diasUteis: 22 });
-
-  // ====== DADOS ======
   const [maquinas, setMaquinas] = useState([]);
   const [lancamentos, setLancamentos] = useState([]);
 
-  // ====== UI / FORMS ======
+  // Variáveis de controle UI
+  const [busy, setBusy] = useState(false);
+  const [exportando, setExportando] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
   const [showConfig, setShowConfig] = useState(false);
-  const [filtroMaquina, setFiltroMaquina] = useState('TODAS');
-  const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
 
-  // data agora é ISO (YYYY-MM-DD)
+  // Filtros e Forms
+  const [filtroMaquina, setFiltroMaquina] = useState('TODAS');
   const [novoDiaISO, setNovoDiaISO] = useState(() => {
     const today = new Date();
     return `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
   });
   const [novoValor, setNovoValor] = useState('');
+  const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
 
+  // Nova máquina inputs
   const [inputNomeMaquina, setInputNomeMaquina] = useState('');
   const [inputMetaMaquina, setInputMetaMaquina] = useState(100);
   const [inputUnidadeMaquina, setInputUnidadeMaquina] = useState('pç');
 
-  const [busy, setBusy] = useState(false);
-  const [statusMsg, setStatusMsg] = useState('');
-  const [erroFirebase, setErroFirebase] = useState('');
-
-  // ref do container do gráfico (pra print no pptx)
+  // Refs
   const chartCaptureRef = useRef(null);
 
-  const toast = (msg, ms = 1800) => {
+  const toast = (msg, ms = 2000) => {
     setStatusMsg(msg);
     if (ms) setTimeout(() => setStatusMsg(''), ms);
   };
 
-  // ====== Firebase: CONFIG MENSAL ======
+  // ====== Efeitos LocalStorage (Apenas IS_LOCALHOST) ======
   useEffect(() => {
-    setErroFirebase('');
-    const cfgRef = doc(db, 'global_config_mensal', mesRef);
+    if (IS_LOCALHOST) {
+        const localConfig = localStorage.getItem('local_config');
+        if (localConfig) setConfig(JSON.parse(localConfig));
 
-    const unsub = onSnapshot(
-      cfgRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setConfig({ diasUteis: 22 });
-          return;
-        }
-        const data = snap.data();
-        setConfig({ diasUteis: Number(data?.diasUteis) || 22 });
-      },
-      (err) => {
-        console.error('[Firestore] Config mensal erro:', err);
-        setErroFirebase(`${err.code || 'erro'}: ${err.message || 'Falha ao ler config mensal'}`);
-      }
-    );
+        const localMaq = localStorage.getItem('local_maquinas');
+        if (localMaq) setMaquinas(JSON.parse(localMaq));
 
-    return () => unsub();
-  }, [mesRef]);
-
-  // ====== Firebase: MÁQUINAS ======
-  useEffect(() => {
-    setErroFirebase('');
-    const qMaq = query(collection(db, 'global_maquinas'), orderBy('nome', 'asc'));
-
-    const unsub = onSnapshot(
-      qMaq,
-      (snap) => {
-        const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setMaquinas(arr);
-      },
-      (err) => {
-        console.error('[Firestore] Máquinas erro:', err);
-        setErroFirebase(`${err.code || 'erro'}: ${err.message || 'Falha ao ler máquinas'}`);
-      }
-    );
-
-    return () => unsub();
+        const localLanc = localStorage.getItem('local_lancamentos');
+        if (localLanc) setLancamentos(JSON.parse(localLanc));
+    }
   }, []);
 
-  // ====== Firebase: LANÇAMENTOS (com fallback se índice faltar) ======
   useEffect(() => {
-    setErroFirebase('');
+    if (IS_LOCALHOST) localStorage.setItem('local_config', JSON.stringify(config));
+  }, [config]);
 
-    // Query ideal (precisa índice composto: mesRef + createdAt desc)
-    const qLancIdeal = query(
-      collection(db, 'global_lancamentos'),
-      where('mesRef', '==', mesRef),
-      orderBy('createdAt', 'desc'),
-      limit(800)
-    );
+  useEffect(() => {
+    if (IS_LOCALHOST) localStorage.setItem('local_maquinas', JSON.stringify(maquinas));
+  }, [maquinas]);
 
-    // Query fallback (sem orderBy) — funciona sem índice, mas ordena no front
-    const qLancFallback = query(
-      collection(db, 'global_lancamentos'),
-      where('mesRef', '==', mesRef),
-      limit(800)
-    );
+  useEffect(() => {
+    if (IS_LOCALHOST) localStorage.setItem('local_lancamentos', JSON.stringify(lancamentos));
+  }, [lancamentos]);
 
-    let unsub = null;
 
-    const subscribeIdeal = () =>
-      onSnapshot(
-        qLancIdeal,
-        (snap) => {
-          const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setLancamentos(
-            arr.map((x) => ({
-              ...x,
-              real: Number(x.real) || 0,
-            }))
-          );
-        },
-        (err) => {
-          console.error('[Firestore] Lançamentos (ideal) erro:', err);
-          // Se for índice faltando / precondition, cai pro fallback
-          const code = err?.code || '';
-          const msg = err?.message || '';
-          const likelyIndex = code.includes('failed-precondition') || msg.toLowerCase().includes('index');
-          if (likelyIndex) {
-            setErroFirebase(
-              `Faltando índice no Firestore (global_lancamentos: mesRef + createdAt desc). Usando modo fallback.`
-            );
-            if (unsub) unsub();
-            unsub = onSnapshot(
-              qLancFallback,
-              (snap2) => {
-                const arr2 = snap2.docs
-                  .map((d) => ({ id: d.id, ...d.data() }))
-                  .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                setLancamentos(
-                  arr2.map((x) => ({
-                    ...x,
-                    real: Number(x.real) || 0,
-                  }))
-                );
-              },
-              (err2) => {
-                console.error('[Firestore] Lançamentos (fallback) erro:', err2);
-                setErroFirebase(`${err2.code || 'erro'}: ${err2.message || 'Falha ao ler lançamentos'}`);
-              }
-            );
-          } else {
-            setErroFirebase(`${code || 'erro'}: ${msg || 'Falha ao ler lançamentos'}`);
-          }
-        }
-      );
+  // ====== Firestore subscriptions (Apenas Produção) ======
+  useEffect(() => {
+    if (IS_LOCALHOST) return; 
 
-    unsub = subscribeIdeal();
-    return () => {
-      if (unsub) unsub();
-    };
+    const cfgRef = doc(db, 'global_config_mensal', mesRef);
+    const unsubCfg = onSnapshot(cfgRef, (snap) => {
+      if (!snap.exists()) {
+        setConfig({ diasUteis: 22 });
+        return;
+      }
+      const data = snap.data();
+      setConfig({ diasUteis: Number(data?.diasUteis) || 22 });
+    }, (error) => console.error("Erro config:", error));
+
+    return () => unsubCfg();
   }, [mesRef]);
 
-  // ====== garantir selects coerentes ======
   useEffect(() => {
-    // se não tem máquina, zera selects mas mantém tela
-    if (maquinas.length === 0) {
+    if (IS_LOCALHOST) return;
+
+    const qMaq = query(collection(db, 'global_maquinas'));
+    const unsubMaq = onSnapshot(qMaq, (snap) => {
+      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      arr.sort((a, b) => a.nome.localeCompare(b.nome));
+      setMaquinas(arr);
+    }, (error) => console.error("Erro maquinas:", error));
+
+    return () => unsubMaq();
+  }, []);
+
+  useEffect(() => {
+    if (IS_LOCALHOST) return;
+
+    const qLanc = query(
+      collection(db, 'global_lancamentos'),
+      where('mesRef', '==', mesRef),
+      limit(800)
+    );
+
+    const unsubLanc = onSnapshot(qLanc, (snap) => {
+      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      
+      const ordenado = arr
+        .map((x) => ({ ...x, real: Number(x.real) || 0 }))
+        .sort((a, b) => {
+            const tA = a.createdAt?.seconds || 0;
+            const tB = b.createdAt?.seconds || 0;
+            return tB - tA; 
+        });
+
+      setLancamentos(ordenado);
+    }, (error) => {
+        console.error("Erro lancamentos:", error);
+    });
+
+    return () => unsubLanc();
+  }, [mesRef]);
+
+  // ====== Defaults UI ======
+  useEffect(() => {
+    if (maquinas.length > 0) {
+      if (!novaMaquinaForm) setNovaMaquinaForm(maquinas[0].nome);
+      if (filtroMaquina !== 'TODAS' && !maquinas.some((m) => m.nome === filtroMaquina)) {
+        setFiltroMaquina('TODAS');
+      }
+    } else {
       setNovaMaquinaForm('');
-      if (filtroMaquina !== 'TODAS') setFiltroMaquina('TODAS');
-      return;
+      setFiltroMaquina('TODAS');
     }
-
-    // default do form
-    if (!novaMaquinaForm) setNovaMaquinaForm(maquinas[0].nome);
-
-    // se filtro aponta pra máquina removida, volta pra TODAS
-    if (filtroMaquina !== 'TODAS') {
-      const exists = maquinas.some((m) => m.nome === filtroMaquina);
-      if (!exists) setFiltroMaquina('TODAS');
-    }
-  }, [maquinas]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [maquinas]); 
 
   useEffect(() => {
     if (filtroMaquina !== 'TODAS') setNovaMaquinaForm(filtroMaquina);
   }, [filtroMaquina]);
 
-  // ====== helper unidade ======
   const getUnidadeAtual = (nomeMaquina) => {
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     return maq ? maq.unidade : '';
   };
 
-  // ====== CÁLCULO DO GRÁFICO ======
+  // ====== Cálculos do gráfico ======
   const dadosGrafico = useMemo(() => {
-    const diasUteis = Number(config.diasUteis) || 22;
+    const diasUteisVal = Number(config.diasUteis) || 22;
+
+    if (maquinas.length === 0) {
+      return {
+        dados: [],
+        totalProduzido: 0,
+        projetadoValor: 0,
+        metaTotalMes: 0,
+        metaDiariaAtiva: 0,
+        unidadeAtiva: 'un',
+        diasUteis: diasUteisVal,
+        atingimentoMes: 0,
+        aderenciaMeta: 0,
+        diasTrabalhados: 0,
+        gap: 0
+      };
+    }
 
     let metaDiariaAtiva = 0;
     let unidadeAtiva = 'un';
 
     if (filtroMaquina === 'TODAS') {
-      // soma metas, mas atenção: se unidades diferentes, fica “agregado”
       metaDiariaAtiva = maquinas.reduce((acc, m) => acc + (Number(m.meta) || 0), 0);
-
-      const todasMesmaUnidade =
-        maquinas.length > 0 && maquinas.every((m) => m.unidade === maquinas[0].unidade);
+      const todasMesmaUnidade = maquinas.every((m) => m.unidade === maquinas[0]?.unidade);
       if (maquinas.length > 0 && todasMesmaUnidade) unidadeAtiva = maquinas[0].unidade;
       else unidadeAtiva = 'mix';
     } else {
@@ -302,28 +271,31 @@ const GlobalScreen = () => {
       unidadeAtiva = maq ? maq.unidade : 'un';
     }
 
-    const metaTotalMes = metaDiariaAtiva * diasUteis;
+    const metaTotalMes = metaDiariaAtiva * diasUteisVal;
 
-    const lancFiltrados =
+    const lancamentosFiltrados =
       filtroMaquina === 'TODAS' ? lancamentos : lancamentos.filter((l) => l.maquina === filtroMaquina);
 
-    const agrupadoPorDia = lancFiltrados.reduce((acc, curr) => {
+    const agrupadoPorDia = lancamentosFiltrados.reduce((acc, curr) => {
       if (!acc[curr.dia]) acc[curr.dia] = 0;
       acc[curr.dia] += Number(curr.real) || 0;
       return acc;
     }, {});
 
-    const diasUnicos = Object.keys(agrupadoPorDia);
-    const totalProduzido = lancFiltrados.reduce((acc, curr) => acc + (Number(curr.real) || 0), 0);
+    const diasUnicos = Object.keys(agrupadoPorDia).sort((a, b) => {
+      const da = Number(a?.split('/')?.[0] || 0);
+      const db = Number(b?.split('/')?.[0] || 0);
+      return da - db;
+    });
 
+    const totalProduzido = lancamentosFiltrados.reduce((acc, curr) => acc + (Number(curr.real) || 0), 0);
     const diasTrabalhados = diasUnicos.length;
     const mediaDiaria = diasTrabalhados > 0 ? totalProduzido / diasTrabalhados : 0;
-    const projetadoValor = diasTrabalhados > 0 ? Math.round(mediaDiaria * diasUteis) : 0;
+    const projetadoValor = diasTrabalhados > 0 ? Math.round(mediaDiaria * diasUteisVal) : 0;
 
     const dadosProcessados = diasUnicos.map((dia) => {
       const valorTotalDia = agrupadoPorDia[dia];
       const performance = metaDiariaAtiva > 0 ? (valorTotalDia / metaDiariaAtiva) * 100 : 0;
-
       return {
         name: dia,
         realOriginal: valorTotalDia,
@@ -339,7 +311,7 @@ const GlobalScreen = () => {
     const performanceProjetada = metaTotalMes > 0 ? (projetadoValor / metaTotalMes) * 100 : 0;
 
     dadosProcessados.push({
-      name: 'PROJETADO',
+      name: 'PROJ.',
       realOriginal: projetadoValor,
       metaOriginal: metaTotalMes,
       valorPlotado: performanceProjetada,
@@ -350,6 +322,7 @@ const GlobalScreen = () => {
     });
 
     const atingimentoMes = metaTotalMes > 0 ? (totalProduzido / metaTotalMes) * 100 : 0;
+    const aderenciaMeta = metaDiariaAtiva > 0 ? (mediaDiaria / metaDiariaAtiva) * 100 : 0;
     const gap = Math.max(metaTotalMes - totalProduzido, 0);
 
     return {
@@ -359,13 +332,15 @@ const GlobalScreen = () => {
       metaTotalMes,
       metaDiariaAtiva,
       unidadeAtiva,
+      diasUteis: diasUteisVal,
       atingimentoMes,
-      gap,
-      diasUteis,
+      aderenciaMeta,
+      diasTrabalhados,
+      gap
     };
   }, [lancamentos, config, maquinas, filtroMaquina]);
 
-  // ====== Label ======
+  // ====== Label do gráfico ======
   const renderCustomizedLabel = (props) => {
     const { x, y, width, index } = props;
     const item = dadosGrafico?.dados?.[index];
@@ -380,11 +355,14 @@ const GlobalScreen = () => {
     const corBorda = atingiuMeta ? '#22c55e' : '#ef4444';
 
     return (
-      <g>
-        <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y - 10} stroke="#52525b" strokeWidth="2" />
-        <rect x={x + width / 2 - 35} y={y - 45} width="70" height="35" fill={corBox} rx="4" stroke={corBorda} strokeWidth="2" />
-        <text x={x + width / 2} y={y - 23} fill={corTexto} textAnchor="middle" fontSize={13} fontWeight="bold">
+      <g style={{ pointerEvents: 'none' }}>
+        <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y - 15} stroke="#52525b" strokeWidth="2" />
+        <rect x={x + width / 2 - 35} y={y - 50} width="70" height="35" fill={corBox} rx="6" stroke={corBorda} strokeWidth="2" />
+        <text x={x + width / 2} y={y - 28} fill={corTexto} textAnchor="middle" fontSize={12} fontWeight="bold">
           {icone} {performance.toFixed(0)}%
+        </text>
+        <text x={x + width / 2} y={y + 16} fill="#e4e4e7" textAnchor="middle" fontSize={10} fontWeight="bold">
+          {Number(item.realOriginal || 0).toLocaleString('pt-BR', { notation: 'compact' })}
         </text>
       </g>
     );
@@ -394,47 +372,66 @@ const GlobalScreen = () => {
   const saveDiasUteisMes = async (dias) => {
     const d = Number(dias);
     if (!Number.isFinite(d) || d <= 0) return;
+    
+    if (IS_LOCALHOST) {
+        setConfig((prev) => ({ ...prev, diasUteis: d }));
+        toast('Dias úteis salvos (Local) ✅');
+        return;
+    }
 
     try {
-      setBusy(true);
-      await setDoc(
-        doc(db, 'global_config_mensal', mesRef),
-        { diasUteis: d, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-      toast('Dias úteis salvos ✅');
-    } catch (e) {
-      console.error('Erro ao salvar dias úteis:', e);
-      toast('Erro ao salvar dias úteis ❌', 2500);
+        setBusy(true);
+        await setDoc(doc(db, 'global_config_mensal', mesRef), { diasUteis: d, updatedAt: serverTimestamp() }, { merge: true });
+        toast('Dias úteis salvos ✅');
+    } catch (error) {
+        console.error("Erro dias uteis", error);
+        toast('Erro ao salvar dias úteis ❌');
     } finally {
-      setBusy(false);
+        setBusy(false);
     }
   };
 
   const handleAddLancamento = async (e) => {
     e.preventDefault();
     if (!novoDiaISO || !novoValor) return;
-
+    
     if (maquinas.length === 0) {
-      toast('Cadastre uma máquina primeiro.', 2500);
-      return;
+        toast('Cadastre uma máquina antes de lançar.', 3000);
+        return;
     }
 
-    // valida data dentro do mês selecionado
     const min = firstDayISO(mesRef);
     const max = lastDayISO(mesRef);
     if (novoDiaISO < min || novoDiaISO > max) {
-      toast(`Data fora do mês selecionado (${monthLabel(mesRef)}).`, 2600);
-      return;
+        toast(`Data fora do mês selecionado (${monthLabel(mesRef)}).`, 4000);
+        return;
     }
 
     const maqFinal = novaMaquinaForm || maquinas[0].nome;
 
+    if (IS_LOCALHOST) {
+        setLancamentos((prev) => [
+          { 
+            id: `local-${Date.now()}`, 
+            dia: isoToDiaLabel(novoDiaISO),
+            diaISO: novoDiaISO,
+            real: Number(novoValor), 
+            maquina: maqFinal, 
+            mesRef, 
+            createdAt: { seconds: Date.now() / 1000 } 
+          }, 
+          ...prev,
+        ]);
+        setNovoValor('');
+        toast('Salvo localmente ✅');
+        return;
+    }
+
     try {
       setBusy(true);
       await addDoc(collection(db, 'global_lancamentos'), {
-        dia: isoToDiaLabel(novoDiaISO, mesRef),
-        diaISO: novoDiaISO, // guarda ISO pra futuro (melhor)
+        dia: isoToDiaLabel(novoDiaISO),
+        diaISO: novoDiaISO,
         real: Number(novoValor),
         maquina: maqFinal,
         mesRef,
@@ -442,9 +439,9 @@ const GlobalScreen = () => {
       });
       setNovoValor('');
       toast('Lançamento salvo ✅');
-    } catch (e2) {
-      console.error('Erro ao salvar lançamento:', e2);
-      toast('Erro ao salvar lançamento ❌', 2500);
+    } catch (error) {
+      console.error(error);
+      toast('Erro ao salvar no Firebase ❌');
     } finally {
       setBusy(false);
     }
@@ -452,579 +449,650 @@ const GlobalScreen = () => {
 
   const handleDeleteLancamento = async (id) => {
     if (!id) return;
+    if (IS_LOCALHOST) {
+        setLancamentos((prev) => prev.filter((item) => item.id !== id));
+        toast('Removido localmente');
+        return;
+    }
     try {
       setBusy(true);
       await deleteDoc(doc(db, 'global_lancamentos', id));
-      toast('Lançamento apagado ✅');
-    } catch (e) {
-      console.error('Erro ao apagar lançamento:', e);
-      toast('Erro ao apagar ❌', 2500);
+      toast('Lançamento removido ✅');
+    } catch (error) {
+      console.error(error);
+      toast('Erro ao deletar ❌');
     } finally {
       setBusy(false);
     }
   };
 
   const handleAddMaquina = async () => {
-    if (!inputNomeMaquina.trim()) return;
+    const nome = String(inputNomeMaquina || '').trim();
+    if (!nome) return;
+    if (maquinas.some((m) => m.nome === nome)) {
+        toast('Máquina já existe!');
+        return;
+    }
 
-    if (maquinas.some((m) => m.nome === inputNomeMaquina.trim())) {
-      toast('Máquina já existe!', 2200);
-      return;
+    const novaMaq = {
+        nome,
+        meta: Number(inputMetaMaquina),
+        unidade: inputUnidadeMaquina,
+    };
+
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => [...prev, { id: `local-${Date.now()}`, ...novaMaq }]);
+        setInputNomeMaquina('');
+        setInputMetaMaquina(100);
+        setInputUnidadeMaquina('pç');
+        toast('Máquina add (Local) ✅');
+        return;
     }
 
     try {
-      setBusy(true);
-      await addDoc(collection(db, 'global_maquinas'), {
-        nome: inputNomeMaquina.trim(),
-        meta: Number(inputMetaMaquina),
-        unidade: inputUnidadeMaquina,
-        createdAt: serverTimestamp(),
-      });
-
-      setInputNomeMaquina('');
-      setInputMetaMaquina(100);
-      setInputUnidadeMaquina('pç');
-      toast('Máquina adicionada ✅');
-    } catch (e) {
-      console.error('Erro ao criar máquina:', e);
-      toast('Erro ao criar máquina ❌', 2500);
+        setBusy(true);
+        await addDoc(collection(db, 'global_maquinas'), {
+            ...novaMaq,
+            createdAt: serverTimestamp(),
+        });
+        setInputNomeMaquina('');
+        setInputMetaMaquina(100);
+        setInputUnidadeMaquina('pç');
+        toast('Máquina adicionada ✅');
+    } catch (error) {
+        console.error(error);
+        toast('Erro ao adicionar máquina ❌');
     } finally {
-      setBusy(false);
+        setBusy(false);
     }
   };
 
   const handleRemoveMaquina = async (nomeParaRemover) => {
     const maq = maquinas.find((m) => m.nome === nomeParaRemover);
-    if (!maq?.id) return;
+    if (!maq) return;
+    
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => prev.filter((m) => m.nome !== nomeParaRemover));
+        toast('Máquina removida (Local)');
+        return;
+    }
 
     try {
-      setBusy(true);
-      await deleteDoc(doc(db, 'global_maquinas', maq.id));
-      toast('Máquina removida ✅');
-    } catch (e) {
-      console.error('Erro ao remover máquina:', e);
-      toast('Erro ao remover máquina ❌', 2500);
+        setBusy(true);
+        await deleteDoc(doc(db, 'global_maquinas', maq.id));
+        toast('Máquina removida ✅');
+    } catch (error) {
+        console.error(error);
+        toast('Erro ao remover máquina ❌');
     } finally {
-      setBusy(false);
+        setBusy(false);
     }
   };
 
   const handleUpdateMeta = async (nomeMaquina, novaMeta) => {
     const valor = Number(novaMeta);
+    if (!Number.isFinite(valor)) return;
+    
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
+        return;
+    }
+
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
-
+    
+    setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta: valor } : m)));
+    
     try {
-      await updateDoc(doc(db, 'global_maquinas', maq.id), { meta: valor });
-    } catch (e) {
-      console.error('Erro update meta:', e);
-      toast('Erro ao atualizar meta ❌', 2200);
+        await updateDoc(doc(db, 'global_maquinas', maq.id), { meta: valor });
+    } catch (error) {
+        console.error("Erro meta", error);
+        toast('Erro ao atualizar meta ❌');
     }
   };
 
   const handleUpdateUnidade = async (nomeMaquina, novaUnidade) => {
+    if (!novaUnidade) return;
+
+    if (IS_LOCALHOST) {
+        setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade: novaUnidade } : m)));
+        return;
+    }
+
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     if (!maq?.id) return;
 
+    setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade: novaUnidade } : m)));
+
     try {
-      await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
-    } catch (e) {
-      console.error('Erro update unidade:', e);
-      toast('Erro ao atualizar unidade ❌', 2200);
+        await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
+    } catch (error) {
+        console.error("Erro unidade", error);
+        toast('Erro ao atualizar unidade ❌');
     }
   };
 
-  // ====== EXPORT PPTX ======
+  // ===== EXPORT IMAGEM COMUM ======
   const captureChartPNG = async () => {
     const el = chartCaptureRef.current;
     if (!el) throw new Error('chartCaptureRef não encontrado');
     const canvas = await html2canvas(el, {
       backgroundColor: '#09090b',
-      scale: 2,
+      scale: 3,
       useCORS: true,
     });
     return canvas.toDataURL('image/png');
   };
 
-  const addSlideForMachine = async (pptx, machineName) => {
-    // seta filtro pra máquina e espera render
-    setFiltroMaquina(machineName);
-    await sleep(250);
-    await new Promise((r) => requestAnimationFrame(r));
-    await sleep(80);
+  // ===== EXPORT PDF (Graficos) ======
+  const exportPDFGraficos = async () => {
+    if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+    if (exportando) return;
 
-    const img = await captureChartPNG();
-
-    const maq = maquinas.find((m) => m.nome === machineName);
-    const unidade = maq?.unidade || '';
-    const metaDia = Number(maq?.meta || 0);
-    const diasUteis = Number(config.diasUteis || 22);
-    const metaMes = metaDia * diasUteis;
-
-    // calcula real do mês dessa máquina
-    const lancMaq = lancamentos.filter((l) => l.maquina === machineName);
-    const realMes = lancMaq.reduce((acc, x) => acc + (Number(x.real) || 0), 0);
-    const ating = metaMes > 0 ? (realMes / metaMes) * 100 : 0;
-
-    const slide = pptx.addSlide();
-    slide.addText(`Performance – ${machineName}`, { x: 0.5, y: 0.25, w: 12.3, h: 0.4, fontSize: 24, bold: true, color: 'FFFFFF' });
-    slide.addText(`Mês: ${monthLabel(mesRef)} | Dias úteis: ${diasUteis}`, { x: 0.5, y: 0.7, w: 12.3, h: 0.3, fontSize: 12, color: 'BDBDBD' });
-
-    slide.addText(`Meta diária: ${metaDia.toLocaleString('pt-BR')} ${unidade}`, { x: 0.5, y: 1.05, w: 4.4, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-    slide.addText(`Meta mensal: ${metaMes.toLocaleString('pt-BR')} ${unidade}`, { x: 0.5, y: 1.35, w: 4.4, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-    slide.addText(`Real mês: ${realMes.toLocaleString('pt-BR')} ${unidade}`, { x: 0.5, y: 1.65, w: 4.4, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-    slide.addText(`Atingimento: ${ating.toFixed(1)}%`, { x: 0.5, y: 1.95, w: 4.4, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-
-    // gráfico (print)
-    slide.addImage({ data: img, x: 5.1, y: 1.05, w: 8.7, h: 5.2 });
-  };
-
-  const exportPPTX = async ({ incluirResumo }) => {
-    if (maquinas.length === 0) return toast('Sem máquinas para exportar.', 2500);
+    setExportando(true);
+    toast('Gerando PDF...', 0);
+    const filtroOriginal = filtroMaquina;
 
     try {
-      setBusy(true);
-      toast('Gerando PPTX...', 0);
+        const pdf = new jsPDF('landscape', 'pt', 'a4');
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
 
-      const pptx = new PptxGenJS();
-      pptx.layout = 'LAYOUT_16x9';
-      pptx.author = 'GlobalScreen';
+        for (let i = 0; i < maquinas.length; i++) {
+            const m = maquinas[i];
+            setFiltroMaquina(m.nome);
+            // Tempo maior para o label aparecer
+            await sleep(1000); 
+            await new Promise((r) => requestAnimationFrame(r));
+            
+            const imgData = await captureChartPNG();
 
-      const filtroOriginal = filtroMaquina;
+            if (i > 0) pdf.addPage();
+            
+            // Fundo escuro
+            pdf.setFillColor(9, 9, 11);
+            pdf.rect(0, 0, pageW, pageH, 'F');
 
-      if (incluirResumo) {
-        // Slide resumo (filtro TODAS)
-        setFiltroMaquina('TODAS');
-        await sleep(250);
-        await new Promise((r) => requestAnimationFrame(r));
-        await sleep(80);
+            // Ajuste imagem
+            const margin = 20;
+            const imgW = pageW - (margin * 2);
+            // Calcula altura proporcional
+            const imgProps = pdf.getImageProperties(imgData);
+            const imgH = (imgProps.height * imgW) / imgProps.width;
 
-        const img = await captureChartPNG();
+            pdf.addImage(imgData, 'PNG', margin, 70, imgW, imgH);
 
-        const slide = pptx.addSlide();
-        slide.addText(`Resumo Global`, { x: 0.5, y: 0.25, w: 12.3, h: 0.4, fontSize: 26, bold: true, color: 'FFFFFF' });
-        slide.addText(`Mês: ${monthLabel(mesRef)} | Dias úteis: ${dadosGrafico.diasUteis}`, { x: 0.5, y: 0.7, w: 12.3, h: 0.3, fontSize: 12, color: 'BDBDBD' });
+            // Texto Header
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(18);
+            pdf.text(`Gráfico de Performance: ${m.nome}`, margin, 40);
+            
+            pdf.setTextColor(156, 163, 175); // zinc-400
+            pdf.setFontSize(10);
+            pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 55);
+        }
 
-        slide.addText(`Total produzido: ${dadosGrafico.totalProduzido.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}`, { x: 0.5, y: 1.05, w: 6, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-        slide.addText(`Meta mensal: ${dadosGrafico.metaTotalMes.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}`, { x: 0.5, y: 1.35, w: 6, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-        slide.addText(`Atingimento: ${dadosGrafico.atingimentoMes.toFixed(1)}%`, { x: 0.5, y: 1.65, w: 6, h: 0.3, fontSize: 12, color: 'FFFFFF' });
-        slide.addImage({ data: img, x: 0.5, y: 2.1, w: 13.0, h: 4.2 });
-      }
+        pdf.save(`Graficos_${mesRef}.pdf`);
+        toast('PDF baixado ✅');
 
-      for (const m of maquinas) {
-        await addSlideForMachine(pptx, m.nome);
-      }
-
-      // volta filtro
-      setFiltroMaquina(filtroOriginal);
-
-      await pptx.writeFile({ fileName: `Relatorio_Global_${mesRef}.pptx` });
-      toast('PPTX baixado ✅');
-    } catch (e) {
-      console.error('Erro ao exportar PPTX:', e);
-      toast('Erro ao exportar PPTX ❌', 2600);
+    } catch (error) {
+        console.error("Erro PDF", error);
+        toast('Erro ao gerar PDF ❌');
     } finally {
-      setBusy(false);
-      setTimeout(() => setStatusMsg(''), 1200);
+        setFiltroMaquina(filtroOriginal);
+        setExportando(false);
+        setBusy(false);
     }
   };
 
-  // ====== UI ======
-  const minISO = firstDayISO(mesRef);
-  const maxISO = lastDayISO(mesRef);
+  // ===== EXPORT PPTX (Relatório) ======
+  const exportPPTX = async () => {
+    if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+    if (exportando) return;
 
-  const lancamentosVisiveis =
-    filtroMaquina === 'TODAS' ? lancamentos : lancamentos.filter((l) => l.maquina === filtroMaquina);
+    setExportando(true);
+    toast('Gerando PPTX...', 0);
+
+    try {
+      const pptx = new PptxGenJS();
+      pptx.layout = 'LAYOUT_16x9'; 
+      pptx.author = 'GlobalScreen';
+      
+      // Master Dark
+      pptx.defineSlideMaster({
+        title: "MASTER_DARK",
+        background: { color: "09090b" },
+      });
+
+      const filtroOriginal = filtroMaquina;
+
+      // 1. Slide Resumo
+      setFiltroMaquina('TODAS');
+      await sleep(1000); // 1s para renderizar labels
+      await new Promise((r) => requestAnimationFrame(r));
+      const imgResumo = await captureChartPNG();
+
+      const slideResumo = pptx.addSlide("MASTER_DARK");
+      
+      slideResumo.addText(`Resumo Global – ${monthLabel(mesRef)}`, { x: 0.3, y: 0.3, w: 9.0, fontSize: 24, bold: true, color: 'FFFFFF' });
+      
+      slideResumo.addText([
+          { text: `Meta Mensal: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.metaTotalMes.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
+          
+          { text: `Realizado: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.totalProduzido.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
+          
+          { text: `Atingimento: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.atingimentoMes.toFixed(1)}%\n\n`, options: { color: dadosGrafico.atingimentoMes >= 100 ? '4ADE80' : 'F87171', fontSize: 18, bold: true } },
+
+          { text: `Aderência (Ritmo): `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.aderenciaMeta.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 18, bold: true } }
+      ], { x: 0.3, y: 1.0, w: 3.5, h: 4.5, valign: 'top' });
+
+      slideResumo.addImage({ data: imgResumo, x: 3.8, y: 1.0, w: 6.0, h: 4.0 });
+
+      // 2. Slides Máquinas
+      for (const m of maquinas) {
+        setFiltroMaquina(m.nome);
+        await sleep(1000);
+        await new Promise((r) => requestAnimationFrame(r));
+        const img = await captureChartPNG();
+
+        const slide = pptx.addSlide("MASTER_DARK");
+        const maq = maquinas.find(x => x.nome === m.nome);
+        const unidade = maq?.unidade || '';
+        const metaDia = Number(maq?.meta || 0);
+        const metaMes = metaDia * Number(config.diasUteis || 22);
+        
+        const lancMaq = lancamentos.filter((l) => l.maquina === m.nome);
+        const realMes = lancMaq.reduce((acc, x) => acc + (Number(x.real) || 0), 0);
+        
+        // Aderência individual
+        const diasProd = [...new Set(lancMaq.map(l => l.dia))].length;
+        const mediaReal = diasProd > 0 ? realMes / diasProd : 0;
+        const aderencia = metaDia > 0 ? (mediaReal / metaDia) * 100 : 0;
+        const ating = metaMes > 0 ? (realMes / metaMes) * 100 : 0;
+
+        slide.addText(`Performance – ${m.nome}`, { x: 0.3, y: 0.3, w: 9.0, fontSize: 24, bold: true, color: 'FFFFFF' });
+
+        slide.addText([
+            { text: `Meta Diária: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${metaDia.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
+
+            { text: `Meta Mensal: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${metaMes.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
+            
+            { text: `Realizado: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${realMes.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
+            
+            { text: `Atingimento: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${ating.toFixed(1)}%\n\n`, options: { color: ating >= 100 ? '4ADE80' : 'F87171', fontSize: 16, bold: true } },
+
+            { text: `Aderência: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${aderencia.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 16, bold: true } }
+        ], { x: 0.3, y: 1.0, w: 3.5, h: 5.2, valign: 'top' });
+
+        slide.addImage({ data: img, x: 3.8, y: 1.0, w: 6.0, h: 4.0 });
+      }
+
+      setFiltroMaquina(filtroOriginal);
+      await pptx.writeFile({ fileName: `Relatorio_Global_${mesRef}.pptx` });
+      toast('PPTX baixado ✅');
+    } catch (e) {
+      console.error('Erro PPTX:', e);
+      toast('Erro ao gerar PPTX ❌');
+    } finally {
+      setFiltroMaquina(filtroOriginal); // Garante volta do filtro
+      setExportando(false);
+      setBusy(false);
+    }
+  };
+
+  const lancamentosVisiveis = filtroMaquina === 'TODAS' ? lancamentos : lancamentos.filter((l) => l.maquina === filtroMaquina);
+
+  const barSize = useMemo(() => {
+    const n = (dadosGrafico?.dados?.length || 0);
+    if (n <= 6) return 80;
+    if (n <= 10) return 60;
+    if (n <= 16) return 40;
+    return 28;
+  }, [dadosGrafico]);
 
   return (
-    <div className="w-full h-full overflow-auto p-4 md:p-6 bg-[#09090b] text-zinc-100">
-      {/* Status/Toast */}
-      {(statusMsg || erroFirebase) && (
-        <div className="max-w-7xl mx-auto mb-3">
-          {statusMsg && (
-            <div className="mb-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-zinc-200 text-sm">
-              {statusMsg}
-            </div>
-          )}
-          {erroFirebase && (
-            <div className="px-3 py-2 rounded border border-red-900/50 bg-red-950/20 text-red-200 text-sm">
-              {erroFirebase}
-            </div>
-          )}
+    <div className="w-full h-screen overflow-y-auto bg-[#09090b] text-zinc-100 font-sans selection:bg-blue-500/30 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+      
+      {statusMsg && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-2 rounded-full shadow-xl font-bold text-sm animate-in fade-in slide-in-from-top-4">
+            {statusMsg}
         </div>
       )}
 
-      {/* Header */}
-      <div className="bg-zinc-900 text-white shadow-lg border-b border-zinc-800">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-3">
-            <BarChart3 className="text-zinc-100" size={28} />
+      {/* OVERLAY EXPORT */}
+      {exportando && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-4" />
+            <h2 className="text-xl font-bold mb-2">Gerando Arquivo...</h2>
+            <p className="text-zinc-400 text-sm animate-pulse">Isso pode levar alguns segundos.</p>
+        </div>
+      )}
+
+      {/* HEADER STICKY */}
+      <div className="sticky top-0 z-40 bg-[#09090b]/90 backdrop-blur-md border-b border-zinc-800 shadow-sm">
+        <div className="w-full max-w-[1920px] mx-auto px-4 md:px-6 py-3 flex flex-col md:flex-row justify-between items-center gap-4">
+          
+          <div className="flex items-center gap-3 self-start md:self-auto">
+            <div className="bg-blue-600/10 p-2 rounded-lg border border-blue-600/20">
+                <BarChart3 className="text-blue-500" size={24} />
+            </div>
             <div>
-              <h1 className="text-2xl font-bold uppercase tracking-wide text-zinc-100">Acompanhamento Global</h1>
-              <p className="text-zinc-500 text-xs font-mono">Painel de Controle Integrado</p>
+              <h1 className="text-xl font-bold uppercase tracking-tight text-zinc-100 leading-none">Acompanhamento Global</h1>
+              <p className="text-zinc-500 text-[11px] font-medium tracking-wide mt-1">Painel de Controle Integrado</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 bg-zinc-800 p-1 rounded border border-zinc-700 items-center">
-            {/* SELECT MÊS */}
-            <div className="relative group">
-              <select
-                value={mesRef}
-                onChange={(e) => setMesRef(e.target.value)}
-                className="bg-transparent text-zinc-200 px-3 py-1.5 text-sm font-bold focus:bg-zinc-700 focus:outline-none cursor-pointer border-none ring-0 uppercase"
-                title="Mês de referência"
-              >
-                {opcoesMes.map((k) => (
-                  <option key={k} value={k} className="bg-zinc-900 text-zinc-300">
-                    {monthLabel(k)}
-                  </option>
-                ))}
-              </select>
+          <div className="flex flex-wrap justify-center md:justify-end gap-2 items-center w-full md:w-auto">
+            
+            <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
+                <select
+                    value={mesRef}
+                    onChange={(e) => setMesRef(e.target.value)}
+                    className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase min-w-[100px]"
+                >
+                    {opcoesMes.map((k) => (
+                    <option key={k} value={k} className="bg-zinc-900 text-zinc-300">
+                        {monthLabel(k)}
+                    </option>
+                    ))}
+                </select>
             </div>
 
-            <div className="w-px bg-zinc-600 mx-1 hidden md:block"></div>
-
-            {/* FILTRO MÁQUINAS */}
-            <div className="relative group">
-              <Filter className="absolute left-2 top-2 text-zinc-400" size={16} />
-              <select
-                value={filtroMaquina}
-                onChange={(e) => setFiltroMaquina(e.target.value)}
-                className="bg-transparent text-zinc-200 pl-8 pr-8 py-1.5 text-sm font-bold focus:bg-zinc-700 focus:outline-none cursor-pointer border-none ring-0 uppercase"
-              >
-                <option value="TODAS" className="bg-zinc-900 text-zinc-300">
-                  Todas as Máquinas
-                </option>
-                {maquinas.map((m) => (
-                  <option key={m.id || m.nome} value={m.nome} className="bg-zinc-900">
-                    {m.nome}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
+                <Filter className="text-zinc-500 mr-2" size={14} />
+                <select
+                    value={filtroMaquina}
+                    onChange={(e) => setFiltroMaquina(e.target.value)}
+                    className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase max-w-[140px] truncate"
+                >
+                    <option value="TODAS" className="bg-zinc-900">Todas as Máquinas</option>
+                    {maquinas.map((m) => (
+                    <option key={m.id || m.nome} value={m.nome} className="bg-zinc-900">{m.nome}</option>
+                    ))}
+                </select>
             </div>
 
-            <div className="w-px bg-zinc-600 mx-1 hidden md:block"></div>
+            <div className="h-6 w-px bg-zinc-800 mx-1 hidden md:block"></div>
 
-            {/* Export */}
-            <button
-              disabled={busy || maquinas.length === 0}
-              onClick={() => exportPPTX({ incluirResumo: false })}
-              className="flex items-center gap-2 px-3 py-1.5 rounded transition-all text-sm font-bold uppercase bg-zinc-950 border border-zinc-700 hover:bg-zinc-900 disabled:opacity-50"
-              title="Baixar PPTX: 1 slide por máquina"
-            >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              PPTX (Máquinas)
-            </button>
+            <div className="flex gap-2">
+                {/* BOTÃO PDF GRÁFICOS */}
+                <button
+                onClick={exportPDFGraficos}
+                disabled={busy || exportando || maquinas.length === 0}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 disabled:opacity-50"
+                title="Baixar Gráficos em PDF"
+                >
+                <FileText size={14} />
+                <span className="hidden sm:inline">Gráficos PDF</span>
+                </button>
 
-            <button
-              disabled={busy || maquinas.length === 0}
-              onClick={() => exportPPTX({ incluirResumo: true })}
-              className="flex items-center gap-2 px-3 py-1.5 rounded transition-all text-sm font-bold uppercase bg-zinc-950 border border-zinc-700 hover:bg-zinc-900 disabled:opacity-50"
-              title="Baixar PPTX: resumo + máquinas"
-            >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              PPTX (Resumo)
-            </button>
+                {/* BOTÃO PPTX RELATÓRIO */}
+                <button
+                onClick={exportPPTX}
+                disabled={busy || exportando || maquinas.length === 0}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50"
+                title="Baixar Relatório Completo em PPTX"
+                >
+                <Projector size={14} />
+                <span className="hidden sm:inline">Relatório PPTX</span>
+                </button>
 
-            <button
-              onClick={() => setShowConfig(!showConfig)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded transition-all text-sm font-bold uppercase ${
-                showConfig ? 'bg-zinc-100 text-zinc-900' : 'hover:bg-zinc-700 text-zinc-300'
-              }`}
-            >
-              <Settings size={16} /> Config
-            </button>
+                <button
+                onClick={() => setShowConfig(!showConfig)}
+                className={`p-2 rounded-md transition-all border ${
+                    showConfig ? 'bg-blue-600/20 text-blue-400 border-blue-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+                }`}
+                title="Configurações"
+                >
+                <Settings size={18} />
+                </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Config */}
-      <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out bg-zinc-900 border-b border-zinc-800 ${
-          showConfig ? 'max-h-[900px] opacity-100' : 'max-h-0 opacity-0'
-        }`}
-      >
-        <div className="max-w-7xl mx-auto p-6">
-          <h2 className="text-lg font-bold text-zinc-300 uppercase mb-4 border-b border-zinc-700 pb-2">
-            Parâmetros do Processo
-          </h2>
+      {/* ÁREA DE CONFIGURAÇÃO (DRAWER) */}
+      <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] bg-[#0c0c0e] border-b border-zinc-800 ${showConfig ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div className="max-w-[1920px] mx-auto p-6">
+          <div className="flex items-center gap-2 mb-6 border-b border-zinc-800 pb-2">
+            <Settings className="text-blue-500" size={18} />
+            <h2 className="text-sm font-bold text-zinc-300 uppercase tracking-wide">Parâmetros do Processo</h2>
+          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Calendário */}
-            <div className="bg-zinc-800 p-4 shadow-sm border border-zinc-700 rounded-lg">
-              <h3 className="text-xs font-bold text-zinc-500 uppercase mb-2">Calendário</h3>
-
-              <div className="text-xs text-zinc-500 mb-2">
-                Mês ativo: <span className="text-zinc-200 font-bold uppercase">{monthLabel(mesRef)}</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-zinc-300">Dias Úteis:</span>
-                <input
-                  type="number"
-                  value={config.diasUteis}
-                  onChange={(e) => setConfig({ ...config, diasUteis: Number(e.target.value) })}
-                  onBlur={(e) => saveDiasUteisMes(e.target.value)}
-                  className="w-20 p-1 bg-zinc-900 border border-zinc-600 text-center font-bold text-white focus:ring-1 focus:ring-zinc-500 outline-none rounded"
-                />
-                <button
-                  disabled={busy}
-                  onClick={() => saveDiasUteisMes(config.diasUteis)}
-                  className="ml-auto bg-zinc-100 text-zinc-900 px-3 py-1.5 text-xs font-bold uppercase hover:bg-zinc-300 rounded disabled:opacity-50"
-                >
-                  Salvar
-                </button>
-              </div>
-
-              <div className="mt-2 text-[11px] text-zinc-500">
-                * Esse valor é salvo no Firebase para <b>{mesRef}</b>.
-              </div>
-
-              <div className="mt-3 text-[11px] text-zinc-500">
-                Dica: se lançar fora do mês, o app bloqueia.
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* CALENDÁRIO */}
+            <div className="lg:col-span-3 bg-zinc-900/50 p-5 border border-zinc-800 rounded-xl">
+              <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4">Configuração de Período</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-xs text-zinc-400">
+                    <span>Mês Ativo</span>
+                    <span className="text-white font-bold uppercase">{monthLabel(mesRef)}</span>
+                </div>
+                <div className="flex gap-2 items-center">
+                    <span className="text-xs font-bold text-zinc-300 w-20">Dias Úteis:</span>
+                    <input
+                        type="number"
+                        value={config.diasUteis}
+                        onChange={(e) => setConfig({ ...config, diasUteis: Number(e.target.value) })}
+                        onBlur={(e) => saveDiasUteisMes(e.target.value)}
+                        className="flex-1 bg-black border border-zinc-700 text-white p-1.5 rounded text-center text-sm font-mono focus:border-blue-500 outline-none"
+                    />
+                    <button
+                        onClick={() => saveDiasUteisMes(config.diasUteis)}
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold uppercase hover:bg-blue-500"
+                    >
+                        OK
+                    </button>
+                </div>
               </div>
             </div>
 
-            {/* Máquinas */}
-            <div className="lg:col-span-2">
-              <div className="bg-zinc-800 border border-zinc-700 shadow-sm rounded-lg overflow-hidden">
+            {/* TABELA MÁQUINAS */}
+            <div className="lg:col-span-9 bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden flex flex-col">
+              <div className="overflow-x-auto max-h-[300px]">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-zinc-900 border-b border-zinc-700 text-zinc-400 uppercase text-xs">
+                  <thead className="bg-black/40 text-zinc-500 uppercase text-[10px] font-bold tracking-wider sticky top-0 backdrop-blur-sm">
                     <tr>
-                      <th className="px-4 py-2 font-bold">Máquina</th>
-                      <th className="px-4 py-2 font-bold w-32 text-center">UM</th>
-                      <th className="px-4 py-2 font-bold w-32 text-right">Meta Diária</th>
-                      <th className="px-4 py-2 w-10"></th>
+                      <th className="px-6 py-3">Máquina</th>
+                      <th className="px-6 py-3 text-center">Unidade Medida</th>
+                      <th className="px-6 py-3 text-right">Meta Diária</th>
+                      <th className="px-6 py-3 w-10"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-700">
+                  <tbody className="divide-y divide-zinc-800/50">
                     {maquinas.map((m) => (
-                      <tr key={m.id || m.nome} className="hover:bg-zinc-700/50">
-                        <td className="px-4 py-2 font-bold text-zinc-200">{m.nome}</td>
-                        <td className="px-4 py-2 text-center">
-                          <div className="relative inline-block w-full">
-                            <select
+                      <tr key={m.id || m.nome} className="group hover:bg-white/[0.02] transition-colors">
+                        <td className="px-6 py-2 font-medium text-zinc-200">{m.nome}</td>
+                        <td className="px-6 py-2 text-center">
+                          <select
                               value={m.unidade}
                               onChange={(e) => handleUpdateUnidade(m.nome, e.target.value)}
-                              className="w-full bg-zinc-900 border border-zinc-600 text-zinc-200 font-bold rounded py-1 px-2 text-center appearance-none cursor-pointer hover:bg-zinc-950 transition-colors"
+                              className="bg-black border border-zinc-700 text-zinc-300 text-xs rounded py-1 px-2 focus:border-blue-500 outline-none"
                             >
-                              <option value="pç">Pç (Peças)</option>
-                              <option value="kg">Kg (Quilos)</option>
-                              <option value="m">m (Metros)</option>
-                              <option value="cx">Cx (Caixas)</option>
+                              <option value="pç">Peças (pç)</option>
+                              <option value="kg">Quilos (kg)</option>
+                              <option value="m">Metros (m)</option>
+                              <option value="cx">Caixas (cx)</option>
                             </select>
-                            <div className="absolute right-2 top-1.5 pointer-events-none text-zinc-500">
-                              {m.unidade === 'kg' && <Scale size={14} />}
-                              {m.unidade === 'm' && <Ruler size={14} />}
-                              {m.unidade === 'cx' && <Box size={14} />}
-                            </div>
-                          </div>
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="px-6 py-2">
                           <input
                             type="number"
                             value={m.meta}
                             onChange={(e) => handleUpdateMeta(m.nome, e.target.value)}
-                            className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-right font-mono text-white focus:border-zinc-500 outline-none"
+                            className="w-full bg-transparent text-right font-mono text-zinc-300 focus:text-white outline-none border-b border-transparent focus:border-blue-500"
                           />
                         </td>
-                        <td className="px-4 py-2 text-right">
-                          <button
-                            disabled={busy}
-                            onClick={() => handleRemoveMaquina(m.nome)}
-                            className="text-zinc-500 hover:text-red-400 disabled:opacity-50"
-                            title="Remover máquina"
-                          >
-                            <X size={16} />
+                        <td className="px-6 py-2 text-right">
+                          <button onClick={() => handleRemoveMaquina(m.nome)} className="text-zinc-600 hover:text-red-500 p-1">
+                            <X size={14} />
                           </button>
                         </td>
                       </tr>
                     ))}
-
-                    {maquinas.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                          Nenhuma máquina cadastrada ainda.
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
-
-                {/* Add máquina */}
-                <div className="bg-zinc-900 p-2 flex gap-2 border-t border-zinc-700 items-center">
-                  <input
+              </div>
+              
+              {/* ADD ROW */}
+              <div className="p-3 bg-black/20 border-t border-zinc-800 flex flex-wrap gap-3 items-center mt-auto">
+                <input
                     type="text"
-                    placeholder="Nova Máquina..."
-                    className="flex-1 bg-zinc-800 border border-zinc-600 rounded px-2 py-1.5 text-sm outline-none text-white placeholder-zinc-500"
+                    placeholder="Nome da Nova Máquina"
+                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500 min-w-[150px]"
                     value={inputNomeMaquina}
                     onChange={(e) => setInputNomeMaquina(e.target.value)}
-                  />
-
-                  <div className="w-24">
-                    <select
-                      className="w-full bg-zinc-800 border border-zinc-600 rounded px-1 py-1.5 text-sm outline-none text-zinc-300 font-medium cursor-pointer hover:bg-zinc-700"
-                      value={inputUnidadeMaquina}
-                      onChange={(e) => setInputUnidadeMaquina(e.target.value)}
-                    >
-                      <option value="pç">Pç</option>
-                      <option value="kg">Kg</option>
-                      <option value="m">m</option>
-                      <option value="cx">Cx</option>
-                    </select>
-                  </div>
-
-                  <input
+                />
+                <select
+                    className="w-24 bg-zinc-900 border border-zinc-700 rounded px-2 py-2 text-sm outline-none text-zinc-300 focus:border-blue-500"
+                    value={inputUnidadeMaquina}
+                    onChange={(e) => setInputUnidadeMaquina(e.target.value)}
+                >
+                    <option value="pç">Pç</option>
+                    <option value="kg">Kg</option>
+                    <option value="m">m</option>
+                    <option value="cx">Cx</option>
+                </select>
+                <input
                     type="number"
                     placeholder="Meta"
-                    className="w-24 bg-zinc-800 border border-zinc-600 rounded px-2 py-1.5 text-sm outline-none text-white placeholder-zinc-500"
+                    className="w-24 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500 text-right"
                     value={inputMetaMaquina}
                     onChange={(e) => setInputMetaMaquina(e.target.value)}
-                  />
-
-                  <button
+                />
+                <button
                     onClick={handleAddMaquina}
-                    disabled={busy || !inputNomeMaquina.trim()}
-                    className="bg-zinc-100 text-zinc-900 px-4 py-1.5 text-sm font-bold uppercase hover:bg-zinc-300 disabled:opacity-50 rounded"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              {/* Aviso índice */}
-              <div className="mt-2 text-[11px] text-zinc-500">
-                Se lançamentos não ordenarem direito, crie índice: <b>global_lancamentos (mesRef asc, createdAt desc)</b>.
+                    disabled={!inputNomeMaquina}
+                    className="bg-zinc-100 text-zinc-950 px-5 py-2 text-xs font-bold uppercase rounded hover:bg-white disabled:opacity-50"
+                >
+                    Adicionar
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Conteúdo */}
-      <div className="max-w-7xl mx-auto mt-6 px-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Form + Lista */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-zinc-900 p-5 border border-zinc-800 shadow-lg rounded-lg border-t-4 border-t-zinc-500">
-            <h2 className="font-bold text-zinc-200 mb-4 uppercase text-sm flex items-center gap-2">
-              <PlusCircle size={18} className="text-zinc-500" /> Registrar Produção
-            </h2>
-
-            <form onSubmit={handleAddLancamento} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">Máquina</label>
+      {/* PAINEL PRINCIPAL */}
+      <div className="w-full max-w-[1920px] mx-auto mt-6 px-4 md:px-6 grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
+        
+        {/* COLUNA ESQUERDA (CONTROLES E LISTA) */}
+        <div className="lg:col-span-3 flex flex-col gap-6">
+          
+          {/* CARD DE REGISTRO */}
+          <div className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-zinc-800 bg-zinc-800/30 flex items-center gap-2">
+                <PlusCircle className="text-green-500" size={16} />
+                <h2 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">Novo Apontamento</h2>
+            </div>
+            
+            <form onSubmit={handleAddLancamento} className="p-5 space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Máquina</label>
                 <select
-                  className="w-full p-2 bg-zinc-950 border border-zinc-700 rounded focus:border-zinc-500 outline-none text-white text-sm font-medium"
+                  className="w-full p-2.5 bg-black border border-zinc-700 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 outline-none text-white text-sm transition-all"
                   value={novaMaquinaForm}
                   onChange={(e) => setNovaMaquinaForm(e.target.value)}
                   disabled={maquinas.length === 0}
                 >
-                  {maquinas.length === 0 && <option value="">Nenhuma máquina cadastrada</option>}
+                  {maquinas.length === 0 && <option value="">Cadastre máquinas primeiro</option>}
                   {maquinas.map((m) => (
-                    <option key={m.id || m.nome} value={m.nome}>
-                      {m.nome}
-                    </option>
+                    <option key={m.id || m.nome} value={m.nome}>{m.nome}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">Data</label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Data</label>
                   <input
                     type="date"
-                    min={minISO}
-                    max={maxISO}
-                    className="w-full p-2 bg-zinc-950 border border-zinc-700 rounded focus:border-zinc-500 outline-none text-white text-sm"
+                    className="w-full p-2.5 bg-black border border-zinc-700 rounded-lg focus:border-blue-500 outline-none text-white text-sm"
                     value={novoDiaISO}
                     onChange={(e) => setNovoDiaISO(e.target.value)}
+                    disabled={maquinas.length === 0}
                   />
-                  <div className="text-[10px] text-zinc-500 mt-1">
-                    Permitido: {minISO} até {maxISO}
-                  </div>
                 </div>
 
-                <div className="flex-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide truncate">
                     Qtd ({getUnidadeAtual(novaMaquinaForm)})
                   </label>
                   <input
                     type="number"
                     placeholder="0"
-                    className="w-full p-2 bg-zinc-950 border border-zinc-700 rounded focus:border-zinc-500 outline-none text-white font-bold text-right placeholder-zinc-600"
+                    className="w-full p-2.5 bg-black border border-zinc-700 rounded-lg focus:border-blue-500 outline-none text-white font-mono font-bold text-right"
                     value={novoValor}
                     onChange={(e) => setNovoValor(e.target.value)}
+                    disabled={maquinas.length === 0}
                   />
-                  <button
-                    type="button"
-                    className="mt-2 w-full text-xs uppercase font-bold bg-zinc-950 border border-zinc-700 rounded py-1.5 hover:bg-zinc-900"
-                    onClick={() => {
-                      const today = new Date();
-                      const iso = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
-                      setNovoDiaISO(iso);
-                      toast('Data: hoje ✅');
-                    }}
-                  >
-                    Hoje
-                  </button>
                 </div>
               </div>
 
               <button
                 type="submit"
-                disabled={busy || maquinas.length === 0}
-                className="w-full bg-zinc-100 hover:bg-white text-zinc-900 font-bold py-2 uppercase text-sm shadow-lg rounded transition-colors flex justify-center gap-2 disabled:opacity-50"
+                disabled={maquinas.length === 0 || !novoDiaISO || !novoValor}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 uppercase text-xs rounded-lg transition-all flex justify-center gap-2 items-center disabled:opacity-50 shadow-lg shadow-blue-900/20"
               >
-                {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                Salvar
+                <Save size={14} /> Salvar Produção
               </button>
             </form>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 shadow-lg rounded-lg flex flex-col h-[420px]">
-            <div className="p-3 bg-zinc-950/50 border-b border-zinc-800 flex justify-between items-center rounded-t-lg">
-              <span className="font-bold text-zinc-300 text-xs uppercase">Lançamentos Recentes</span>
-              <span className="text-xs font-mono bg-zinc-800 border border-zinc-600 px-2 py-0.5 text-zinc-400 rounded">
-                {lancamentosVisiveis.length}
+          {/* LISTA RECENTES */}
+          <div className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl flex flex-col flex-1 min-h-[400px] overflow-hidden">
+            <div className="p-3 bg-zinc-800/30 border-b border-zinc-800 flex justify-between items-center">
+              <span className="font-bold text-zinc-400 text-[10px] uppercase tracking-wider flex items-center gap-2">
+                 <div className="w-2 h-2 rounded-full bg-zinc-500"></div> Histórico
+              </span>
+              <span className="text-[10px] font-mono bg-black border border-zinc-700 px-2 py-0.5 text-zinc-300 rounded-md">
+                {lancamentosVisiveis.length} regs
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-950 text-xs text-zinc-500 font-bold uppercase sticky top-0 border-b border-zinc-800">
+                <thead className="bg-black/20 text-[10px] text-zinc-500 font-bold uppercase sticky top-0 backdrop-blur-sm z-10">
                   <tr>
-                    <th className="px-3 py-2 text-left">Dia</th>
-                    <th className="px-3 py-2 text-left">Maq</th>
-                    <th className="px-3 py-2 text-right">Qtd</th>
-                    <th className="px-3 py-2"></th>
+                    <th className="px-4 py-2 text-left">Dia</th>
+                    <th className="px-2 py-2 text-left">Maq</th>
+                    <th className="px-4 py-2 text-right">Qtd</th>
+                    <th className="px-2 py-2"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800">
+
+                <tbody className="divide-y divide-zinc-800/50">
                   {lancamentosVisiveis.map((l) => (
-                    <tr key={l.id} className="hover:bg-zinc-800/50">
-                      <td className="px-3 py-2 font-medium text-zinc-300">{l.dia}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-500 truncate max-w-[90px]">{l.maquina}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-zinc-200">
-                        {Number(l.real || 0).toLocaleString('pt-BR')}{' '}
-                        <span className="text-[10px] text-zinc-500 font-normal">{getUnidadeAtual(l.maquina)}</span>
+                    <tr key={l.id} className="hover:bg-white/[0.03] transition-colors group">
+                      <td className="px-4 py-2.5 font-medium text-zinc-300 text-xs">{l.dia}</td>
+                      <td className="px-2 py-2.5 text-[11px] text-zinc-500 truncate max-w-[80px] group-hover:text-zinc-300">{l.maquina}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-200 text-xs">
+                        {Number(l.real || 0).toLocaleString('pt-BR')}
+                        <span className="text-[9px] text-zinc-600 ml-1 font-normal">{getUnidadeAtual(l.maquina)}</span>
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-2 py-2.5 text-right">
                         <button
-                          disabled={busy}
                           onClick={() => handleDeleteLancamento(l.id)}
-                          className="text-zinc-600 hover:text-red-400 disabled:opacity-50"
-                          title="Apagar lançamento"
+                          className="text-zinc-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} />
                         </button>
                       </td>
                     </tr>
                   ))}
-
                   {lancamentosVisiveis.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-3 py-6 text-center text-sm text-zinc-500">
-                        Sem lançamentos para este filtro/mês.
+                      <td colSpan={4} className="px-4 py-12 text-center">
+                        <span className="text-xs text-zinc-600">Sem lançamentos</span>
                       </td>
                     </tr>
                   )}
@@ -1034,109 +1102,116 @@ const GlobalScreen = () => {
           </div>
         </div>
 
-        {/* Gráfico */}
-        <div className="lg:col-span-8 flex flex-col h-full">
-          <div className="bg-zinc-900 p-4 border border-zinc-800 shadow-lg rounded-lg flex-1 flex-col min-h-[640px] border-t-4 border-t-yellow-600 flex">
-            {/* KPIs */}
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4 border-b border-zinc-800 pb-4">
+        {/* COLUNA DIREITA (GRÁFICO) - Trava de largura adicionada (min-w-0) */}
+        <div className="lg:col-span-9 flex flex-col min-h-[600px] min-w-0">
+          <div
+            ref={chartCaptureRef}
+            className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl flex-1 flex flex-col relative overflow-hidden"
+          >
+            {/* LINHA DECORATIVA */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 via-purple-500 to-orange-500 opacity-80"></div>
+
+            {/* HEADER GRÁFICO */}
+            <div className="p-6 border-b border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-gradient-to-b from-zinc-800/20 to-transparent">
               <div>
-                <h3 className="text-lg font-bold text-zinc-200 uppercase flex items-center gap-2">
-                  <TrendingUp className="text-zinc-100" size={20} />
-                  Performance: {filtroMaquina === 'TODAS' ? 'Geral' : filtroMaquina}
-                </h3>
-
-                <div className="mt-2 flex flex-wrap gap-3 text-xs font-bold text-zinc-500 uppercase">
-                  <span className="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded">
-                    Meta Diária:{' '}
-                    <span className="text-zinc-200 text-sm">
-                      {dadosGrafico.metaDiariaAtiva.toLocaleString('pt-BR')} {dadosGrafico.unidadeAtiva}
+                <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="text-blue-500" size={20} />
+                    <h3 className="text-lg font-bold text-white uppercase tracking-tight">Performance Global</h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700 uppercase">
+                        {filtroMaquina === 'TODAS' ? 'Visão Geral' : filtroMaquina}
                     </span>
-                  </span>
-
-                  <span className="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded">
-                    Meta Mensal:{' '}
-                    <span className="text-zinc-200 text-sm">
-                      {dadosGrafico.metaTotalMes.toLocaleString('pt-BR')} {dadosGrafico.unidadeAtiva}
-                    </span>
-                  </span>
-
-                  <span className="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded">
-                    Real mês:{' '}
-                    <span className="text-zinc-200 text-sm">
-                      {dadosGrafico.totalProduzido.toLocaleString('pt-BR')} {dadosGrafico.unidadeAtiva}
-                    </span>
-                  </span>
-
-                  <span className="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded">
-                    Gap:{' '}
-                    <span className="text-zinc-200 text-sm">
-                      {dadosGrafico.gap.toLocaleString('pt-BR')} {dadosGrafico.unidadeAtiva}
-                    </span>
-                  </span>
-
-                  {dadosGrafico.unidadeAtiva === 'mix' && (
-                    <span className="bg-yellow-950/20 border border-yellow-900/40 px-2 py-1 rounded text-yellow-200">
-                      Aviso: “TODAS” com unidades diferentes (mix)
-                    </span>
-                  )}
+                </div>
+                
+                <div className="flex gap-6 text-xs">
+                    <div>
+                        <span className="text-zinc-500 font-bold uppercase block text-[10px] mb-0.5">Meta Diária</span>
+                        <span className="text-zinc-200 font-mono text-sm">
+                            {Number(dadosGrafico.metaDiariaAtiva || 0).toLocaleString('pt-BR')} <span className="text-zinc-600 text-[10px]">{dadosGrafico.unidadeAtiva}</span>
+                        </span>
+                    </div>
+                    <div className="w-px bg-zinc-700 h-8 self-center"></div>
+                    <div>
+                        <span className="text-zinc-500 font-bold uppercase block text-[10px] mb-0.5">Meta Mensal</span>
+                        <span className="text-zinc-200 font-mono text-sm">
+                            {Number(dadosGrafico.metaTotalMes || 0).toLocaleString('pt-BR')} <span className="text-zinc-600 text-[10px]">{dadosGrafico.unidadeAtiva}</span>
+                        </span>
+                    </div>
+                    <div className="w-px bg-zinc-700 h-8 self-center"></div>
+                    <div>
+                        <span className="text-zinc-500 font-bold uppercase block text-[10px] mb-0.5">Aderência (Pace)</span>
+                        <span className={`text-sm font-mono font-bold ${dadosGrafico.aderenciaMeta >= 100 ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                            {dadosGrafico.aderenciaMeta.toFixed(1)}%
+                        </span>
+                    </div>
                 </div>
               </div>
 
-              <div className="text-right">
-                <p className="text-xs text-zinc-500 uppercase font-bold mb-1">Projeção Final</p>
-                <div className="flex items-center justify-end gap-2">
+              <div className="text-right bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50">
+                <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Projeção de Fechamento</p>
+                <div className="flex items-baseline justify-end gap-2">
                   <span
-                    className={`text-3xl font-black ${
-                      dadosGrafico.projetadoValor >= dadosGrafico.metaTotalMes ? 'text-green-500' : 'text-orange-500'
+                    className={`text-3xl font-black tracking-tighter ${
+                      dadosGrafico.projetadoValor >= dadosGrafico.metaTotalMes ? 'text-emerald-500 drop-shadow-[0_0_10px_rgba(16,185,129,0.2)]' : 'text-orange-500 drop-shadow-[0_0_10px_rgba(249,115,22,0.2)]'
                     }`}
                   >
-                    {dadosGrafico.projetadoValor.toLocaleString('pt-BR')}
+                    {Number(dadosGrafico.projetadoValor || 0).toLocaleString('pt-BR')}
                   </span>
-                  <span className="text-xs text-zinc-500 font-bold self-end mb-1 uppercase">{dadosGrafico.unidadeAtiva}</span>
+                  <span className="text-xs text-zinc-500 font-bold uppercase">{dadosGrafico.unidadeAtiva}</span>
                 </div>
               </div>
             </div>
 
-            {/* Container capturável */}
-            <div ref={chartCaptureRef} className="flex-1 w-full relative rounded-lg bg-zinc-950/30 border border-zinc-800 p-3">
+            {/* GRÁFICO */}
+            <div className="flex-1 w-full relative min-h-[450px] p-4 bg-[#09090b]">
               {maquinas.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
-                  Cadastre ao menos uma máquina para visualizar o gráfico.
+                <div className="flex h-full flex-col items-center justify-center text-zinc-600 gap-4">
+                  <BarChart3 size={48} className="opacity-20" />
+                  <p className="text-sm font-medium">Cadastre máquinas e registre produção para visualizar os dados.</p>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dadosGrafico.dados} margin={{ top: 35, right: 30, left: 20, bottom: 25 }}>
+                  <ComposedChart
+                    data={dadosGrafico.dados}
+                    margin={{ top: 80, right: 20, left: 10, bottom: 20 }}
+                    barCategoryGap={20}
+                  >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+
                     <XAxis
                       dataKey="name"
-                      axisLine
-                      tickLine
-                      tick={{ fill: '#a1a1aa', fontSize: 12, fontWeight: 'bold' }}
-                      dy={10}
-                      stroke="#3f3f46"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#71717a', fontSize: 11, fontWeight: '600' }}
+                      dy={15}
+                      interval={0}
                     />
+
                     <YAxis hide domain={[0, 'auto']} />
 
                     <Tooltip
-                      cursor={{ fill: '#27272a', opacity: 0.5 }}
+                      cursor={{ fill: '#27272a', opacity: 0.4 }}
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const d = payload[0].payload;
+                          const isProj = d.tipo === 'projetado';
                           return (
-                            <div className="bg-zinc-950 border border-zinc-700 p-2 shadow-xl text-xs rounded text-zinc-200">
-                              <div className="font-bold uppercase mb-1 border-b border-zinc-800 pb-1 text-zinc-400">{d.name}</div>
-                              <div>
-                                Real:{' '}
-                                <span className="text-white font-mono">{Number(d.realOriginal || 0).toLocaleString('pt-BR')}</span>{' '}
-                                <span className="text-zinc-500">{d.unidade}</span>
+                            <div className="bg-zinc-950 border border-zinc-700 p-3 shadow-2xl rounded-lg min-w-[140px]">
+                              <div className="font-bold uppercase text-[10px] text-zinc-500 mb-2 border-b border-zinc-800 pb-1 tracking-wider">
+                                {isProj ? 'Previsão Final' : `Dia ${d.name}`}
                               </div>
-                              <div>
-                                Meta:{' '}
-                                <span className="text-white font-mono">{Number(d.metaOriginal || 0).toLocaleString('pt-BR')}</span>{' '}
-                                <span className="text-zinc-500">{d.unidade}</span>
-                              </div>
-                              <div className={`mt-1 ${d.performance >= 100 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}`}>
-                                {Number(d.performance || 0).toFixed(1)}%
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-zinc-400">Realizado</span>
+                                    <span className="text-white font-mono font-bold">{Number(d.realOriginal || 0).toLocaleString('pt-BR')}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-zinc-400">Meta</span>
+                                    <span className="text-zinc-500 font-mono">{Number(d.metaOriginal || 0).toLocaleString('pt-BR')}</span>
+                                </div>
+                                <div className={`pt-2 mt-1 border-t border-zinc-800 text-xs font-bold flex justify-between ${d.performance >= 100 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    <span>Atingimento</span>
+                                    <span>{Number(d.performance || 0).toFixed(1)}%</span>
+                                </div>
                               </div>
                             </div>
                           );
@@ -1145,42 +1220,58 @@ const GlobalScreen = () => {
                       }}
                     />
 
-                    <Bar dataKey="valorPlotado" barSize={44}>
+                    {/* IMPORTANTE: isAnimationActive={false} para o HTML2Canvas capturar os labels corretamente */}
+                    <Bar isAnimationActive={false} dataKey="valorPlotado" barSize={barSize} radius={[4, 4, 0, 0]}>
                       {dadosGrafico.dados.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.tipo === 'projetado' ? '#f97316' : '#2563eb'} />
+                        <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.tipo === 'projetado' ? '#fb923c' : '#3b82f6'} 
+                            fillOpacity={entry.tipo === 'projetado' ? 0.8 : 1}
+                        />
                       ))}
                       <LabelList content={renderCustomizedLabel} />
                     </Bar>
 
                     <Line
-                      type="linear"
+                      isAnimationActive={false}
+                      type="monotone"
                       dataKey="metaPlotada"
-                      stroke="#eab308"
-                      strokeWidth={4}
+                      stroke="#fbbf24"
+                      strokeWidth={3}
+                      strokeDasharray="4 4"
                       dot={false}
                       activeDot={false}
-                      isAnimationActive={false}
+                      opacity={0.8}
                     />
 
                     <ReferenceLine
                       y={100}
-                      label={{ position: 'right', value: '100%', fill: '#ca8a04', fontSize: 12, fontWeight: 'bold' }}
-                      stroke="transparent"
+                      label={{ 
+                          position: 'right', 
+                          value: 'META 100%', 
+                          fill: '#fbbf24', 
+                          fontSize: 10, 
+                          fontWeight: 'bold',
+                          dy: -10 
+                      }}
+                      stroke="#fbbf24"
+                      strokeOpacity={0.5}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
             </div>
 
-            <div className="mt-4 flex justify-center gap-6 text-xs font-bold uppercase text-zinc-500 border-t border-zinc-800 pt-4">
+            {/* LEGENDA FOOTER */}
+            <div className="bg-zinc-950 border-t border-zinc-800 p-3 flex justify-center gap-8 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#2563eb] rounded-sm"></div> Realizado
+                <div className="w-3 h-3 bg-blue-600 rounded-sm"></div> Realizado
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#f97316] rounded-sm"></div> Projeção
+                <div className="w-3 h-3 bg-orange-500 rounded-sm"></div> Projeção
               </div>
               <div className="flex items-center gap-2">
-                <div className="h-1 w-6 bg-[#eab308]"></div> Meta (100%)
+                <div className="h-0.5 w-6 bg-amber-400 border-t border-dashed border-amber-400"></div> Meta (100%)
               </div>
             </div>
           </div>
