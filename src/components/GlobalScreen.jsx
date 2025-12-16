@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   LabelList,
   Cell,
-  ReferenceLine
+  ReferenceLine,
 } from 'recharts';
 import {
   PlusCircle,
@@ -23,7 +23,7 @@ import {
   BarChart3,
   Scale,
   Ruler,
-  Box
+  Box,
 } from 'lucide-react';
 
 import {
@@ -42,7 +42,6 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../services/firebase';
-// Se você já tem isso no teu projeto, usa. Se não tiver, comenta a linha abaixo e deixa IS_LOCALHOST = false.
 import { IS_LOCALHOST } from '../utils/env';
 
 /**
@@ -123,7 +122,6 @@ const GlobalScreen = () => {
     const cfgRef = doc(db, 'global_config_mensal', mesRef);
     const unsubCfg = onSnapshot(cfgRef, (snap) => {
       if (!snap.exists()) {
-        // se não existe, cai em 22
         setConfig({ diasUteis: 22 });
         return;
       }
@@ -169,7 +167,6 @@ const GlobalScreen = () => {
         ...d.data(),
       }));
 
-      // Mantém compatibilidade com teu código (real como number)
       setLancamentos(
         arr.map((x) => ({
           ...x,
@@ -181,17 +178,30 @@ const GlobalScreen = () => {
     return () => unsubLanc();
   }, [mesRef]);
 
-  // ====== sincronizações (teu comportamento original) ======
+  // ====== sincronizações (não quebra quando zera máquina) ======
   useEffect(() => {
-    if (maquinas.length === 0) {
-  return (
-    <div className="w-full h-full flex items-center justify-center text-zinc-500">
-      Nenhuma máquina cadastrada. Cadastre ao menos uma máquina.
-    </div>
-  );
-}
+    // se tem máquinas e ainda não escolheu no form, pega a primeira
+    if (maquinas.length > 0 && !novaMaquinaForm) {
+      setNovaMaquinaForm(maquinas[0].nome);
+    }
 
-  }, [maquinas, novaMaquinaForm]);
+    // se apagou a máquina que estava selecionada no form, ajusta
+    if (maquinas.length > 0 && novaMaquinaForm) {
+      const existe = maquinas.some((m) => m.nome === novaMaquinaForm);
+      if (!existe) setNovaMaquinaForm(maquinas[0].nome);
+    }
+
+    // se filtro está numa máquina que foi apagada, volta pra TODAS
+    if (filtroMaquina !== 'TODAS') {
+      const existeFiltro = maquinas.some((m) => m.nome === filtroMaquina);
+      if (!existeFiltro) setFiltroMaquina('TODAS');
+    }
+
+    // se não tem máquinas, limpa seleção do form
+    if (maquinas.length === 0 && novaMaquinaForm) {
+      setNovaMaquinaForm('');
+    }
+  }, [maquinas, novaMaquinaForm, filtroMaquina]);
 
   useEffect(() => {
     if (filtroMaquina !== 'TODAS') {
@@ -205,7 +215,7 @@ const GlobalScreen = () => {
     return maq ? maq.unidade : '';
   };
 
-  // ====== CÁLCULOS (teu bloco original) ======
+  // ====== CÁLCULOS ======
   const dadosGrafico = useMemo(() => {
     let metaDiariaAtiva = 0;
     let unidadeAtiva = 'un';
@@ -253,7 +263,7 @@ const GlobalScreen = () => {
         metaPlotada: 100,
         tipo: 'diario',
         performance,
-        unidade: unidadeAtiva
+        unidade: unidadeAtiva,
       };
     });
 
@@ -267,7 +277,7 @@ const GlobalScreen = () => {
       metaPlotada: 100,
       tipo: 'projetado',
       performance: performanceProjetada,
-      unidade: unidadeAtiva
+      unidade: unidadeAtiva,
     });
 
     return {
@@ -276,18 +286,19 @@ const GlobalScreen = () => {
       projetadoValor,
       metaTotalMes,
       metaDiariaAtiva,
-      unidadeAtiva
+      unidadeAtiva,
     };
   }, [lancamentos, config, maquinas, filtroMaquina]);
 
-  // ====== ACTIONS (agora com Firebase) ======
+  // ====== ACTIONS (Firebase) ======
   const handleAddLancamento = async (e) => {
     e.preventDefault();
     if (!novoDia || !novoValor) return;
+    if (maquinas.length === 0) return;
 
-    const maqFinal = novaMaquinaForm || (maquinas[0] ? maquinas[0].nome : 'Geral');
+    const maqFinal = novaMaquinaForm || maquinas[0]?.nome;
+    if (!maqFinal) return;
 
-    // localhost: só local state
     if (typeof IS_LOCALHOST !== 'undefined' && IS_LOCALHOST) {
       setLancamentos((prev) => [
         ...prev,
@@ -304,7 +315,6 @@ const GlobalScreen = () => {
       return;
     }
 
-    // produção: salva no Firestore
     await addDoc(collection(db, 'global_lancamentos'), {
       dia: novoDia,
       real: Number(novoValor),
@@ -365,7 +375,6 @@ const GlobalScreen = () => {
     const maq = maquinas.find((m) => m.nome === nomeParaRemover);
     const novaLista = maquinas.filter((m) => m.nome !== nomeParaRemover);
 
-    // Ajustes locais (UI)
     if (filtroMaquina === nomeParaRemover) setFiltroMaquina('TODAS');
     if (novaMaquinaForm === nomeParaRemover && novaLista.length > 0) setNovaMaquinaForm(novaLista[0].nome);
 
@@ -402,7 +411,6 @@ const GlobalScreen = () => {
     await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
   };
 
-  // Config mensal: salva dias úteis do mês selecionado no Firestore
   const saveDiasUteisMes = async (dias) => {
     const d = Number(dias);
     if (!Number.isFinite(d) || d <= 0) return;
@@ -422,71 +430,76 @@ const GlobalScreen = () => {
     );
   };
 
-  // ====== Label do gráfico (teu original) ======
+  // ====== Label do gráfico ======
   const renderCustomizedLabel = (props) => {
-  const { x, y, width, index } = props;
+    const { x, y, width, index } = props;
 
-  const item = dadosGrafico?.dados?.[index];
+    const item = dadosGrafico?.dados?.[index];
+    if (!item) return null;
 
-  // 🔒 proteção total
-  if (!item) return null;
+    const valorReal = Number(item.realOriginal || 0);
+    const performance = Number(item.performance || 0);
+    const atingiuMeta = performance >= 100;
 
-  const valorReal = Number(item.realOriginal || 0);
-  const performance = Number(item.performance || 0);
-  const atingiuMeta = performance >= 100;
+    const corBox = '#18181b';
+    const corTexto = '#ffffff';
+    const icone = atingiuMeta ? '✓' : '';
+    const corBorda = atingiuMeta ? '#22c55e' : '#ef4444';
 
-  const corBox = '#18181b';
-  const corTexto = '#ffffff';
-  const icone = atingiuMeta ? '✓' : '';
-  const corBorda = atingiuMeta ? '#22c55e' : '#ef4444';
+    return (
+      <g>
+        <line
+          x1={x + width / 2}
+          y1={y}
+          x2={x + width / 2}
+          y2={y - 10}
+          stroke="#52525b"
+          strokeWidth="2"
+        />
 
-  return (
-    <g>
-      <line
-        x1={x + width / 2}
-        y1={y}
-        x2={x + width / 2}
-        y2={y - 10}
-        stroke="#52525b"
-        strokeWidth="2"
-      />
+        <rect
+          x={x + width / 2 - 35}
+          y={y - 45}
+          width="70"
+          height="35"
+          fill={corBox}
+          rx="4"
+          stroke={corBorda}
+          strokeWidth="2"
+        />
 
-      <rect
-        x={x + width / 2 - 35}
-        y={y - 45}
-        width="70"
-        height="35"
-        fill={corBox}
-        rx="4"
-        stroke={corBorda}
-        strokeWidth="2"
-      />
+        <text
+          x={x + width / 2}
+          y={y - 23}
+          fill={corTexto}
+          textAnchor="middle"
+          fontSize={13}
+          fontWeight="bold"
+        >
+          {icone} {performance.toFixed(0)}%
+        </text>
 
-      <text
-        x={x + width / 2}
-        y={y - 23}
-        fill={corTexto}
-        textAnchor="middle"
-        fontSize={13}
-        fontWeight="bold"
-      >
-        {icone} {performance.toFixed(0)}%
-      </text>
+        <text
+          x={x + width / 2}
+          y={y + 20}
+          fill="#e4e4e7"
+          textAnchor="middle"
+          fontSize={12}
+          fontWeight="bold"
+        >
+          {valorReal.toLocaleString('pt-BR')}
+        </text>
+      </g>
+    );
+  };
 
-      <text
-        x={x + width / 2}
-        y={y + 20}
-        fill="#e4e4e7"
-        textAnchor="middle"
-        fontSize={12}
-        fontWeight="bold"
-      >
-        {valorReal.toLocaleString('pt-BR')}
-      </text>
-    </g>
-  );
-};
-
+  // =========================
+  // RENDER
+  // =========================
+  const lancamentosVisiveis =
+    filtroMaquina === 'TODAS'
+      ? lancamentos
+      : lancamentos.filter((l) => l.maquina === filtroMaquina);
 
   return (
     <div className="w-full h-full overflow-auto p-4 md:p-6 bg-[#09090b] text-zinc-100">
@@ -564,7 +577,7 @@ const GlobalScreen = () => {
           </h2>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* CONFIG GERAL (AGORA MENSAL) */}
+            {/* CONFIG GERAL (MENSAL) */}
             <div className="bg-zinc-800 p-4 shadow-sm border border-zinc-700 rounded-lg">
               <h3 className="text-xs font-bold text-zinc-500 uppercase mb-2">Calendário</h3>
 
@@ -607,43 +620,54 @@ const GlobalScreen = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
-                    {maquinas.map((m) => (
-                      <tr key={m.id || m.nome} className="hover:bg-zinc-700/50">
-                        <td className="px-4 py-2 font-bold text-zinc-200">{m.nome}</td>
-                        <td className="px-4 py-2 text-center">
-                          <div className="relative inline-block w-full">
-                            <select
-                              value={m.unidade}
-                              onChange={(e) => handleUpdateUnidade(m.nome, e.target.value)}
-                              className="w-full bg-zinc-900 border border-zinc-600 text-zinc-200 font-bold focus:ring-1 focus:ring-blue-500 rounded py-1 px-2 text-center appearance-none cursor-pointer hover:bg-zinc-950 transition-colors"
-                            >
-                              <option value="pç">Pç (Peças)</option>
-                              <option value="kg">Kg (Quilos)</option>
-                              <option value="m">m (Metros)</option>
-                              <option value="cx">Cx (Caixas)</option>
-                            </select>
-                            <div className="absolute right-2 top-1.5 pointer-events-none text-zinc-500">
-                              {m.unidade === 'kg' && <Scale size={14} />}
-                              {m.unidade === 'm' && <Ruler size={14} />}
-                              {m.unidade === 'cx' && <Box size={14} />}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            value={m.meta}
-                            onChange={(e) => handleUpdateMeta(m.nome, e.target.value)}
-                            className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-right font-mono text-white focus:border-zinc-500 outline-none"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <button onClick={() => handleRemoveMaquina(m.nome)} className="text-zinc-500 hover:text-red-400">
-                            <X size={16} />
-                          </button>
+                    {maquinas.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-zinc-500">
+                          Nenhuma máquina cadastrada. Use a barra abaixo para adicionar.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      maquinas.map((m) => (
+                        <tr key={m.id || m.nome} className="hover:bg-zinc-700/50">
+                          <td className="px-4 py-2 font-bold text-zinc-200">{m.nome}</td>
+                          <td className="px-4 py-2 text-center">
+                            <div className="relative inline-block w-full">
+                              <select
+                                value={m.unidade}
+                                onChange={(e) => handleUpdateUnidade(m.nome, e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-600 text-zinc-200 font-bold focus:ring-1 focus:ring-blue-500 rounded py-1 px-2 text-center appearance-none cursor-pointer hover:bg-zinc-950 transition-colors"
+                              >
+                                <option value="pç">Pç (Peças)</option>
+                                <option value="kg">Kg (Quilos)</option>
+                                <option value="m">m (Metros)</option>
+                                <option value="cx">Cx (Caixas)</option>
+                              </select>
+                              <div className="absolute right-2 top-1.5 pointer-events-none text-zinc-500">
+                                {m.unidade === 'kg' && <Scale size={14} />}
+                                {m.unidade === 'm' && <Ruler size={14} />}
+                                {m.unidade === 'cx' && <Box size={14} />}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              value={m.meta}
+                              onChange={(e) => handleUpdateMeta(m.nome, e.target.value)}
+                              className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-right font-mono text-white focus:border-zinc-500 outline-none"
+                            />
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              onClick={() => handleRemoveMaquina(m.nome)}
+                              className="text-zinc-500 hover:text-red-400"
+                            >
+                              <X size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
 
@@ -700,6 +724,7 @@ const GlobalScreen = () => {
             <h2 className="font-bold text-zinc-200 mb-4 uppercase text-sm flex items-center gap-2">
               <PlusCircle size={18} className="text-zinc-500" /> Registrar Produção
             </h2>
+
             <form onSubmit={handleAddLancamento} className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">Máquina</label>
@@ -707,8 +732,9 @@ const GlobalScreen = () => {
                   className="w-full p-2 bg-zinc-950 border border-zinc-700 rounded focus:border-zinc-500 outline-none text-white text-sm font-medium"
                   value={novaMaquinaForm}
                   onChange={(e) => setNovaMaquinaForm(e.target.value)}
+                  disabled={maquinas.length === 0}
                 >
-                  {maquinas.length === 0 && <option value="">Sem máquinas...</option>}
+                  {maquinas.length === 0 && <option value="">Nenhuma máquina cadastrada</option>}
                   {maquinas.map((m) => (
                     <option key={m.id || m.nome} value={m.nome}>
                       {m.nome}
@@ -726,6 +752,7 @@ const GlobalScreen = () => {
                     className="w-full p-2 bg-zinc-950 border border-zinc-700 rounded focus:border-zinc-500 outline-none text-white text-sm placeholder-zinc-600"
                     value={novoDia}
                     onChange={(e) => setNovoDia(e.target.value)}
+                    disabled={maquinas.length === 0}
                   />
                 </div>
                 <div className="flex-1">
@@ -738,6 +765,7 @@ const GlobalScreen = () => {
                     className="w-full p-2 bg-zinc-950 border border-zinc-700 rounded focus:border-zinc-500 outline-none text-white font-bold text-right placeholder-zinc-600"
                     value={novoValor}
                     onChange={(e) => setNovoValor(e.target.value)}
+                    disabled={maquinas.length === 0}
                   />
                 </div>
               </div>
@@ -745,10 +773,16 @@ const GlobalScreen = () => {
               <button
                 type="submit"
                 disabled={maquinas.length === 0}
-                className="w-full bg-zinc-100 hover:bg-white text-zinc-900 font-bold py-2 uppercase text-sm shadow-lg rounded transition-colors flex justify-center gap-2"
+                className="w-full bg-zinc-100 hover:bg-white text-zinc-900 font-bold py-2 uppercase text-sm shadow-lg rounded transition-colors flex justify-center gap-2 disabled:opacity-50"
               >
                 <Save size={16} /> Salvar
               </button>
+
+              {maquinas.length === 0 && (
+                <div className="text-xs text-zinc-500">
+                  Cadastre uma máquina na aba <b>Config</b> para começar a lançar produção.
+                </div>
+              )}
             </form>
           </div>
 
@@ -756,12 +790,10 @@ const GlobalScreen = () => {
             <div className="p-3 bg-zinc-950/50 border-b border-zinc-800 flex justify-between items-center rounded-t-lg">
               <span className="font-bold text-zinc-300 text-xs uppercase">Lançamentos Recentes</span>
               <span className="text-xs font-mono bg-zinc-800 border border-zinc-600 px-2 py-0.5 text-zinc-400 rounded">
-                {(filtroMaquina === 'TODAS'
-                  ? lancamentos
-                  : lancamentos.filter((l) => l.maquina === filtroMaquina)
-                ).length}
+                {lancamentosVisiveis.length}
               </span>
             </div>
+
             <div className="flex-1 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-950 text-xs text-zinc-500 font-bold uppercase sticky top-0 border-b border-zinc-800">
@@ -772,31 +804,39 @@ const GlobalScreen = () => {
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
+
                 <tbody className="divide-y divide-zinc-800">
-                  {(filtroMaquina === 'TODAS'
-                    ? lancamentos
-                    : lancamentos.filter((l) => l.maquina === filtroMaquina)
-                  ).map((l) => (
-                    <tr key={l.id} className="hover:bg-zinc-800/50">
-                      <td className="px-3 py-2 font-medium text-zinc-300">{l.dia}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-500 truncate max-w-[80px]">{l.maquina}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-zinc-200">
-                        {Number(l.real || 0).toLocaleString()}{' '}
-                        <span className="text-[10px] text-zinc-500 font-normal">{getUnidadeAtual(l.maquina)}</span>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button onClick={() => handleDeleteLancamento(l.id)} className="text-zinc-600 hover:text-red-400">
-                          <Trash2 size={14} />
-                        </button>
+                  {maquinas.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-sm text-zinc-500">
+                        Cadastre uma máquina para começar.
                       </td>
                     </tr>
-                  ))}
-                  {lancamentos.length === 0 && (
+                  ) : lancamentosVisiveis.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-3 py-6 text-center text-sm text-zinc-500">
                         Sem lançamentos neste mês.
                       </td>
                     </tr>
+                  ) : (
+                    lancamentosVisiveis.map((l) => (
+                      <tr key={l.id} className="hover:bg-zinc-800/50">
+                        <td className="px-3 py-2 font-medium text-zinc-300">{l.dia}</td>
+                        <td className="px-3 py-2 text-xs text-zinc-500 truncate max-w-[80px]">{l.maquina}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-200">
+                          {Number(l.real || 0).toLocaleString('pt-BR')}{' '}
+                          <span className="text-[10px] text-zinc-500 font-normal">{getUnidadeAtual(l.maquina)}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => handleDeleteLancamento(l.id)}
+                            className="text-zinc-600 hover:text-red-400"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -813,18 +853,19 @@ const GlobalScreen = () => {
                   <TrendingUp className="text-zinc-100" size={20} />
                   Performance: {filtroMaquina === 'TODAS' ? 'Geral' : filtroMaquina}
                 </h3>
+
                 <div className="mt-1 flex gap-4 text-xs font-bold text-zinc-500 uppercase">
                   <span>
                     Meta Diária:{' '}
                     <span className="text-zinc-200 text-sm">
-                      {dadosGrafico.metaDiariaAtiva.toLocaleString()} {dadosGrafico.unidadeAtiva}
+                      {dadosGrafico.metaDiariaAtiva.toLocaleString('pt-BR')} {dadosGrafico.unidadeAtiva}
                     </span>
                   </span>
                   <span className="text-zinc-700">|</span>
                   <span>
                     Meta Mensal:{' '}
                     <span className="text-zinc-200 text-sm">
-                      {dadosGrafico.metaTotalMes.toLocaleString()} {dadosGrafico.unidadeAtiva}
+                      {dadosGrafico.metaTotalMes.toLocaleString('pt-BR')} {dadosGrafico.unidadeAtiva}
                     </span>
                   </span>
                 </div>
@@ -838,79 +879,89 @@ const GlobalScreen = () => {
                       dadosGrafico.projetadoValor >= dadosGrafico.metaTotalMes ? 'text-green-500' : 'text-orange-500'
                     }`}
                   >
-                    {dadosGrafico.projetadoValor.toLocaleString()}
+                    {dadosGrafico.projetadoValor.toLocaleString('pt-BR')}
                   </span>
-                  <span className="text-xs text-zinc-500 font-bold self-end mb-1 uppercase">{dadosGrafico.unidadeAtiva}</span>
+                  <span className="text-xs text-zinc-500 font-bold self-end mb-1 uppercase">
+                    {dadosGrafico.unidadeAtiva}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 w-full relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={dadosGrafico.dados} margin={{ top: 60, right: 30, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+            <div className="flex-1 w-full relative min-h-[420px]">
+              {maquinas.length === 0 ? (
+                <div className="w-full h-full flex items-center justify-center text-zinc-500 text-sm">
+                  Cadastre ao menos uma máquina para visualizar o gráfico.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={dadosGrafico.dados} margin={{ top: 60, right: 30, left: 20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
 
-                  <XAxis
-                    dataKey="name"
-                    axisLine={true}
-                    tickLine={true}
-                    tick={{ fill: '#71717a', fontSize: 12, fontWeight: 'bold' }}
-                    dy={10}
-                    stroke="#3f3f46"
-                  />
+                    <XAxis
+                      dataKey="name"
+                      axisLine={true}
+                      tickLine={true}
+                      tick={{ fill: '#71717a', fontSize: 12, fontWeight: 'bold' }}
+                      dy={10}
+                      stroke="#3f3f46"
+                    />
 
-                  <YAxis hide domain={[0, 'auto']} />
+                    <YAxis hide domain={[0, 'auto']} />
 
-                  <Tooltip
-                    cursor={{ fill: '#27272a', opacity: 0.5 }}
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const d = payload[0].payload;
-                        return (
-                          <div className="bg-zinc-950 border border-zinc-700 p-2 shadow-xl text-xs rounded text-zinc-200">
-                            <div className="font-bold uppercase mb-1 border-b border-zinc-800 pb-1 text-zinc-400">{d.name}</div>
-                            <div>
-                              Real: <span className="text-white font-mono">{d.realOriginal}</span>{' '}
-                              <span className="text-zinc-500">{d.unidade}</span>
+                    <Tooltip
+                      cursor={{ fill: '#27272a', opacity: 0.5 }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const d = payload[0].payload;
+                          return (
+                            <div className="bg-zinc-950 border border-zinc-700 p-2 shadow-xl text-xs rounded text-zinc-200">
+                              <div className="font-bold uppercase mb-1 border-b border-zinc-800 pb-1 text-zinc-400">
+                                {d.name}
+                              </div>
+                              <div>
+                                Real: <span className="text-white font-mono">{d.realOriginal}</span>{' '}
+                                <span className="text-zinc-500">{d.unidade}</span>
+                              </div>
+                              <div>
+                                Meta: <span className="text-white font-mono">{d.metaOriginal}</span>{' '}
+                                <span className="text-zinc-500">{d.unidade}</span>
+                              </div>
+                              <div className={`mt-1 ${d.performance >= 100 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}`}>
+                                {d.performance.toFixed(1)}%
+                              </div>
                             </div>
-                            <div>
-                              Meta: <span className="text-white font-mono">{d.metaOriginal}</span>{' '}
-                              <span className="text-zinc-500">{d.unidade}</span>
-                            </div>
-                            <div className={`mt-1 ${d.performance >= 100 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}`}>
-                              {d.performance.toFixed(1)}%
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
+                          );
+                        }
+                        return null;
+                      }}
+                    />
 
-                  <Bar dataKey="valorPlotado" barSize={50}>
-                    {dadosGrafico.dados.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.tipo === 'projetado' ? '#f97316' : '#2563eb'} />
-                    ))}
-                    <LabelList content={renderCustomizedLabel} />
-                  </Bar>
+                    <Bar dataKey="valorPlotado" barSize={50}>
+                      {dadosGrafico.dados.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.tipo === 'projetado' ? '#f97316' : '#2563eb'} />
+                      ))}
+                      <LabelList content={renderCustomizedLabel} />
+                    </Bar>
 
-                  <Line
-                    type="linear"
-                    dataKey="metaPlotada"
-                    stroke="#eab308"
-                    strokeWidth={4}
-                    dot={false}
-                    activeDot={false}
-                    isAnimationActive={false}
-                  />
+                    <Line
+                      type="linear"
+                      dataKey="metaPlotada"
+                      stroke="#eab308"
+                      strokeWidth={4}
+                      dot={false}
+                      activeDot={false}
+                      isAnimationActive={false}
+                    />
 
-                  <ReferenceLine
-                    y={100}
-                    label={{ position: 'right', value: '100%', fill: '#ca8a04', fontSize: 12, fontWeight: 'bold' }}
-                    stroke="transparent"
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+                    <ReferenceLine
+                      y={100}
+                      label={{ position: 'right', value: '100%', fill: '#ca8a04', fontSize: 12, fontWeight: 'bold' }}
+                      stroke="transparent"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             <div className="mt-4 flex justify-center gap-6 text-xs font-bold uppercase text-zinc-500 border-t border-zinc-800 pt-4">
