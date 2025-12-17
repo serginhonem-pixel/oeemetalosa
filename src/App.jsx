@@ -696,6 +696,27 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
     );
   };
 
+const toISODate = (v) => {
+  if (!v) return "";
+  // Firestore Timestamp
+  if (typeof v === "object" && typeof v.toDate === "function") {
+    const d = v.toDate();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  // JS Date
+  if (v instanceof Date) {
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, "0");
+    const day = String(v.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  // string
+  return String(v);
+};
+
 
   
 useEffect(() => {
@@ -734,41 +755,62 @@ useEffect(() => {
     // ------------------------------
     // MODO PRODUÇÃO (Vercel / nuvem)
     // ------------------------------
-    try {
-      console.log("☁️ Modo Produção: Buscando dados do Firebase...");
+    // ------------------------------
+// MODO PRODUÇÃO (Vercel / nuvem)
+// ------------------------------
+try {
+  console.log("☁️ Modo Produção: Buscando dados do Firebase...");
 
-      // 1. Romaneios
-      const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
-      const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
-        sysId: docSnap.id,
-        ...docSnap.data(),
-      }));
-      setFilaProducao(listaRomaneios);
+  // 1. Romaneios
+  const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
+  const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => {
+    const d = docSnap.data();
+    return {
+      sysId: docSnap.id,
+      ...d,
+      data: toISODate(d.data), // ✅ normaliza
+    };
+  });
+  setFilaProducao(listaRomaneios);
 
-      // 2. Produção Real
-      const producaoSnapshot = await getDocs(collection(db, "producao"));
-      const listaProducao = producaoSnapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        const { id, ...rest } = data;
-        return {
-          id: docSnap.id,
-          ...rest,
-        };
-      });
-      setHistoricoProducaoReal(listaProducao);
+  // 2. Produção Real
+  const producaoSnapshot = await getDocs(collection(db, "producao"));
+  const listaProducao = producaoSnapshot.docs.map((docSnap) => {
+    const d = docSnap.data();
+    const { id, ...rest } = d;
+    return {
+      id: docSnap.id,
+      ...rest,
+      data: toISODate(d.data), // ✅ normaliza
+    };
+  });
+  setHistoricoProducaoReal(listaProducao);
 
-      // 3. Paradas
-      const paradasSnapshot = await getDocs(collection(db, "paradas"));
-      const listaParadas = paradasSnapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
-      setHistoricoParadas(listaParadas);
+  // 3. Paradas
+  const paradasSnapshot = await getDocs(collection(db, "paradas"));
+  const listaParadas = paradasSnapshot.docs.map((docSnap) => {
+    const d = docSnap.data();
+    return {
+      id: docSnap.id,
+      ...d,
+      data: toISODate(d.data), // ✅ se existir; se não existir fica ""
+    };
+  });
+  setHistoricoParadas(listaParadas);
 
-      console.log("✅ Dados da nuvem carregados!");
-    } catch (erro) {
-      console.error("❌ Erro ao buscar dados:", erro);
-    }
+  console.log("✅ Dados da nuvem carregados!", {
+    romaneios: listaRomaneios.length,
+    producao: listaProducao.length,
+    paradas: listaParadas.length,
+    sampleProducaoData: listaProducao[0]?.data,
+  });
+} catch (erro) {
+  console.error("❌ Erro ao buscar dados:", erro);
+  // MUITO importante pra você não ficar “zerado” sem saber o motivo:
+  toast?.(`Erro Firebase: ${erro?.code || erro?.message || "desconhecido"}`) ||
+    alert(`Erro Firebase: ${erro?.code || erro?.message || "desconhecido"}`);
+}
+
   };
 
   carregarDados();
