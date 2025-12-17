@@ -708,7 +708,7 @@ pptx.layout = 'LAYOUT_WIDE';
           { text: `${dadosGrafico.aderenciaMeta.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 18, bold: true } }
       ], { x: 0.3, y: 1.0, w: 3.0, h: 4.5, valign: 'top' });
 
-      slideResumo.addImage({ data: imgResumo, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
+slideResumo.addImage({ data: imgResumo, x: 4.2, y: 1.1, w: 8.8, h: 5.8 });
 
       // 2. Slides Máquinas INDIVIDUAIS
       for (const m of maquinas) {
@@ -752,7 +752,7 @@ pptx.layout = 'LAYOUT_WIDE';
             { text: `${ating.toFixed(1)}%\n\n`, options: { color: ating >= 100 ? '4ADE80' : 'F87171', fontSize: 16, bold: true } },
         ], { x: 0.3, y: 1.0, w: 3.0, h: 5.2, valign: 'top' });
 
-        slide.addImage({ data: img, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
+slide.addImage({ data: img, x: 4.2, y: 1.1, w: 8.8, h: 5.8 });
       }
 
       setFiltroMaquina(filtroOriginal);
