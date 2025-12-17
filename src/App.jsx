@@ -2296,9 +2296,9 @@ const handleImportBackup = (json) => {
 
           </div>
         </nav>
-        {abaAtiva === 'global' && (
+        <div style={{ display: abaAtiva === 'global' ? 'block' : 'none' }}>
   <GlobalScreen />
-)}
+</div>
 
 
         {/* --- CONTEÚDO --- */}
