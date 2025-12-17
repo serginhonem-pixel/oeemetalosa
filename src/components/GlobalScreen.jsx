@@ -690,6 +690,9 @@ const GlobalScreen = () => {
           
           { text: `Realizado: `, options: { color: '9CA3AF', fontSize: 14 } },
           { text: `${dadosGrafico.totalProduzido.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
+
+          { text: `Média Diária: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${Number(dadosGrafico.mediaDiaria || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${dadosGrafico.unidadeAtiva}/dia\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
           
           { text: `Atingimento: `, options: { color: '9CA3AF', fontSize: 14 } },
           { text: `${dadosGrafico.atingimentoMes.toFixed(1)}%\n\n`, options: { color: dadosGrafico.atingimentoMes >= 100 ? '4ADE80' : 'F87171', fontSize: 18, bold: true } },
