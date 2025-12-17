@@ -336,6 +336,7 @@ const GlobalScreen = () => {
       diasUteis: diasUteisVal,
       atingimentoMes,
       aderenciaMeta,
+      mediaDiaria,
       diasTrabalhados,
       gap
     };
@@ -606,14 +607,6 @@ const GlobalScreen = () => {
         for (let i = 0; i < maquinas.length; i++) {
             const m = maquinas[i];
             setFiltroMaquina(m.nome);
-            
-            // --- CÁLCULOS PARA O TEXTO DO PDF ---
-            const lancMaq = lancamentos.filter((l) => l.maquina === m.nome);
-            const realMes = lancMaq.reduce((acc, x) => acc + (Number(x.real) || 0), 0);
-            const diasProd = [...new Set(lancMaq.map(l => l.dia))].length; // Dias únicos com produção
-            const mediaReal = diasProd > 0 ? realMes / diasProd : 0;
-            const metaDia = Number(m.meta || 0);
-            // ------------------------------------
 
             // Tempo suficiente para o gráfico renderizar sem animação
             await sleep(500); 
@@ -632,8 +625,8 @@ const GlobalScreen = () => {
             const imgProps = pdf.getImageProperties(imgData);
             const imgH = (imgProps.height * imgW) / imgProps.width;
 
-            // Ajustei a posição Y da imagem para 90 para caber o texto extra
-            pdf.addImage(imgData, 'PNG', margin, 90, imgW, imgH);
+            // Posição Y da imagem ajustada para caber título/subtítulo
+            pdf.addImage(imgData, 'PNG', margin, 70, imgW, imgH);
 
             // Título
             pdf.setTextColor(255, 255, 255);
@@ -644,13 +637,6 @@ const GlobalScreen = () => {
             pdf.setTextColor(156, 163, 175); 
             pdf.setFontSize(10);
             pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 55);
-
-            // --- NOVA LINHA DE INFORMAÇÕES (MÉDIA) ---
-            pdf.setTextColor(200, 200, 200);
-            pdf.setFontSize(11);
-            const textoDados = `Realizado: ${realMes.toLocaleString('pt-BR')} ${m.unidade}  |  Média Diária: ${mediaReal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${m.unidade}/dia  |  Meta Dia: ${metaDia.toLocaleString('pt-BR')} ${m.unidade}`;
-            pdf.text(textoDados, margin, 75);
-            // -----------------------------------------
         }
 
         pdf.save(`Graficos_${mesRef}.pdf`);
@@ -1219,6 +1205,22 @@ const GlobalScreen = () => {
                             {dadosGrafico.aderenciaMeta.toFixed(1)}%
                         </span>
                     </div>
+                </div>
+
+                {/* Linha de resumo (vai junto na captura do PDF/PPTX)
+                   Obs: NÃO repete "Meta Diária" pra não duplicar informação do card */}
+                <div className="mt-3 text-[11px] text-zinc-300 flex flex-wrap items-center gap-2">
+                  <span className="text-zinc-400">Realizado:</span>
+                  <span className="font-mono font-bold text-white">
+                    {Number(dadosGrafico.totalProduzido || 0).toLocaleString('pt-BR')}{' '}
+                    <span className="text-zinc-600 text-[10px] font-bold">{dadosGrafico.unidadeAtiva}</span>
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-400">Média Diária:</span>
+                  <span className="font-mono font-bold text-white">
+                    {Number(dadosGrafico.mediaDiaria || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}{' '}
+                    <span className="text-zinc-600 text-[10px] font-bold">{dadosGrafico.unidadeAtiva}/dia</span>
+                  </span>
                 </div>
               </div>
 
