@@ -364,8 +364,10 @@ const GlobalScreen = () => {
           {icone} {performance.toFixed(0)}%
         </text>
         <text x={x + width / 2} y={y + 16} fill="#e4e4e7" textAnchor="middle" fontSize={10} fontWeight="bold">
-          {Number(item.realOriginal || 0).toLocaleString('pt-BR', { notation: 'compact' })}
-        </text>
+{Number(item.realOriginal || 0).toLocaleString('pt-BR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})}        </text>
       </g>
     );
   };
