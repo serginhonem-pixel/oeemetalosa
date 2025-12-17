@@ -378,12 +378,22 @@ export const ProducaoScreen = ({
           <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <input
-                id="input-upload-producao"
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={handleUploadApontamentoProducao}
-              />
+  id="input-upload-producao"
+  type="file"
+  accept=".xlsx,.xls,.csv"
+  className="hidden"
+  onChange={(e) => {
+    // opcional: exigir máquina pra importar
+    if (!formApontProdMaquina) {
+      alert("Selecione uma máquina antes de importar a produção.");
+      e.target.value = ""; // limpa o input pra permitir escolher o mesmo arquivo de novo
+      return;
+    }
+
+    handleUploadApontamentoProducao?.(e, formApontProdMaquina);
+  }}
+/>
+
             <label
                 htmlFor="input-upload-producao"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] bg-zinc-900 border border-zinc-700 text-zinc-200 cursor-pointer hover:bg-zinc-800"

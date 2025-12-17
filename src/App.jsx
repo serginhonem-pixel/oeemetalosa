@@ -982,17 +982,28 @@ useEffect(() => {
 const handleDownloadModeloApontProd = () => {
   const ws = XLSX.utils.json_to_sheet([
     {
-      DATA: '2025-12-08',         // aceita 2025-12-08 ou 08/12/2025
-      CODIGO: '02006',
-      DESCRICAO: 'TELHA TP40 GALV',
+      DATA: "2025-12-08", // aceita 2025-12-08 ou 08/12/2025
+      MAQUINA_ID: "",     // ex: "maq_01" (ou o id que você usa no catalogoMaquinas)
+      CODIGO: "02006",
+      DESCRICAO: "TELHA TP40 GALV",
       QTD: 120,
-      DESTINO: 'Estoque',        // ou Cometa 04 / Serra 06 etc.
+      DESTINO: "Estoque", // ou Cometa 04 / Serra 06 etc.
     },
   ]);
 
+  // opcional: larguras melhores no Excel
+  ws["!cols"] = [
+    { wch: 12 }, // DATA
+    { wch: 18 }, // MAQUINA_ID
+    { wch: 10 }, // CODIGO
+    { wch: 30 }, // DESCRICAO
+    { wch: 8 },  // QTD
+    { wch: 16 }, // DESTINO
+  ];
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Apont_Producao');
-  XLSX.writeFile(wb, 'Modelo_Apontamento_Producao.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, "Apont_Producao");
+  XLSX.writeFile(wb, "Modelo_Apontamento_Producao.xlsx");
 };
 
 // Modelo de APONTAMENTO DE PARADAS
@@ -1375,68 +1386,74 @@ const deletarProducaoReal = async (id) => {
 };
 
   
-  const handleUploadApontamentoProducao = (e) => {
-  const file = e.target.files[0];
+  const handleUploadApontamentoProducao = (e, maquinaId) => {
+  const file = e.target.files?.[0];
   if (!file) return;
+
+  // exige máquina
+  if (!maquinaId) {
+    alert("Selecione uma máquina antes de importar a produção.");
+    e.target.value = null;
+    return;
+  }
 
   const reader = new FileReader();
 
   reader.onload = async (evt) => {
-    const wb = XLSX.read(evt.target.result, {
-      type: "binary",
-      cellDates: true,
-    });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(sheet);
-
-    const novos = data
-      .map((row) => {
-        const rawData = encontrarValorNaLinha(row, [
-          "DATA",
-          "DT",
-          "DATA_APONTAMENTO",
-        ]);
-        const dataISO = processarDataExcel(rawData);
-
-        const cod = String(
-          encontrarValorNaLinha(row, ["CODIGO", "COD", "PRODUTO"]) || ""
-        ).trim();
-
-        const qtdRaw = encontrarValorNaLinha(row, [
-          "QTD",
-          "QUANTIDADE",
-          "QDE",
-        ]);
-        const qtd =
-          parseInt(String(qtdRaw ?? 0).replace(",", "."), 10) || 0;
-
-        const desc = String(
-          encontrarValorNaLinha(row, ["DESCRICAO", "DESC"]) || ""
-        ).trim();
-
-        const destino = String(
-          encontrarValorNaLinha(row, ["DESTINO", "LOCAL", "ARMAZEM"]) ||
-            "Estoque"
-        ).trim();
-
-        if (!cod || !qtd) return null;
-
-        return {
-          data: dataISO,
-          cod,
-          desc: desc || "Item s/ descrição",
-          qtd,
-          destino,
-        };
-      })
-      .filter(Boolean);
-
-    if (!novos.length) {
-      alert("Nenhuma linha válida encontrada no arquivo de produção.");
-      return;
-    }
-
     try {
+      const wb = XLSX.read(evt.target.result, {
+        type: "binary",
+        cellDates: true,
+      });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(sheet);
+
+      const novos = data
+        .map((row) => {
+          const rawData = encontrarValorNaLinha(row, [
+            "DATA",
+            "DT",
+            "DATA_APONTAMENTO",
+          ]);
+          const dataISO = processarDataExcel(rawData);
+
+          const cod = String(
+            encontrarValorNaLinha(row, ["CODIGO", "COD", "PRODUTO"]) || ""
+          ).trim();
+
+          const qtdRaw = encontrarValorNaLinha(row, ["QTD", "QUANTIDADE", "QDE"]);
+          const qtd = parseInt(String(qtdRaw ?? 0).replace(",", "."), 10) || 0;
+
+          const desc = String(
+            encontrarValorNaLinha(row, ["DESCRICAO", "DESC"]) || ""
+          ).trim();
+
+          const destino = String(
+            encontrarValorNaLinha(row, ["DESTINO", "LOCAL", "ARMAZEM"]) || "Estoque"
+          ).trim();
+
+          if (!cod || !qtd) return null;
+
+          return {
+            data: dataISO,
+            cod,
+            desc: desc || "Item s/ descrição",
+            qtd,
+            destino,
+
+            // ✅ máquina vem do filtro selecionado na tela
+            maquinaId,
+            // opcional (se quiser redundância):
+            // maquina: maquinaId,
+          };
+        })
+        .filter(Boolean);
+
+      if (!novos.length) {
+        alert("Nenhuma linha válida encontrada no arquivo de produção.");
+        return;
+      }
+
       const salvos = await Promise.all(
         novos.map(async (item) => {
           const docRef = await addDoc(collection(db, "producao"), item);
@@ -1445,17 +1462,16 @@ const deletarProducaoReal = async (id) => {
       );
 
       setHistoricoProducaoReal((prev) => [...salvos, ...prev]);
-      alert(
-        `${salvos.length} apontamentos de produção importados e salvos na nuvem.`
-      );
+      alert(`${salvos.length} apontamentos de produção importados e salvos na nuvem.`);
     } catch (err) {
       console.error("Erro ao importar apontamentos de produção:", err);
-      alert("Erro ao salvar apontamentos de produção no servidor.");
+      alert("Erro ao importar/salvar apontamentos de produção.");
+    } finally {
+      e.target.value = null;
     }
   };
 
   reader.readAsBinaryString(file);
-  e.target.value = null;
 };
 
 
