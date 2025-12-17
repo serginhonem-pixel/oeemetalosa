@@ -577,17 +577,20 @@ const GlobalScreen = () => {
 
   // ===== EXPORT IMAGEM COMUM ======
   const captureChartPNG = async () => {
-    const el = chartCaptureRef.current;
-    if (!el) throw new Error('chartCaptureRef não encontrado');
-    
-    // Captura com escala maior para qualidade
-    const canvas = await html2canvas(el, {
-      backgroundColor: '#09090b',
-      scale: 3, 
-      useCORS: true,
-    });
-    return canvas.toDataURL('image/png');
-  };
+  const el = chartCaptureRef.current; // ✅ ref correto
+  if (!el) throw new Error("chartCaptureRef está null (não achou o container do gráfico).");
+
+  const canvas = await html2canvas(el, {
+    scale: 2,               // 1.5~2 fica bom
+    useCORS: true,
+    backgroundColor: "#09090b", // ✅ sem alpha (evita preto bugado)
+    logging: false,
+  });
+
+  return canvas.toDataURL("image/png", 1.0);
+};
+
+
 
   // ===== EXPORT PDF (Graficos) ======
   // ===== EXPORT PDF (Graficos) ======
@@ -659,76 +662,111 @@ const GlobalScreen = () => {
 
   // ===== EXPORT PPTX (Relatório) ======
   const exportPPTX = async () => {
-  if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
-  if (exportando) return;
+    if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+    if (exportando) return; 
 
-  setExportando(true);
-  setBusy(true);
-  toast('Gerando PPTX...', 0);
+    setExportando(true);
+    setBusy(true);
+    toast('Gerando PPTX...', 0);
 
-  const filtroOriginal = filtroMaquina;
+    try {
+      const pptx = new PptxGenJS();
+pptx.layout = 'LAYOUT_WIDE';
+      pptx.author = 'GlobalScreen';
+      
+      pptx.defineSlideMaster({
+        title: "MASTER_DARK",
+        background: { color: "09090b" },
+      });
 
-  try {
-    const pptx = new PptxGenJS();
-    pptx.layout = 'LAYOUT_WIDE'; // <- 16:9 estável
-    pptx.author = 'GlobalScreen';
+      const filtroOriginal = filtroMaquina;
 
-    pptx.defineSlideMaster({
-      title: "MASTER_DARK",
-      background: { color: "09090b" },
-    });
+      // 1. Slide Resumo Global (Mantive igual, mas se quiser média global avise)
+      setFiltroMaquina('TODAS');
+      await sleep(600); 
+      await new Promise((r) => requestAnimationFrame(r));
+      const imgResumo = await captureChartPNG();
 
-    // --------- SLIDE RESUMO ----------
-    flushSync(() => setFiltroMaquina('TODAS'));
-    await nextPaint();
-    await sleep(400);
+      const slideResumo = pptx.addSlide("MASTER_DARK");
+      
+      slideResumo.addText(`Resumo Global – ${monthLabel(mesRef)}`, { x: 0.3, y: 0.3, w: 9.0, fontSize: 24, bold: true, color: 'FFFFFF' });
+      
+      slideResumo.addText([
+          { text: `Meta Mensal: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.metaTotalMes.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
+          
+          { text: `Realizado: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.totalProduzido.toLocaleString('pt-BR')} ${dadosGrafico.unidadeAtiva}\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
 
-    const imgResumo = await captureChartPNG();
+          { text: `Média Diária: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${Number(dadosGrafico.mediaDiaria || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${dadosGrafico.unidadeAtiva}/dia\n`, options: { color: 'FFFFFF', fontSize: 18, bold: true } },
+          
+          { text: `Atingimento: `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.atingimentoMes.toFixed(1)}%\n\n`, options: { color: dadosGrafico.atingimentoMes >= 100 ? '4ADE80' : 'F87171', fontSize: 18, bold: true } },
 
-    const slideResumo = pptx.addSlide("MASTER_DARK");
-    // ... (seus addText/addImage iguais)
+          { text: `Aderência (Ritmo): `, options: { color: '9CA3AF', fontSize: 14 } },
+          { text: `${dadosGrafico.aderenciaMeta.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 18, bold: true } }
+      ], { x: 0.3, y: 1.0, w: 3.0, h: 4.5, valign: 'top' });
 
-    // --------- SLIDES POR MÁQUINA ----------
-    for (let i = 0; i < maquinas.length; i++) {
-      const m = maquinas[i];
+      slideResumo.addImage({ data: imgResumo, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
 
-      // força render do filtro ANTES de capturar
-      flushSync(() => setFiltroMaquina(m.nome));
-      await nextPaint();
-      await sleep(400);
+      // 2. Slides Máquinas INDIVIDUAIS
+      for (const m of maquinas) {
+        setFiltroMaquina(m.nome);
+        await sleep(600);
+        await new Promise((r) => requestAnimationFrame(r));
+        const img = await captureChartPNG();
 
-      let img;
-      try {
-        img = await captureChartPNG();
-      } catch (err) {
-        console.error(`Falhou capturar máquina ${m.nome}:`, err);
-        continue; // não mata o PPT inteiro
+        const slide = pptx.addSlide("MASTER_DARK");
+        const maq = maquinas.find(x => x.nome === m.nome);
+        const unidade = maq?.unidade || '';
+        const metaDia = Number(maq?.meta || 0);
+        const metaMes = metaDia * Number(config.diasUteis || 22);
+        
+        const lancMaq = lancamentos.filter((l) => l.maquina === m.nome);
+        const realMes = lancMaq.reduce((acc, x) => acc + (Number(x.real) || 0), 0);
+        
+        const diasProd = [...new Set(lancMaq.map(l => l.dia))].length;
+        const mediaReal = diasProd > 0 ? realMes / diasProd : 0;
+        const aderencia = metaDia > 0 ? (mediaReal / metaDia) * 100 : 0;
+        const ating = metaMes > 0 ? (realMes / metaMes) * 100 : 0;
+
+        slide.addText(`Performance – ${m.nome}`, { x: 0.3, y: 0.3, w: 9.0, fontSize: 24, bold: true, color: 'FFFFFF' });
+
+        slide.addText([
+            { text: `Meta Diária: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${metaDia.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
+
+            // --- ADICIONADO MÉDIA REALIZADA AQUI ---
+            { text: `Média Realizada: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${mediaReal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidade}/dia\n\n`, options: { color: 'FACC15', fontSize: 16, bold: true } },
+            // ---------------------------------------
+
+            { text: `Meta Mensal: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${metaMes.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
+            
+            { text: `Realizado: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${realMes.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
+            
+            { text: `Atingimento: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${ating.toFixed(1)}%\n\n`, options: { color: ating >= 100 ? '4ADE80' : 'F87171', fontSize: 16, bold: true } },
+        ], { x: 0.3, y: 1.0, w: 3.0, h: 5.2, valign: 'top' });
+
+        slide.addImage({ data: img, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
       }
 
-      const slide = pptx.addSlide("MASTER_DARK");
-
-      // (seus cálculos iguais)
-      // ... addText / addImage usando `img`
-
-      // dá uma respirada pro browser a cada 3 slides (evita travar)
-      if ((i + 1) % 3 === 0) await sleep(150);
+      setFiltroMaquina(filtroOriginal);
+      await pptx.writeFile({ fileName: `Relatorio_Global_${mesRef}.pptx` });
+      toast('PPTX baixado ✅');
+    } catch (e) {
+      console.error('Erro PPTX:', e);
+      toast('Erro ao gerar PPTX ❌');
+    } finally {
+      setFiltroMaquina(filtroOriginal);
+      setExportando(false);
+      setBusy(false);
     }
-
-    flushSync(() => setFiltroMaquina(filtroOriginal));
-    await nextPaint();
-
-    await pptx.writeFile({ fileName: `Relatorio_Global_${mesRef}.pptx` });
-    toast('PPTX baixado ✅');
-  } catch (e) {
-    console.error('Erro PPTX:', e);
-    toast('Erro ao gerar PPTX ❌');
-  } finally {
-    flushSync(() => setFiltroMaquina(filtroOriginal));
-    setExportando(false);
-    setBusy(false);
-  }
-};
-
+  };
 
   // ===== PAGINAÇÃO E DADOS VISÍVEIS =====
   const lancamentosVisiveis = filtroMaquina === 'TODAS' 
