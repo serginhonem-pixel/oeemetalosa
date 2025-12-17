@@ -588,9 +588,10 @@ const GlobalScreen = () => {
   };
 
   // ===== EXPORT PDF (Graficos) ======
+  // ===== EXPORT PDF (Graficos) ======
   const exportPDFGraficos = async () => {
     if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
-    if (exportando) return; // Evita clique duplo
+    if (exportando) return;
 
     setExportando(true);
     setBusy(true);
@@ -606,6 +607,14 @@ const GlobalScreen = () => {
             const m = maquinas[i];
             setFiltroMaquina(m.nome);
             
+            // --- CÁLCULOS PARA O TEXTO DO PDF ---
+            const lancMaq = lancamentos.filter((l) => l.maquina === m.nome);
+            const realMes = lancMaq.reduce((acc, x) => acc + (Number(x.real) || 0), 0);
+            const diasProd = [...new Set(lancMaq.map(l => l.dia))].length; // Dias únicos com produção
+            const mediaReal = diasProd > 0 ? realMes / diasProd : 0;
+            const metaDia = Number(m.meta || 0);
+            // ------------------------------------
+
             // Tempo suficiente para o gráfico renderizar sem animação
             await sleep(500); 
             await new Promise((r) => requestAnimationFrame(r));
@@ -623,15 +632,25 @@ const GlobalScreen = () => {
             const imgProps = pdf.getImageProperties(imgData);
             const imgH = (imgProps.height * imgW) / imgProps.width;
 
-            pdf.addImage(imgData, 'PNG', margin, 70, imgW, imgH);
+            // Ajustei a posição Y da imagem para 90 para caber o texto extra
+            pdf.addImage(imgData, 'PNG', margin, 90, imgW, imgH);
 
+            // Título
             pdf.setTextColor(255, 255, 255);
             pdf.setFontSize(18);
             pdf.text(`Gráfico de Performance: ${m.nome}`, margin, 40);
             
+            // Subtítulo (Mês)
             pdf.setTextColor(156, 163, 175); 
             pdf.setFontSize(10);
             pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 55);
+
+            // --- NOVA LINHA DE INFORMAÇÕES (MÉDIA) ---
+            pdf.setTextColor(200, 200, 200);
+            pdf.setFontSize(11);
+            const textoDados = `Realizado: ${realMes.toLocaleString('pt-BR')} ${m.unidade}  |  Média Diária: ${mediaReal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${m.unidade}/dia  |  Meta Dia: ${metaDia.toLocaleString('pt-BR')} ${m.unidade}`;
+            pdf.text(textoDados, margin, 75);
+            // -----------------------------------------
         }
 
         pdf.save(`Graficos_${mesRef}.pdf`);
@@ -648,9 +667,10 @@ const GlobalScreen = () => {
   };
 
   // ===== EXPORT PPTX (Relatório) ======
+  // ===== EXPORT PPTX (Relatório) ======
   const exportPPTX = async () => {
     if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
-    if (exportando) return; // Evita clique duplo
+    if (exportando) return; 
 
     setExportando(true);
     setBusy(true);
@@ -668,9 +688,9 @@ const GlobalScreen = () => {
 
       const filtroOriginal = filtroMaquina;
 
-      // 1. Slide Resumo
+      // 1. Slide Resumo Global (Mantive igual, mas se quiser média global avise)
       setFiltroMaquina('TODAS');
-      await sleep(600); // Tempo para renderizar estático
+      await sleep(600); 
       await new Promise((r) => requestAnimationFrame(r));
       const imgResumo = await captureChartPNG();
 
@@ -692,11 +712,9 @@ const GlobalScreen = () => {
           { text: `${dadosGrafico.aderenciaMeta.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 18, bold: true } }
       ], { x: 0.3, y: 1.0, w: 3.0, h: 4.5, valign: 'top' });
 
-      // Imagem do Gráfico - Ajustada para não sobrepor texto e caber no slide
-      // Slide 16x9 tem 10 polegadas de largura por 5.625 de altura
       slideResumo.addImage({ data: imgResumo, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
 
-      // 2. Slides Máquinas
+      // 2. Slides Máquinas INDIVIDUAIS
       for (const m of maquinas) {
         setFiltroMaquina(m.nome);
         await sleep(600);
@@ -723,6 +741,11 @@ const GlobalScreen = () => {
             { text: `Meta Diária: `, options: { color: '9CA3AF', fontSize: 12 } },
             { text: `${metaDia.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
 
+            // --- ADICIONADO MÉDIA REALIZADA AQUI ---
+            { text: `Média Realizada: `, options: { color: '9CA3AF', fontSize: 12 } },
+            { text: `${mediaReal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidade}/dia\n\n`, options: { color: 'FACC15', fontSize: 16, bold: true } },
+            // ---------------------------------------
+
             { text: `Meta Mensal: `, options: { color: '9CA3AF', fontSize: 12 } },
             { text: `${metaMes.toLocaleString('pt-BR')} ${unidade}\n\n`, options: { color: 'FFFFFF', fontSize: 16, bold: true } },
             
@@ -731,9 +754,6 @@ const GlobalScreen = () => {
             
             { text: `Atingimento: `, options: { color: '9CA3AF', fontSize: 12 } },
             { text: `${ating.toFixed(1)}%\n\n`, options: { color: ating >= 100 ? '4ADE80' : 'F87171', fontSize: 16, bold: true } },
-
-            { text: `Aderência: `, options: { color: '9CA3AF', fontSize: 12 } },
-            { text: `${aderencia.toFixed(1)}%`, options: { color: 'FACC15', fontSize: 16, bold: true } }
         ], { x: 0.3, y: 1.0, w: 3.0, h: 5.2, valign: 'top' });
 
         slide.addImage({ data: img, x: 3.5, y: 1.0, w: 6.2, h: 4.2 });
@@ -746,7 +766,7 @@ const GlobalScreen = () => {
       console.error('Erro PPTX:', e);
       toast('Erro ao gerar PPTX ❌');
     } finally {
-      setFiltroMaquina(filtroOriginal); // Garante volta do filtro
+      setFiltroMaquina(filtroOriginal);
       setExportando(false);
       setBusy(false);
     }
