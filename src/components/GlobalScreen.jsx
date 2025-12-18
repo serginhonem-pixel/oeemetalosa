@@ -127,6 +127,91 @@ const GlobalScreen = () => {
   // Refs
   const chartCaptureRef = useRef(null);
 
+
+  // Backup JSON (para rodar offline/local)
+  const inputBackupRef = useRef(null);
+
+  const handleDownloadBackupGlobal = () => {
+    try {
+      const payload = {
+        type: 'GlobalScreenBackup',
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        mesRef,
+        config,
+        maquinas,
+        lancamentos,
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup-globalscreen-${payload.mesRef || 'mes'}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast('Backup JSON gerado!', 1800);
+    } catch (err) {
+      console.error('Erro ao gerar backup JSON (GlobalScreen):', err);
+      alert('Erro ao gerar backup JSON. Veja o console (F12).');
+    }
+  };
+
+  const handleUploadBackupGlobal = (e) => {
+    if (!IS_LOCALHOST) {
+      alert('Carregar backup JSON é permitido apenas no localhost (modo offline).');
+      e.target.value = null;
+      return;
+    }
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const raw = JSON.parse(String(evt.target.result || '{}'));
+
+        // aceita dois formatos:
+        // 1) { mesRef, config, maquinas, lancamentos }
+        // 2) { type:'GlobalScreenBackup', ... }
+        const nextMes = raw.mesRef || raw?.data?.mesRef;
+        const nextConfig = raw.config || raw?.data?.config;
+        const nextMaq = raw.maquinas || raw?.data?.maquinas;
+        const nextLanc = raw.lancamentos || raw?.data?.lancamentos;
+
+        if (nextMes) setMesRef(String(nextMes));
+
+        if (nextConfig && typeof nextConfig === 'object') {
+          setConfig(nextConfig);
+        }
+
+        if (Array.isArray(nextMaq)) {
+          setMaquinas(nextMaq);
+        }
+
+        if (Array.isArray(nextLanc)) {
+          setLancamentos(nextLanc);
+        }
+
+        toast('Backup carregado! (modo offline)', 2500);
+      } catch (err) {
+        console.error('Erro ao carregar backup JSON (GlobalScreen):', err);
+        alert('Arquivo inválido. Não consegui ler esse JSON.');
+      } finally {
+        e.target.value = null;
+      }
+    };
+    reader.readAsText(file);
+  };
+
+
   const toast = (msg, ms = 2000) => {
     setStatusMsg(msg);
     if (ms) setTimeout(() => setStatusMsg(''), ms);
@@ -394,6 +479,9 @@ const GlobalScreen = () => {
     }
   };
 
+
+
+  
   const handleAddLancamento = async (e) => {
     e.preventDefault();
     if (!novoDiaISO || !novoValor) return;
@@ -890,7 +978,36 @@ slide.addImage({ data: img, x: 4.2, y: 1.1, w: 8.8, h: 5.8 });
                 <span className="hidden sm:inline">Relatório PPTX</span>
                 </button>
 
+                {/* BACKUP JSON (somente para modo offline/localhost) */}
                 <button
+                  onClick={handleDownloadBackupGlobal}
+                  disabled={busy}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+                  title="Baixar Backup JSON (GlobalScreen)"
+                >
+                  <Download size={14} />
+                  <span className="hidden sm:inline">Backup JSON</span>
+                </button>
+
+                <input
+                  ref={inputBackupRef}
+                  type="file"
+                  accept="application/json"
+                  onChange={handleUploadBackupGlobal}
+                  className="hidden"
+                />
+
+                <button
+                  onClick={() => inputBackupRef.current?.click()}
+                  disabled={!IS_LOCALHOST || busy}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+                  title={IS_LOCALHOST ? "Carregar Backup JSON (somente localhost)" : "Disponível apenas no localhost"}
+                >
+                  <FileText size={14} />
+                  <span className="hidden sm:inline">Carregar JSON</span>
+                </button>
+
+<button
                 onClick={() => setShowConfig(!showConfig)}
                 className={`p-2 rounded-md transition-all border ${
                     showConfig ? 'bg-blue-600/20 text-blue-400 border-blue-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-zinc-200'

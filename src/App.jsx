@@ -740,11 +740,28 @@ useEffect(() => {
 
           return; // já carregou do cache, não precisa ir pro JSON nem Firebase
         }
+        if (parsed.global) {
+  localStorage.setItem('local_config', JSON.stringify(parsed.global.config || { diasUteis: 22 }));
+  localStorage.setItem('local_maquinas', JSON.stringify(parsed.global.maquinas || []));
+  localStorage.setItem('local_lancamentos', JSON.stringify(parsed.global.lancamentos || []));
+}
+
       } catch (err) {
         console.error("Erro ao ler cache local:", err);
       }
 
       // Se não tiver nada no localStorage, usa o JSON da pasta (como você já fazia)
+      // --- GLOBAL (pega do localStorage da GlobalScreen e guarda junto) ---
+const localConfig = localStorage.getItem('local_config');
+const localMaq = localStorage.getItem('local_maquinas');
+const localLanc = localStorage.getItem('local_lancamentos');
+
+setGlobalDevSnapshot({
+  config: localConfig ? JSON.parse(localConfig) : null,
+  maquinas: localMaq ? JSON.parse(localMaq) : [],
+  lancamentos: localLanc ? JSON.parse(localLanc) : [],
+});
+
       console.log("📁 Sem cache local, carregando do backup JSON...");
       setFilaProducao(dadosLocais.romaneios || []);
       setHistoricoProducaoReal(dadosLocais.producao || []);
@@ -820,21 +837,33 @@ try {
 
 
 useEffect(() => {
-  if (!IS_LOCALHOST) return; // em produção não mexe em localStorage
+  if (!IS_LOCALHOST) return;
 
   try {
+    // lê o que a GlobalScreen mantém no localStorage
+    const localConfig = localStorage.getItem('local_config');
+    const localMaq = localStorage.getItem('local_maquinas');
+    const localLanc = localStorage.getItem('local_lancamentos');
+
     const payload = {
       romaneios: filaProducao,
       producao: historicoProducaoReal,
       paradas: historicoParadas,
+
+      // ✅ NOVO: snapshot da GlobalScreen
+      global: {
+        config: localConfig ? JSON.parse(localConfig) : null,
+        maquinas: localMaq ? JSON.parse(localMaq) : [],
+        lancamentos: localLanc ? JSON.parse(localLanc) : [],
+      },
     };
 
     localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(payload));
-    // console.log("💾 Cache local atualizado");
   } catch (err) {
-    console.error("Erro ao salvar cache local:", err);
+    console.error("Erro ao salvar DEV_CACHE_KEY:", err);
   }
 }, [filaProducao, historicoProducaoReal, historicoParadas]);
+
 
 
 
