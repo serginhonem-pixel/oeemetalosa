@@ -430,31 +430,43 @@ const GlobalScreen = () => {
 
   // ====== Label do gráfico ======
   const renderCustomizedLabel = (props) => {
-    const { x, y, width, index } = props;
-    const item = dadosGrafico?.dados?.[index];
-    if (!item) return null;
+  const { x, y, width, index } = props;
+  const item = dadosGrafico?.dados?.[index];
+  if (!item) return null;
 
-    const performance = Number(item.performance || 0);
-    const atingiuMeta = performance >= 100;
+  const performance = Number(item.performance || 0);
+  const isTargetMet = performance >= 100;
+  
+  // Cores mais profissionais e menos saturadas
+  const color = isTargetMet ? '#059669' : '#374151'; // Verde esmeralda ou cinza escuro
 
-    const corBox = '#18181b';
-    const corTexto = '#ffffff';
-    const icone = atingiuMeta ? '✓' : '';
-    const corBorda = atingiuMeta ? '#22c55e' : '#ef4444';
-
-    return (
-      <g style={{ pointerEvents: 'none' }}>
-        <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y - 15} stroke="#52525b" strokeWidth="2" />
-        <rect x={x + width / 2 - 35} y={y - 50} width="70" height="35" fill={corBox} rx="6" stroke={corBorda} strokeWidth="2" />
-        <text x={x + width / 2} y={y - 28} fill={corTexto} textAnchor="middle" fontSize={12} fontWeight="bold">
-          {icone} {performance.toFixed(0)}%
-        </text>
-        <text x={x + width / 2} y={y + 16} fill="#e4e4e7" textAnchor="middle" fontSize={10} fontWeight="bold">
-{Number(item.realOriginal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-     </text>
-      </g>
-    );
-  };
+  return (
+    <g>
+      {/* Porcentagem acima da barra */}
+      <text 
+        x={x + width / 2} 
+        y={y - 10} 
+        fill={color} 
+        textAnchor="middle" 
+        fontSize={11} 
+        fontWeight="700"
+      >
+        {performance.toFixed(0)}%
+      </text>
+      {/* Valor absoluto na base ou topo da barra (interno) */}
+      <text 
+        x={x + width / 2} 
+        y={y + 18} 
+        fill="#ffffff" 
+        textAnchor="middle" 
+        fontSize={9} 
+        fontWeight="500"
+      >
+        {Math.round(item.realOriginal).toLocaleString('pt-BR')}
+      </text>
+    </g>
+  );
+};
 
   // ====== ACTIONS ======
   const saveDiasUteisMes = async (dias) => {
