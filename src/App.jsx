@@ -18,7 +18,7 @@ import {
   CalendarDays, CheckCircle2,
   ClipboardList,
   Download, Factory, FileText, History, Layers, Layout,
-  Pencil, Plus, PlusCircle, Scale, Trash2,
+  Pencil, Plus, PlusCircle, Scale, Search, Trash2,
   TrendingDown, TrendingUp,
   Upload, X
 } from 'lucide-react';
@@ -569,6 +569,38 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [formTotvs, setFormTotvs] = useState(''); 
   const [formDataProducao, setFormDataProducao] = useState(hoje);
   const [itensNoPedido, setItensNoPedido] = useState([]);
+
+  // Comercial - novo pedido/req
+  const [formPedidoCliente, setFormPedidoCliente] = useState('');
+  const [formPedidoSolicitante, setFormPedidoSolicitante] = useState('');
+  const [formPedidoRequisicao, setFormPedidoRequisicao] = useState('');
+  const [formPedidoObs, setFormPedidoObs] = useState('');
+  const [formPedidoCod, setFormPedidoCod] = useState('');
+  const [formPedidoDesc, setFormPedidoDesc] = useState('');
+  const [formPedidoQtd, setFormPedidoQtd] = useState('');
+  const [formPedidoComp, setFormPedidoComp] = useState('');
+  const [itensPedidoComercial, setItensPedidoComercial] = useState([]);
+  const [transferenciaObsPorPedido, setTransferenciaObsPorPedido] = useState({});
+
+  // Comercial - solicitar transferencia do estoque
+  const [formTransfCliente, setFormTransfCliente] = useState('');
+  const [formTransfObs, setFormTransfObs] = useState('');
+  const [formTransfCod, setFormTransfCod] = useState('');
+  const [formTransfDesc, setFormTransfDesc] = useState('');
+  const [formTransfQtd, setFormTransfQtd] = useState('');
+  const [formTransfComp, setFormTransfComp] = useState('');
+  const [pcpSelecionados, setPcpSelecionados] = useState([]);
+  const [comercialBusca, setComercialBusca] = useState('');
+  const [comercialEstoqueBusca, setComercialEstoqueBusca] = useState('');
+  const [mostrarSolicitarProducao, setMostrarSolicitarProducao] = useState(false);
+  const [mostrarTransferenciaEstoque, setMostrarTransferenciaEstoque] = useState(false);
+
+  // PCP - apontamento de estoque de telhas
+  const [formEstoqueTelhaData, setFormEstoqueTelhaData] = useState(hoje);
+  const [formEstoqueTelhaCod, setFormEstoqueTelhaCod] = useState('');
+  const [formEstoqueTelhaDesc, setFormEstoqueTelhaDesc] = useState('');
+  const [formEstoqueTelhaQtd, setFormEstoqueTelhaQtd] = useState('');
+  const [formEstoqueTelhaComp, setFormEstoqueTelhaComp] = useState('');
   const [isEstoque, setIsEstoque] = useState(false); 
 
   // PDF Romaneio
@@ -1070,6 +1102,65 @@ const handleDownloadModeloParadas = () => {
     }
   };
   const resetItemFields = () => { setFormCod(''); setFormDesc(''); setFormPerfil(''); setFormMaterial(''); setFormComp(''); setFormQtd(''); setIsCustomLength(false); setDadosProdutoAtual(null); };
+  const handleSelectProdutoPedidoComercial = (e) => {
+    const codigo = e.target.value;
+    setFormPedidoCod(codigo);
+    if (CATALOGO_PRODUTOS) {
+      const p = CATALOGO_PRODUTOS.find((x) => x.cod === codigo);
+      if (p) {
+        setFormPedidoDesc(p.desc);
+        setFormPedidoComp(p.custom ? '' : p.comp || '');
+      } else if (!codigo) {
+        resetItemPedidoComercial();
+      }
+    }
+  };
+  const resetItemPedidoComercial = () => {
+    setFormPedidoCod('');
+    setFormPedidoDesc('');
+    setFormPedidoComp('');
+    setFormPedidoQtd('');
+  };
+
+  const handleSelectEstoqueTelhaProduto = (e) => {
+    const codigo = e.target.value;
+    setFormEstoqueTelhaCod(codigo);
+    if (CATALOGO_PRODUTOS) {
+      const p = CATALOGO_PRODUTOS.find((x) => x.cod === codigo);
+      if (p) {
+        setFormEstoqueTelhaDesc(p.desc);
+        setFormEstoqueTelhaComp(p.custom ? '' : p.comp || '');
+      } else if (!codigo) {
+        resetFormEstoqueTelha();
+      }
+    }
+  };
+
+  const resetFormEstoqueTelha = () => {
+    setFormEstoqueTelhaCod('');
+    setFormEstoqueTelhaDesc('');
+    setFormEstoqueTelhaComp('');
+    setFormEstoqueTelhaQtd('');
+  };
+  const handleSelectTransfProduto = (e) => {
+    const codigo = e.target.value;
+    setFormTransfCod(codigo);
+    if (CATALOGO_PRODUTOS) {
+      const p = CATALOGO_PRODUTOS.find((x) => x.cod === codigo);
+      if (p) {
+        setFormTransfDesc(p.desc);
+        setFormTransfComp(p.custom ? '' : p.comp || '');
+      } else if (!codigo) {
+        resetFormTransferencia();
+      }
+    }
+  };
+  const resetFormTransferencia = () => {
+    setFormTransfCod('');
+    setFormTransfDesc('');
+    setFormTransfComp('');
+    setFormTransfQtd('');
+  };
   const adicionarItemNaLista = () => {
     if (!formDesc || !formQtd) return alert("Preencha dados.");
     const qtd = parseInt(formQtd); const comp = parseFloat(formComp) || 0;
@@ -1078,10 +1169,129 @@ const handleDownloadModeloParadas = () => {
     resetItemFields();
   };
   const removerItemDaLista = (id) => setItensNoPedido(itensNoPedido.filter(i => i.tempId !== id));
+  const inferirMaquinaPorItens = (itens) => {
+    if (!Array.isArray(itens) || itens.length === 0) return '';
+    const grupos = itens.map((i) => {
+      const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === i.cod);
+      return produto?.grupo || '';
+    });
+    const temNaoTelha = grupos.some((g) => g && g !== 'GRUPO_TELHAS');
+    const temTelha = grupos.some((g) => g === 'GRUPO_TELHAS');
+    if (temTelha && !temNaoTelha) return 'CONFORMADORA_TELHAS';
+    return '';
+  };
+
+  const adicionarItemPedidoComercial = () => {
+    if (!formPedidoDesc || !formPedidoQtd) {
+      alert("Preencha produto e quantidade.");
+      return;
+    }
+
+    const qtd = parseInt(formPedidoQtd, 10) || 0;
+    if (!qtd) {
+      alert("Quantidade invÇ­lida.");
+      return;
+    }
+
+    const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === formPedidoCod);
+    const comp = parseFloat(formPedidoComp) || produto?.comp || 0;
+    if (produto?.custom && !comp) {
+      alert("Informe o comprimento (m) para itens sob medida.");
+      return;
+    }
+
+    const peso = produto
+      ? produto.custom
+        ? comp * (produto.kgMetro || 0) * qtd
+        : (produto.pesoUnit || 0) * qtd
+      : 0;
+
+    setItensPedidoComercial((prev) => [
+      ...prev,
+      {
+        tempId: Math.random(),
+        cod: formPedidoCod,
+        desc: formPedidoDesc,
+        comp,
+        qtd,
+        pesoTotal: peso.toFixed(2),
+      },
+    ]);
+    resetItemPedidoComercial();
+  };
+
+  const removerItemPedidoComercial = (id) => {
+    setItensPedidoComercial((prev) => prev.filter((i) => i.tempId !== id));
+  };
+
+  const salvarApontamentoEstoqueTelha = async () => {
+    if (!formEstoqueTelhaCod || !formEstoqueTelhaQtd) {
+      alert("Informe o codigo e a quantidade.");
+      return;
+    }
+
+    const qtd = parseInt(formEstoqueTelhaQtd, 10) || 0;
+    if (!qtd) {
+      alert("Quantidade invalida.");
+      return;
+    }
+
+    const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === formEstoqueTelhaCod);
+    const comp = parseFloat(formEstoqueTelhaComp) || produto?.comp || 0;
+    if (produto?.custom && !comp) {
+      alert("Informe o comprimento (m) para itens sob medida.");
+      return;
+    }
+
+    const pesoPorPeca = produto
+      ? produto.custom
+        ? (produto.kgMetro || 0) * comp
+        : produto.pesoUnit || 0
+      : 0;
+    const pesoTotal = pesoPorPeca * qtd;
+    const agoraISO = new Date().toISOString();
+
+    const obj = {
+      data: formEstoqueTelhaData || getLocalISODate(),
+      cod: formEstoqueTelhaCod,
+      desc: formEstoqueTelhaDesc || produto?.desc || "Item s/ descricao",
+      qtd,
+      comp,
+      pesoTotal,
+      pesoPorPeca,
+      m2Total: comp * qtd,
+      destino: "Estoque",
+      maquinaId: "",
+      origem: "PCP_ESTOQUE",
+      createdAt: agoraISO,
+    };
+
+    try {
+      if (IS_LOCALHOST) {
+        setHistoricoProducaoReal((prev) => [{ id: `local-${Date.now()}`, ...obj }, ...prev]);
+        resetFormEstoqueTelha();
+        alert("Estoque apontado (modo local).");
+        return;
+      }
+
+      const docRef = await safeAddDoc("producao", obj);
+      const newId = docRef?.id || `local-${Date.now()}`;
+      setHistoricoProducaoReal((prev) => [{ id: newId, ...obj }, ...prev]);
+      resetFormEstoqueTelha();
+      alert("Estoque apontado.");
+    } catch (err) {
+      console.error("Erro ao apontar estoque:", err);
+      alert("Erro ao salvar estoque. Veja o console (F12).");
+    }
+  };
   
   const salvarRomaneio = async () => {
   try {
-    if (!maquinaSelecionada) {
+    const maquinaInferida = !maquinaSelecionada
+      ? inferirMaquinaPorItens(itensNoPedido)
+      : '';
+    const maquinaEfetiva = maquinaSelecionada || maquinaInferida;
+    if (!maquinaEfetiva) {
       alert("Selecione a mÇ­quina para esta ordem.");
       return;
     }
@@ -1108,7 +1318,7 @@ const handleDownloadModeloParadas = () => {
       cliente: formCliente || "",
       totvs: formTotvs || "",
       tipo: isEstoque ? "EST" : "PED",
-      maquinaId: maquinaSelecionada,
+      maquinaId: maquinaEfetiva,
       itens: itensNoPedido,
       updatedAt: agoraISO,
     };
@@ -1180,7 +1390,7 @@ const handleDownloadModeloParadas = () => {
         cliente: formCliente || "",
         totvs: formTotvs || "",
         tipo: isEstoque ? "EST" : "PED",
-        maquinaId: maquinaSelecionada,
+        maquinaId: maquinaEfetiva,
         itens: itensReprogramados,
         origemReprogramacao: sysIdAtual,
         createdFromReprogramacao: true,
@@ -1213,6 +1423,540 @@ const handleDownloadModeloParadas = () => {
     alert("Erro ao salvar romaneio. Veja o console (F12).");
   }
 };
+
+  const finalizarOrdemProgramada = async () => {
+    const maquinaInferida = !maquinaSelecionada
+      ? inferirMaquinaPorItens(itensNoPedido)
+      : '';
+    const maquinaEfetiva = maquinaSelecionada || maquinaInferida;
+    if (!maquinaEfetiva) {
+      alert("Selecione a m\u00e1quina para esta ordem.");
+      return;
+    }
+    if (!formRomaneioId) {
+      alert("Salve o romaneio antes de finalizar.");
+      return;
+    }
+    if (!Array.isArray(itensNoPedido) || itensNoPedido.length === 0) {
+      alert("Adicione itens antes de finalizar.");
+      return;
+    }
+
+    const alvo = filaProducao.find(
+      (r) => r.sysId === romaneioEmEdicaoId || r.id === formRomaneioId
+    );
+    if (alvo?.status === "PRONTO" || alvo?.status === "FINALIZADO") {
+      alert("Essa ordem j\u00e1 est\u00e1 finalizada.");
+      return;
+    }
+
+    const agoraISO = new Date().toISOString();
+    const dataApontamento = getLocalISODate();
+
+    const itensApontar = itensNoPedido.map((item) => {
+      const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === item.cod);
+      const qtd = Number(item.qtd || 0);
+      const comp = Number(item.comp || produto?.comp || 0);
+      const pesoTotal = Number(item.pesoTotal || 0);
+      const pesoPorPeca = qtd ? pesoTotal / qtd : 0;
+      return {
+        data: dataApontamento,
+        cod: item.cod,
+        desc: item.desc || produto?.desc || "Item s/ descricao",
+        qtd,
+        comp,
+        pesoTotal,
+        pesoPorPeca,
+        m2Total: comp * qtd,
+        destino: "Estoque",
+        maquinaId: maquinaEfetiva,
+        origem: "FINALIZACAO_ORDEM",
+        romaneioId: formRomaneioId,
+        cliente: formCliente || "",
+        createdAt: agoraISO,
+      };
+    });
+
+    try {
+      if (IS_LOCALHOST) {
+        setHistoricoProducaoReal((prev) => [
+          ...itensApontar.map((i) => ({ id: `local-${Date.now()}-${Math.random()}`, ...i })),
+          ...prev,
+        ]);
+        setFilaProducao((prev) =>
+          prev.map((r) =>
+            r.sysId === romaneioEmEdicaoId || r.id === formRomaneioId
+              ? { ...r, status: "PRONTO", updatedAt: agoraISO }
+              : r
+          )
+        );
+        alert("Ordem finalizada e enviada para estoque.");
+        return;
+      }
+
+      for (const item of itensApontar) {
+        await safeAddDoc("producao", item);
+      }
+
+      if (romaneioEmEdicaoId) {
+        await safeUpdateDoc("romaneios", String(romaneioEmEdicaoId), {
+          status: "PRONTO",
+          updatedAt: agoraISO,
+        });
+      }
+
+      setHistoricoProducaoReal((prev) => [
+        ...itensApontar.map((i) => ({ id: `local-${Date.now()}-${Math.random()}`, ...i })),
+        ...prev,
+      ]);
+      setFilaProducao((prev) =>
+        prev.map((r) =>
+          r.sysId === romaneioEmEdicaoId || r.id === formRomaneioId
+            ? { ...r, status: "PRONTO", updatedAt: agoraISO }
+            : r
+        )
+      );
+      alert("Ordem finalizada e enviada para estoque.");
+    } catch (err) {
+      console.error("Erro ao finalizar ordem:", err);
+      alert("Erro ao finalizar ordem. Veja o console (F12).");
+    }
+  };
+
+  const togglePcpSelecionado = (id) => {
+    setPcpSelecionados((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const finalizarRomaneioRapido = async (romaneio) => {
+    if (!romaneio) return { ok: false, motivo: 'invalido' };
+    if (romaneio.status === 'PRONTO' || romaneio.status === 'FINALIZADO') {
+      return { ok: false, motivo: 'ja_finalizado' };
+    }
+
+    const maquinaEfetiva =
+      romaneio.maquinaId || inferirMaquinaPorItens(romaneio.itens);
+    if (!maquinaEfetiva) {
+      return { ok: false, motivo: 'sem_maquina' };
+    }
+
+    const agoraISO = new Date().toISOString();
+    const dataApontamento = getLocalISODate();
+    const itensApontar = (romaneio.itens || []).map((item) => {
+      const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === item.cod);
+      const qtd = Number(item.qtd || 0);
+      const comp = Number(item.comp || produto?.comp || 0);
+      const pesoTotal = Number(item.pesoTotal || 0);
+      const pesoPorPeca = qtd ? pesoTotal / qtd : 0;
+      return {
+        data: dataApontamento,
+        cod: item.cod,
+        desc: item.desc || produto?.desc || 'Item s/ descricao',
+        qtd,
+        comp,
+        pesoTotal,
+        pesoPorPeca,
+        m2Total: comp * qtd,
+        destino: 'Estoque',
+        maquinaId: maquinaEfetiva,
+        origem: 'FINALIZACAO_RAPIDA',
+        romaneioId: romaneio.id || romaneio.romaneioId || '',
+        cliente: romaneio.cliente || '',
+        createdAt: agoraISO,
+      };
+    });
+
+    try {
+      if (IS_LOCALHOST) {
+        setHistoricoProducaoReal((prev) => [
+          ...itensApontar.map((i) => ({
+            id: `local-${Date.now()}-${Math.random()}`,
+            ...i,
+          })),
+          ...prev,
+        ]);
+        setFilaProducao((prev) =>
+          prev.map((r) =>
+            (r.sysId || r.id) === (romaneio.sysId || romaneio.id)
+              ? { ...r, status: 'PRONTO', updatedAt: agoraISO }
+              : r
+          )
+        );
+        return { ok: true };
+      }
+
+      for (const item of itensApontar) {
+        await safeAddDoc('producao', item);
+      }
+      if (romaneio.sysId) {
+        await safeUpdateDoc('romaneios', String(romaneio.sysId), {
+          status: 'PRONTO',
+          updatedAt: agoraISO,
+        });
+      }
+      setHistoricoProducaoReal((prev) => [
+        ...itensApontar.map((i) => ({
+          id: `local-${Date.now()}-${Math.random()}`,
+          ...i,
+        })),
+        ...prev,
+      ]);
+      setFilaProducao((prev) =>
+        prev.map((r) =>
+          (r.sysId || r.id) === (romaneio.sysId || romaneio.id)
+            ? { ...r, status: 'PRONTO', updatedAt: agoraISO }
+            : r
+        )
+      );
+      return { ok: true };
+    } catch (err) {
+      console.error('Erro ao finalizar rapido:', err);
+      return { ok: false, motivo: 'erro' };
+    }
+  };
+
+  const finalizarSelecionadosPCP = async () => {
+    if (pcpSelecionados.length === 0) {
+      alert('Selecione ao menos uma ordem.');
+      return;
+    }
+
+    const selecionados = filaProducao.filter((r) =>
+      pcpSelecionados.includes(r.sysId || r.id)
+    );
+    if (selecionados.length === 0) {
+      alert('Nenhuma ordem valida selecionada.');
+      return;
+    }
+
+    let ok = 0;
+    let semMaquina = 0;
+    let jaFinalizado = 0;
+    let erro = 0;
+
+    for (const r of selecionados) {
+      const res = await finalizarRomaneioRapido(r);
+      if (res.ok) ok += 1;
+      else if (res.motivo === 'sem_maquina') semMaquina += 1;
+      else if (res.motivo === 'ja_finalizado') jaFinalizado += 1;
+      else erro += 1;
+    }
+
+    setPcpSelecionados([]);
+    const partes = [];
+    if (ok) partes.push(`${ok} finalizada(s)`);
+    if (semMaquina) partes.push(`${semMaquina} sem maquina`);
+    if (jaFinalizado) partes.push(`${jaFinalizado} ja finalizada(s)`);
+    if (erro) partes.push(`${erro} com erro`);
+    alert(partes.join(' · ') || 'Nada a finalizar.');
+  };
+
+  const getStatusBadgeComercial = (status) => {
+    if (status === 'EM ANDAMENTO' || status === 'PRODUZINDO') {
+      return {
+        label: 'PRODUZINDO',
+        className: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+      };
+    }
+    if (status === 'FALTA PROGRAMAR') {
+      return {
+        label: 'EM ABERTO',
+        className: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+      };
+    }
+    if (status === 'PRONTO') {
+      return {
+        label: 'PRONTO',
+        className: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+      };
+    }
+    return {
+      label: 'EM ABERTO',
+      className: 'bg-zinc-500/10 text-zinc-300 border-white/10',
+    };
+  };
+
+  const selecionarTodosProgramadosPCP = () => {
+    const programados = filaProducao
+      .filter((r) => Boolean(getDataRomaneio(r)) && Boolean(r.maquinaId))
+      .map((r) => r.sysId || r.id)
+      .filter(Boolean);
+    if (programados.length === 0) {
+      alert('Nenhuma ordem programada para selecionar.');
+      return;
+    }
+    setPcpSelecionados((prev) => {
+      const todosSelecionados = programados.every((id) => prev.includes(id));
+      return todosSelecionados ? prev.filter((id) => !programados.includes(id)) : programados;
+    });
+  };
+
+  const limparPedidoComercial = () => {
+    setFormPedidoCliente('');
+    setFormPedidoRequisicao('');
+    setFormPedidoObs('');
+    setItensPedidoComercial([]);
+    resetItemPedidoComercial();
+  };
+
+  const salvarPedidoComercial = async () => {
+    if (!formPedidoCliente.trim()) {
+      alert("Informe o cliente.");
+      return;
+    }
+    if (itensPedidoComercial.length === 0) {
+      alert("Adicione pelo menos um item.");
+      return;
+    }
+
+    const agoraISO = new Date().toISOString();
+    const requisicao = formPedidoRequisicao.trim();
+    const idPedido = requisicao || `REQ-${Date.now()}`;
+
+    const obj = {
+      id: idPedido,
+      romaneioId: idPedido,
+      data: "",
+      dataProducao: "",
+      cliente: formPedidoCliente.trim(),
+      solicitante: formPedidoSolicitante.trim(),
+      totvs: "",
+      tipo: "REQ",
+      status: "FALTA PROGRAMAR",
+      origem: "COMERCIAL",
+      requisicao: requisicao || idPedido,
+      observacao: formPedidoObs || "",
+      itens: itensPedidoComercial,
+      createdAt: agoraISO,
+      updatedAt: agoraISO,
+    };
+
+    try {
+      if (IS_LOCALHOST) {
+        setFilaProducao((prev) => [
+          { ...obj, sysId: `LOCAL-${Date.now()}` },
+          ...prev,
+        ]);
+        limparPedidoComercial();
+        alert("Pedido salvo (modo local).");
+        return;
+      }
+
+      const docRef = await addDoc(collection(db, "romaneios"), obj);
+      setFilaProducao((prev) => [{ ...obj, sysId: docRef.id }, ...prev]);
+      limparPedidoComercial();
+      alert("Pedido comercial enviado!");
+    } catch (err) {
+      console.error("Erro ao salvar pedido comercial:", err);
+      alert("Erro ao salvar pedido comercial. Veja o console (F12).");
+    }
+  };
+
+  const atualizarStatusPedidoComercial = async (pedido, status, extras = {}) => {
+    const agoraISO = new Date().toISOString();
+    const idRef = pedido?.sysId || pedido?.id;
+    if (!idRef) {
+      alert("Pedido sem identificacao.");
+      return;
+    }
+
+    const payload = {
+      status,
+      updatedAt: agoraISO,
+      ...extras,
+    };
+
+    try {
+      if (IS_LOCALHOST) {
+        setFilaProducao((prev) =>
+          prev.map((p) =>
+            (p.sysId || p.id) === idRef ? { ...p, ...payload } : p
+          )
+        );
+        return;
+      }
+
+      if (pedido?.sysId) {
+        await safeUpdateDoc("romaneios", String(pedido.sysId), payload);
+        setFilaProducao((prev) =>
+          prev.map((p) =>
+            p.sysId === pedido.sysId ? { ...p, ...payload } : p
+          )
+        );
+      } else {
+        setFilaProducao((prev) =>
+          prev.map((p) =>
+            (p.sysId || p.id) === idRef ? { ...p, ...payload } : p
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Erro ao atualizar pedido:", err);
+      alert("Erro ao atualizar pedido. Veja o console (F12).");
+    }
+  };
+
+  const solicitarTransferenciaPedido = async (pedido) => {
+    const chave = pedido?.sysId || pedido?.id;
+    const obs = transferenciaObsPorPedido[chave] || '';
+    await atualizarStatusPedidoComercial(pedido, "TRANSFERENCIA SOLICITADA", {
+      transferenciaObs: obs,
+    });
+  };
+
+  const solicitarTransferenciaEstoque = async () => {
+    if (!formTransfCliente.trim()) {
+      alert("Informe o destino/cliente.");
+      return;
+    }
+    if (!formTransfCod || !formTransfQtd) {
+      alert("Informe o produto e a quantidade.");
+      return;
+    }
+    const qtd = parseInt(formTransfQtd, 10) || 0;
+    if (!qtd) {
+      alert("Quantidade invalida.");
+      return;
+    }
+
+    const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === formTransfCod);
+    const comp = parseFloat(formTransfComp) || produto?.comp || 0;
+    if (produto?.custom && !comp) {
+      alert("Informe o comprimento (m) para itens sob medida.");
+      return;
+    }
+
+    const saldoItem = estoqueTelhas.find((p) => p.cod === formTransfCod);
+    const saldoDisponivel = Number(saldoItem?.saldoQtd || 0);
+    const qtdDisponivel = Math.max(0, Math.min(saldoDisponivel, qtd));
+    const qtdFaltante = Math.max(0, qtd - saldoDisponivel);
+
+    const peso = produto
+      ? produto.custom
+        ? comp * (produto.kgMetro || 0) * qtd
+        : (produto.pesoUnit || 0) * qtd
+      : 0;
+    const pesoDisponivel = produto
+      ? produto.custom
+        ? comp * (produto.kgMetro || 0) * qtdDisponivel
+        : (produto.pesoUnit || 0) * qtdDisponivel
+      : 0;
+
+    const agoraISO = new Date().toISOString();
+    const idPedido = `TRANSF-${Date.now()}`;
+    const objTransferencia = qtdDisponivel > 0 ? {
+      id: idPedido,
+      romaneioId: idPedido,
+      data: "",
+      dataProducao: "",
+      cliente: formTransfCliente.trim(),
+      totvs: "",
+      tipo: "TRANSF",
+      status: "TRANSFERENCIA SOLICITADA",
+      origem: "COMERCIAL",
+      requisicao: idPedido,
+      observacao: formTransfObs || "",
+      itens: [
+        {
+          tempId: Math.random(),
+          cod: formTransfCod,
+          desc: formTransfDesc || produto?.desc || "Item s/ descricao",
+          comp,
+          qtd: qtdDisponivel,
+          pesoTotal: pesoDisponivel.toFixed(2),
+        },
+      ],
+      createdAt: agoraISO,
+      updatedAt: agoraISO,
+    } : null;
+
+    const objFaltante = qtdFaltante > 0 ? {
+      id: `REQ-${Date.now()}`,
+      romaneioId: `REQ-${Date.now()}`,
+      data: "",
+      dataProducao: "",
+      cliente: formTransfCliente.trim(),
+      totvs: "",
+      tipo: "PED",
+      status: "FALTA PROGRAMAR",
+      origem: "COMERCIAL",
+      requisicao: formTransfObs ? `${formTransfObs} (faltante)` : "FALTANTE ESTOQUE",
+      observacao: `Faltante de estoque: ${qtdFaltante} un`,
+      itens: [
+        {
+          tempId: Math.random(),
+          cod: formTransfCod,
+          desc: formTransfDesc || produto?.desc || "Item s/ descricao",
+          comp,
+          qtd: qtdFaltante,
+          pesoTotal: (peso - pesoDisponivel).toFixed(2),
+        },
+      ],
+      createdAt: agoraISO,
+      updatedAt: agoraISO,
+    } : null;
+
+    try {
+      if (IS_LOCALHOST) {
+        const novos = [];
+        if (objTransferencia) novos.push({ ...objTransferencia, sysId: `LOCAL-${Date.now()}` });
+        if (objFaltante) novos.push({ ...objFaltante, sysId: `LOCAL-${Date.now()}-F` });
+        if (novos.length > 0) {
+          setFilaProducao((prev) => [...novos, ...prev]);
+        }
+        resetFormTransferencia();
+        setFormTransfCliente('');
+        setFormTransfObs('');
+        if (qtdFaltante > 0 && qtdDisponivel > 0) {
+          alert("Transferencia solicitada e falta foi enviada para programar.");
+        } else if (qtdFaltante > 0) {
+          alert("Sem estoque. Pedido enviado para programar.");
+        } else {
+          alert("Transferencia solicitada.");
+        }
+        return;
+      }
+
+      const novos = [];
+      if (objTransferencia) {
+        const docRef = await addDoc(collection(db, "romaneios"), objTransferencia);
+        novos.push({ ...objTransferencia, sysId: docRef.id });
+      }
+      if (objFaltante) {
+        const docRefF = await addDoc(collection(db, "romaneios"), objFaltante);
+        novos.push({ ...objFaltante, sysId: docRefF.id });
+      }
+      if (novos.length > 0) {
+        setFilaProducao((prev) => [...novos, ...prev]);
+      }
+      resetFormTransferencia();
+      setFormTransfCliente('');
+      setFormTransfObs('');
+      if (qtdFaltante > 0 && qtdDisponivel > 0) {
+        alert("Transferencia solicitada e falta foi enviada para programar.");
+      } else if (qtdFaltante > 0) {
+        alert("Sem estoque. Pedido enviado para programar.");
+      } else {
+        alert("Transferencia solicitada.");
+      }
+    } catch (err) {
+      console.error("Erro ao solicitar transferencia:", err);
+      alert("Erro ao solicitar transferencia. Veja o console (F12).");
+    }
+  };
+
+  const finalizarPedidoComercial = async (pedido) => {
+    await atualizarStatusPedidoComercial(pedido, "FINALIZADO", {
+      baixaAt: new Date().toISOString(),
+    });
+  };
+
+  const marcarRetiradaPedido = async (pedido) => {
+    await atualizarStatusPedidoComercial(pedido, "RETIRADA", {
+      retiradaAt: new Date().toISOString(),
+    });
+  };
 
 
 
@@ -1673,13 +2417,27 @@ const deletarParada = async (id) => {
 };
 
 const getDataRomaneio = (r) => String(r.data || r.dataProducao || "");
+const getMaquinaNomeComercial = (maquinaId) => {
+  if (!maquinaId) return "Sem maquina";
+  const found = CATALOGO_MAQUINAS.find(
+    (m) => m.maquinaId === maquinaId || m.id === maquinaId
+  );
+  return found?.nomeExibicao || maquinaId;
+};
 
-
+  const isSemProgramar = (r) => {
+    const dataRomaneio = getDataRomaneio(r);
+    return !dataRomaneio;
+  };
 
   const colunasAgenda = {
-  hoje: filaProducao.filter((r) => getDataRomaneio(r) === hoje),
-  amanha: filaProducao.filter((r) => getDataRomaneio(r) === amanha),
-  futuro: filaProducao.filter((r) => getDataRomaneio(r) > amanha),
+  semProgramar: filaProducao.filter((r) => isSemProgramar(r)),
+  hoje: filaProducao.filter((r) => !isSemProgramar(r) && getDataRomaneio(r) === hoje),
+  amanha: filaProducao.filter((r) => !isSemProgramar(r) && getDataRomaneio(r) === amanha),
+  futuro: filaProducao.filter((r) => {
+    const dataRomaneio = getDataRomaneio(r);
+    return !isSemProgramar(r) && dataRomaneio && dataRomaneio > amanha;
+  }),
 };
 
 const parseNumberBR = (v) => {
@@ -1690,6 +2448,119 @@ const parseNumberBR = (v) => {
   const n = Number(s.replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 };
+
+  const estoqueTelhas = useMemo(() => {
+    const telhas = (CATALOGO_PRODUTOS || []).filter(
+      (p) => p.grupo === "GRUPO_TELHAS"
+    );
+
+    const producaoEstoque = historicoProducaoReal.filter((item) =>
+      String(item?.destino || "").toLowerCase().includes("estoque")
+    );
+    const base = producaoEstoque.length > 0 ? producaoEstoque : historicoProducaoReal;
+
+    const saldoPorCod = {};
+    const saldoKgPorCod = {};
+
+    base.forEach((item) => {
+      if (!item?.cod) return;
+      const qtd = Number(item.qtd || 0);
+      const peso = Number(item.pesoTotal || 0);
+      saldoPorCod[item.cod] = (saldoPorCod[item.cod] || 0) + qtd;
+      saldoKgPorCod[item.cod] = (saldoKgPorCod[item.cod] || 0) + peso;
+    });
+
+    return telhas
+      .map((p) => ({
+        ...p,
+        saldoQtd: saldoPorCod[p.cod] || 0,
+        saldoKg: saldoKgPorCod[p.cod] || 0,
+      }))
+      .filter((p) => (p.saldoQtd || 0) !== 0 || (p.saldoKg || 0) !== 0)
+      .sort((a, b) => String(a.cod).localeCompare(String(b.cod)));
+  }, [historicoProducaoReal]);
+
+  const pedidosComercial = useMemo(
+    () =>
+      filaProducao.filter(
+        (r) =>
+          (!getDataRomaneio(r)) &&
+          (r.origem === "COMERCIAL" || r.status === "FALTA PROGRAMAR") &&
+          r.status !== "FINALIZADO"
+      ),
+    [filaProducao]
+  );
+  const pedidosComercialProntos = useMemo(
+    () =>
+      filaProducao.filter((p) => {
+        if (p.status !== "PRONTO" || p.origem !== "COMERCIAL") return false;
+        const data = getDataRomaneio(p);
+        return data === hoje || data === amanha;
+      }),
+    [filaProducao, hoje, amanha]
+  );
+  const pedidosComercialAbertos = useMemo(
+    () =>
+      filaProducao.filter(
+        (p) =>
+          p.origem === "COMERCIAL" &&
+          p.status !== "FINALIZADO" &&
+          p.status !== "PRONTO" &&
+          p.status !== "RETIRADA"
+      ),
+    [filaProducao]
+  );
+  const ordensProgramadasOrdenadas = useMemo(() => {
+    const lista = filaProducao.filter(
+      (r) => getDataRomaneio(r) && r.maquinaId
+    );
+    return lista
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(getDataRomaneio(a)).getTime() -
+          new Date(getDataRomaneio(b)).getTime()
+      );
+  }, [filaProducao]);
+  const ordensComercialFiltradas = useMemo(() => {
+    const termo = comercialBusca.trim().toLowerCase();
+    const base = ordensProgramadasOrdenadas.filter(
+      (r) => r.status !== 'PRONTO'
+    );
+    if (!termo) return base;
+    return base.filter((r) => {
+      const cliente = String(r.cliente || '').toLowerCase();
+      const pedido = String(r.id || r.romaneioId || '').toLowerCase();
+      const item = String(r.itens?.[0]?.desc || '').toLowerCase();
+      const maquina = String(getMaquinaNomeComercial(r.maquinaId) || '').toLowerCase();
+      return (
+        cliente.includes(termo) ||
+        pedido.includes(termo) ||
+        item.includes(termo) ||
+        maquina.includes(termo)
+      );
+    });
+  }, [ordensProgramadasOrdenadas, comercialBusca]);
+  const solicitacoesComercial = useMemo(
+    () =>
+      filaProducao.filter(
+        (p) =>
+          p.origem === 'COMERCIAL' &&
+          (p.status === 'TRANSFERENCIA SOLICITADA' ||
+            p.status === 'PRONTO' ||
+            p.status === 'RETIRADA')
+      ),
+    [filaProducao]
+  );
+  const estoqueTelhasFiltrado = useMemo(() => {
+    const termo = comercialEstoqueBusca.trim().toLowerCase();
+    if (!termo) return estoqueTelhas;
+    return estoqueTelhas.filter((item) => {
+      const cod = String(item.cod || '').toLowerCase();
+      const desc = String(item.desc || '').toLowerCase();
+      return cod.includes(termo) || desc.includes(termo);
+    });
+  }, [estoqueTelhas, comercialEstoqueBusca]);
 
 
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
@@ -2325,6 +3196,7 @@ const handleImportBackup = (json) => {
           <div className="flex flex-row w-full justify-around md:flex-col md:gap-6 md:px-2">
             <BotaoMenu ativo={abaAtiva === 'agenda'} onClick={() => setAbaAtiva('agenda')} icon={<CalendarDays size={20} />} label="Agenda" />
             <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
+            <BotaoMenu ativo={abaAtiva === 'comercial'} onClick={() => setAbaAtiva('comercial')} icon={<Box size={20} />} label="Comercial" />
             <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
             <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
             
@@ -2386,7 +3258,16 @@ const handleImportBackup = (json) => {
 </header>
 
               {/* Grid Agenda: 1 coluna no mobile (com scroll) */}
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-y-auto pb-20 md:pb-4">
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-6 overflow-y-auto pb-20 md:pb-4">
+
+                <ColunaKanban
+                    titulo="FALTA PROGRAMAR"
+                    data={null}
+                    cor="purple"
+                    lista={colunasAgenda.semProgramar}
+                    resumo={calcResumo(colunasAgenda.semProgramar)}
+                    onEdit={abrirModalEdicao}
+                />
                 
                 <ColunaKanban 
                     titulo="HOJE" 
@@ -2433,13 +3314,98 @@ const handleImportBackup = (json) => {
             <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
                 <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
                 <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
+                <button
+                  onClick={selecionarTodosProgramadosPCP}
+                  className="bg-zinc-700 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"
+                >
+                  <CheckCircle2 size={16} /> Selecionar todos
+                </button>
+                <button
+                  onClick={finalizarSelecionadosPCP}
+                  className="bg-amber-500/90 text-black px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap disabled:opacity-50"
+                  disabled={pcpSelecionados.length === 0}
+                >
+                  <CheckCircle2 size={16} /> Finalizar selecionados
+                </button>
                 <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
             </div>
         </header>
+        <div className="bg-zinc-900 rounded-xl border border-white/10 p-4 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                <h2 className="text-lg font-bold text-white">Apontar estoque de telha</h2>
+                <span className="text-[11px] text-zinc-500">Lanca saldo no estoque (destino: Estoque)</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <div className="md:col-span-2">
+                    <label className="text-[11px] text-zinc-400">Data</label>
+                    <input
+                      type="date"
+                      value={formEstoqueTelhaData}
+                      onChange={(e) => setFormEstoqueTelhaData(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                    />
+                </div>
+                <div className="md:col-span-4">
+                    <label className="text-[11px] text-zinc-400">Produto</label>
+                    <select
+                      value={formEstoqueTelhaCod}
+                      onChange={handleSelectEstoqueTelhaProduto}
+                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                    >
+                      <option value="">Selecionar telha...</option>
+                      {CATALOGO_PRODUTOS.filter((p) => p.grupo === 'GRUPO_TELHAS').map((p) => (
+                        <option key={p.cod} value={p.cod}>
+                          {p.cod} - {p.desc}
+                        </option>
+                      ))}
+                    </select>
+                </div>
+                <div className="md:col-span-3">
+                    <label className="text-[11px] text-zinc-400">Descricao</label>
+                    <input
+                      value={formEstoqueTelhaDesc}
+                      onChange={(e) => setFormEstoqueTelhaDesc(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                      placeholder="Descricao"
+                    />
+                </div>
+                <div className="md:col-span-1">
+                    <label className="text-[11px] text-zinc-400">Comp (m)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formEstoqueTelhaComp}
+                      onChange={(e) => setFormEstoqueTelhaComp(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                      placeholder="0"
+                    />
+                </div>
+                <div className="md:col-span-1">
+                    <label className="text-[11px] text-zinc-400">Qtd</label>
+                    <input
+                      type="number"
+                      value={formEstoqueTelhaQtd}
+                      onChange={(e) => setFormEstoqueTelhaQtd(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                      placeholder="0"
+                    />
+                </div>
+                <div className="md:col-span-1 flex items-end">
+                    <button
+                      type="button"
+                      onClick={salvarApontamentoEstoqueTelha}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded p-2 text-sm font-bold"
+                    >
+                      Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
         <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[600px]">
                 <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
-                    <th className="p-4">ID FIREBASE</th> {/* Título da coluna atualizado */}
+                    <th className="p-4 w-10 text-center">Sel</th>
+                    <th className="p-4">ID FIREBASE</th> {/* T?tulo da coluna atualizado */}
                     <th className="p-4">Data</th>
                     <th className="p-4">Cliente</th>
                     <th className="p-4 text-center">Peso</th>
@@ -2447,31 +3413,51 @@ const handleImportBackup = (json) => {
                 </tr></thead>
                 <tbody className="divide-y divide-white/5">
                     {filaProducao
-                        // 1. Cria uma cópia e ordena: mais recente (b) - mais antigo (a)
-                        .slice() 
-.sort((a, b) => new Date(getDataRomaneio(b)) - new Date(getDataRomaneio(a)))
-                        // 2. Limita a 50 itens para exibição
+                        // 1. Cria uma c?pia e ordena: mais recente (b) - mais antigo (a)
+                        .slice()
+                        .sort((a, b) => {
+                          const dataA = getDataRomaneio(a);
+                          const dataB = getDataRomaneio(b);
+                          const timeA = dataA ? new Date(dataA).getTime() : 0;
+                          const timeB = dataB ? new Date(dataB).getTime() : 0;
+                          return timeB - timeA;
+                        })
+                        // 2. Limita a 50 itens para exibi??o
                         .slice(0, 300) 
-                        .map((r) => (
-                           <tr key={r.sysId} className="hover:bg-white/5">
-                                 {/* Exibindo o ID do Firebase (assumindo que está em r.sysId) */}
+                        .map((r) => {
+                           const rowId = r.sysId || r.id;
+                           const dataRomaneio = getDataRomaneio(r);
+                           const programado = Boolean(dataRomaneio) && Boolean(r.maquinaId);
+                           return (
+                           <tr key={rowId} className="hover:bg-white/5">
+                                <td className="p-4 text-center">
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 accent-amber-500"
+                                    disabled={!programado}
+                                    checked={pcpSelecionados.includes(rowId)}
+                                    onChange={() => togglePcpSelecionado(rowId)}
+                                  />
+                                </td>
+                                 {/* Exibindo o ID do Firebase (assumindo que est? em r.sysId) */}
                                 <td className="p-4 text-blue-400 font-mono text-xs">#{r.sysId}</td> 
 <td className="p-4 text-zinc-300">
   {formatarDataBR(getDataRomaneio(r))}
 </td>                                <td className="p-4">{r.cliente}</td>
                                 <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
                                 <td className="p-4 text-right">
-                                    {/* Verifica se o r.sysId é válido antes de renderizar o botão */}
+                                    {/* Verifica se o r.sysId ? v?lido antes de renderizar o bot?o */}
                                     {r.sysId && (typeof r.sysId === 'string' && r.sysId.length > 5) ? (
                                         <button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500">
                                             <Trash2 size={16} />
                                         </button>
                                     ) : (
-                                        // Se o ID for inválido (como no Estoque Interno), exibe um placeholder ou nada
-                                        <span className="text-zinc-600 cursor-not-allowed">—</span>
+                                        // Se o ID for inv?lido (como no Estoque Interno), exibe um placeholder ou nada
+                                        <span className="text-zinc-600 cursor-not-allowed">--</span>
                                     )}
                                 </td>                           </tr>
-                        ))}
+                        );
+                        })}
                 </tbody>
             </table>
         </div>
@@ -2718,6 +3704,499 @@ const handleImportBackup = (json) => {
             </div>
           )}
 
+          {/* ABA COMERCIAL */}
+          {abaAtiva === 'comercial' && (
+            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
+              <div className="max-w-6xl mx-auto space-y-6">
+                <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center">
+                      <Scale className="text-orange-300" size={22} />
+                    </div>
+                    <div>
+                      <h1 className="text-2xl font-bold text-white">Cockpit Comercial</h1>
+                      <div className="text-[11px] text-zinc-500">Visao do estoque, pedidos e solicitacoes.</div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+                    <div className="flex items-center bg-zinc-950 rounded-lg px-3 py-2 border border-white/10 w-full lg:w-[380px]">
+                      <Search size={14} className="text-zinc-500" />
+                      <input
+                        type="text"
+                        value={comercialBusca}
+                        onChange={(e) => setComercialBusca(e.target.value)}
+                        placeholder="Buscar ordem, cliente ou produto"
+                        className="bg-transparent border-none outline-none text-sm text-zinc-200 ml-2 w-full placeholder-zinc-600"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMostrarSolicitarProducao(true)}
+                      className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-lg flex items-center gap-2 justify-center"
+                    >
+                      <Plus size={16} />
+                      Nova solicitacao
+                    </button>
+                  </div>
+                </header>
+
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr),360px] gap-6">
+                  <section className="flex flex-col gap-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                          <Factory className="text-orange-400" size={20} />
+                          Ordens de Producao em Aberto
+                        </h2>
+                        <p className="text-xs text-zinc-500">Acompanhe e movimente o fluxo produtivo.</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] px-2 py-1 rounded-full border border-red-500/30 text-red-300 bg-red-500/10">Critico</span>
+                        <span className="text-[10px] px-2 py-1 rounded-full border border-amber-500/30 text-amber-300 bg-amber-500/10">Em aberto</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm min-w-[680px]">
+                          <thead className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
+                            <tr>
+                              <th className="p-4">OP / Cliente</th>
+                              <th className="p-4">Produto / Maquina</th>
+                              <th className="p-4">Status</th>
+                              <th className="p-4">Data</th>
+                              <th className="p-4 text-right">Acao</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {ordensComercialFiltradas.length === 0 && (
+                              <tr>
+                                <td className="p-4 text-zinc-500" colSpan={5}>
+                                  Nenhuma ordem encontrada.
+                                </td>
+                              </tr>
+                            )}
+                            {ordensComercialFiltradas.map((r) => {
+                              const badge = getStatusBadgeComercial(r.status);
+                              return (
+                                <tr key={r.sysId || r.id} className="hover:bg-white/5">
+                                  <td className="p-4">
+                                    <div className="text-white font-semibold">#{r.id || r.romaneioId}</div>
+                                    <div className="text-[11px] text-zinc-500">{r.cliente}</div>
+                                  </td>
+                                  <td className="p-4">
+                                    <div className="text-zinc-200">{r.itens?.[0]?.desc || 'Item'}</div>
+                                    <div className="text-[11px] text-zinc-500">{getMaquinaNomeComercial(r.maquinaId)}</div>
+                                  </td>
+                                  <td className="p-4">
+                                    <span className={`text-[10px] px-2 py-1 rounded-full border ${badge.className}`}>
+                                      {badge.label}
+                                    </span>
+                                  </td>
+                                  <td className="p-4 text-zinc-300">{formatarDataBR(getDataRomaneio(r))}</td>
+                                  <td className="p-4 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirModalEdicao(r)}
+                                      className="px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                    >
+                                      Abrir
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
+                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white">Pedidos em aberto</h3>
+                        <span className="text-[11px] text-zinc-500">{pedidosComercialAbertos.length} pedidos</span>
+                      </div>
+                      <div className="divide-y divide-white/5">
+                        {pedidosComercialAbertos.length === 0 && (
+                          <div className="p-4 text-zinc-500 text-sm">Nenhum pedido em aberto.</div>
+                        )}
+                        {pedidosComercialAbertos.map((p) => {
+                          const chave = p.sysId || p.id;
+                          return (
+                            <div key={chave} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                              <div>
+                                <div className="text-white font-semibold">{p.cliente}</div>
+                                <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
+                              </div>
+                              <div className="flex flex-col md:flex-row gap-2 md:items-center w-full md:w-auto">
+                                <input
+                                  value={transferenciaObsPorPedido[chave] || ''}
+                                  onChange={(e) =>
+                                    setTransferenciaObsPorPedido((prev) => ({
+                                      ...prev,
+                                      [chave]: e.target.value,
+                                    }))}
+                                  className="bg-black/50 border border-white/10 rounded p-2 text-white text-xs w-full md:w-48"
+                                  placeholder="Solicitar transferencia"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => solicitarTransferenciaPedido(p)}
+                                  className="px-3 py-2 rounded bg-amber-500/90 text-black text-xs font-bold hover:bg-amber-500"
+                                >
+                                  Transferir
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalEdicao(p)}
+                                  className="px-3 py-2 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                >
+                                  Abrir
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </section>
+
+                  <aside className="flex flex-col gap-6">
+                    <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
+                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Box size={16} className="text-sky-400" />
+                          Estoque Disponivel
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setMostrarTransferenciaEstoque((prev) => !prev)}
+                          className="text-[11px] px-2 py-1 rounded border border-white/10 text-zinc-300 hover:bg-white/5"
+                        >
+                          Solicitar transferencia
+                        </button>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        <div className="flex items-center bg-black/50 border border-white/10 rounded px-2 py-1.5 text-xs">
+                          <Search size={12} className="text-zinc-500" />
+                          <input
+                            value={comercialEstoqueBusca}
+                            onChange={(e) => setComercialEstoqueBusca(e.target.value)}
+                            placeholder="Filtrar estoque..."
+                            className="bg-transparent border-none outline-none text-xs text-zinc-200 ml-2 w-full placeholder-zinc-600"
+                          />
+                        </div>
+                        {estoqueTelhasFiltrado.length === 0 && (
+                          <div className="text-xs text-zinc-500">Nenhum item em estoque.</div>
+                        )}
+                        {estoqueTelhasFiltrado.slice(0, 8).map((item) => (
+                          <div key={item.cod} className="space-y-2">
+                            <div className="flex justify-between text-xs text-zinc-300">
+                              <span className="truncate">{item.desc}</span>
+                              <span className="font-semibold">{Number(item.saldoQtd || 0)}</span>
+                            </div>
+                            <div className="h-1.5 bg-zinc-800 rounded-full">
+                              <div
+                                className="h-1.5 bg-emerald-500/80 rounded-full"
+                                style={{ width: `${Math.min(100, (Number(item.saldoQtd || 0) / 5000) * 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {mostrarTransferenciaEstoque && (
+                        <div className="border-t border-white/10 p-4 space-y-3">
+                          <div className="text-xs text-zinc-400">Solicitar transferencia</div>
+                          <input
+                            value={formTransfCliente}
+                            onChange={(e) => setFormTransfCliente(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-xs"
+                            placeholder="Destino / Cliente"
+                          />
+                          <select
+                            value={formTransfCod}
+                            onChange={handleSelectTransfProduto}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-xs"
+                          >
+                            <option value="">Selecionar telha...</option>
+                            {estoqueTelhas.map((p) => (
+                              <option key={p.cod} value={p.cod}>
+                                {p.cod} - {p.desc}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              value={formTransfQtd}
+                              onChange={(e) => setFormTransfQtd(e.target.value)}
+                              className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-xs"
+                              placeholder="Qtd"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formTransfComp}
+                              onChange={(e) => setFormTransfComp(e.target.value)}
+                              className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-xs"
+                              placeholder="Comp"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={solicitarTransferenciaEstoque}
+                            className="w-full px-3 py-2 bg-amber-500/90 hover:bg-amber-500 text-black rounded text-xs font-bold"
+                          >
+                            Enviar solicitacao
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
+                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <ClipboardList size={16} className="text-purple-400" />
+                          Minhas solicitacoes
+                        </h3>
+                        <span className="text-[11px] text-zinc-500">{solicitacoesComercial.length}</span>
+                      </div>
+                      <div className="divide-y divide-white/5">
+                        {solicitacoesComercial.length === 0 && (
+                          <div className="p-4 text-zinc-500 text-sm">Sem solicitacoes recentes.</div>
+                        )}
+                        {solicitacoesComercial.map((req) => (
+                          <div key={req.sysId || req.id} className="p-4 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs text-zinc-500 uppercase">{req.tipo || 'Pedido'}</div>
+                              <div className="text-sm text-zinc-100">{req.cliente}</div>
+                              <div className="text-[11px] text-zinc-500">{req.itens?.[0]?.desc || 'Item'}</div>
+                            </div>
+                            <span
+                              className={`text-[10px] px-2 py-1 rounded-full border ${
+                                req.status === 'PRONTO'
+                                  ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+                                  : req.status === 'RETIRADA'
+                                  ? 'border-sky-500/30 text-sky-300 bg-sky-500/10'
+                                  : 'border-amber-500/30 text-amber-300 bg-amber-500/10'
+                              }`}
+                            >
+                              {req.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
+                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white">Pedidos prontos (hoje/amanha)</h3>
+                        <span className="text-[11px] text-zinc-500">{pedidosComercialProntos.length}</span>
+                      </div>
+                      <div className="divide-y divide-white/5 max-h-44 overflow-y-auto">
+                        {pedidosComercialProntos.length === 0 && (
+                          <div className="p-4 text-zinc-500 text-sm">Nenhum pedido pronto.</div>
+                        )}
+                        {pedidosComercialProntos.slice(0, 4).map((p) => (
+                          <div key={p.sysId || p.id} className="p-4 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm text-zinc-100">{p.cliente}</div>
+                              <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => marcarRetiradaPedido(p)}
+                              className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500"
+                            >
+                              Marcar retirada
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+
+
+              {mostrarSolicitarProducao && (
+                <div className="fixed inset-0 z-[80] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-5xl overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                      <h3 className="text-lg font-bold text-white">Nova solicitacao de producao</h3>
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSolicitarProducao(false)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr,0.9fr] gap-6">
+                        <div className="space-y-4">
+                          <div className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-4">
+                            <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Dados do solicitante</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="space-y-2">
+                                <label className="text-[11px] text-zinc-400">Cliente</label>
+                                <input
+                                  value={formPedidoCliente}
+                                  onChange={(e) => setFormPedidoCliente(e.target.value)}
+                                  className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                                  placeholder="Nome do cliente"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[11px] text-zinc-400">Solicitante</label>
+                                <input
+                                  value={formPedidoSolicitante}
+                                  onChange={(e) => setFormPedidoSolicitante(e.target.value)}
+                                  className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                                  placeholder="Nome do solicitante"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-4">
+                            <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Detalhes do pedido</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="space-y-2">
+                                <label className="text-[11px] text-zinc-400">Requisicao</label>
+                                <input
+                                  value={formPedidoRequisicao}
+                                  onChange={(e) => setFormPedidoRequisicao(e.target.value)}
+                                  className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                                  placeholder="REQ / Pedido"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[11px] text-zinc-400">Observacao</label>
+                                <input
+                                  value={formPedidoObs}
+                                  onChange={(e) => setFormPedidoObs(e.target.value)}
+                                  className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                                  placeholder="Ex: urgente"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-4">
+                            <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Itens do pedido</div>
+                            <select
+                              value={formPedidoCod}
+                              onChange={handleSelectProdutoPedidoComercial}
+                              className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                            >
+                              <option value="">Manual...</option>
+                              {CATALOGO_PRODUTOS.filter((p) => p.grupo === 'GRUPO_TELHAS').map((p) => (
+                                <option key={p.cod} value={p.cod}>
+                                  {p.cod} - {p.desc}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={formPedidoDesc}
+                              onChange={(e) => setFormPedidoDesc(e.target.value)}
+                              className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                              placeholder="Descricao"
+                            />
+                            <div className="grid grid-cols-2 gap-3">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={formPedidoComp}
+                                onChange={(e) => setFormPedidoComp(e.target.value)}
+                                className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                                placeholder="Comp (m)"
+                              />
+                              <input
+                                type="number"
+                                value={formPedidoQtd}
+                                onChange={(e) => setFormPedidoQtd(e.target.value)}
+                                className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
+                                placeholder="Qtd"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={adicionarItemPedidoComercial}
+                              className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold"
+                            >
+                              Adicionar item
+                            </button>
+                          </div>
+
+                          <div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden">
+                            <table className="w-full text-left text-sm">
+                              <thead className="bg-white/5 text-xs text-zinc-500">
+                                <tr>
+                                  <th className="p-3">Item</th>
+                                  <th className="p-3 text-center">Qtd</th>
+                                  <th className="p-3 text-right">Peso</th>
+                                  <th className="p-3 text-right">#</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-white/5">
+                                {itensPedidoComercial.map((i) => (
+                                  <tr key={i.tempId}>
+                                    <td className="p-3 text-zinc-300">
+                                      <div className="font-semibold">{i.desc}</div>
+                                      <div className="text-[10px] text-zinc-500">{i.cod}</div>
+                                    </td>
+                                    <td className="p-3 text-center text-white">{i.qtd}</td>
+                                    <td className="p-3 text-right text-zinc-300">{i.pesoTotal}</td>
+                                    <td className="p-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => removerItemPedidoComercial(i.tempId)}
+                                        className="text-zinc-500 hover:text-red-400"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {itensPedidoComercial.length === 0 && (
+                                  <tr>
+                                    <td className="p-3 text-zinc-500" colSpan={4}>
+                                      Nenhum item adicionado.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSolicitarProducao(false)}
+                        className="px-4 py-2 bg-zinc-800 text-white rounded-lg text-sm"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={salvarPedidoComercial}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold"
+                      >
+                        Enviar pedido
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ABA PRODUTOS */}
           {abaAtiva === 'produtos' && (
             <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
@@ -2935,6 +4414,14 @@ const handleImportBackup = (json) => {
 
             <div className="p-4 md:p-6 border-t border-white/10 bg-white/5 flex gap-3 justify-end">
                 <button onClick={() => setShowModalNovaOrdem(false)} className="px-6 py-3 bg-zinc-800 text-white rounded-lg font-bold border border-white/10">Cancelar</button>
+                <button
+                  type="button"
+                  onClick={finalizarOrdemProgramada}
+                  disabled={itensNoPedido.length === 0}
+                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold disabled:opacity-40"
+                >
+                  Finalizar ordem
+                </button>
                 <button onClick={salvarRomaneio} className="px-8 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg flex items-center gap-2"><ArrowRight size={20} /> Salvar</button>
             </div>
           </div>
