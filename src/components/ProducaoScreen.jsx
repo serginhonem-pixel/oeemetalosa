@@ -60,6 +60,11 @@ export const ProducaoScreen = ({
 
   const producaoFiltrada = useMemo(() => {
     return (historicoProducaoReal || []).filter((p) => {
+      const origem = String(p.origem || '').toUpperCase();
+      const ignorarFinalizacao =
+        origem === 'FINALIZACAO_ORDEM' || origem === 'FINALIZACAO_RAPIDA';
+      if (ignorarFinalizacao) return false;
+
       const dataOk = p.data === formApontProdData;
 
       if (!formApontProdMaquina) return dataOk;
