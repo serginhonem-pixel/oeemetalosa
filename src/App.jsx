@@ -3309,12 +3309,12 @@ const handleImportBackup = (json) => {
         {/* --- MENU DE NAVEGAÇÃO (CORRIGIDO COM OEE) --- */}
         <nav className="
             bg-[#09090b] border-t md:border-t-0 md:border-r border-white/10 z-50 shrink-0
-            fixed bottom-0 w-full h-16 flex flex-row justify-around items-center px-2
+            fixed bottom-0 w-full h-16 flex flex-row items-center px-2
             md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0
         ">
           <div className="hidden md:flex mb-8 p-2 bg-blue-600 rounded-lg shadow-lg"><Layout className="text-white" size={24} /></div>
           
-          <div className="flex flex-row w-full justify-around md:flex-col md:gap-6 md:px-2">
+          <div className="flex flex-row w-full gap-2 overflow-x-auto md:flex-col md:gap-6 md:px-2 md:overflow-visible">
             <BotaoMenu ativo={abaAtiva === 'agenda'} onClick={() => setAbaAtiva('agenda')} icon={<CalendarDays size={20} />} label="Agenda" />
             <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
             <BotaoMenu ativo={abaAtiva === 'comercial'} onClick={() => setAbaAtiva('comercial')} icon={<Box size={20} />} label="Comercial" />
@@ -5276,7 +5276,7 @@ const BotaoMenu = ({ ativo, onClick, icon, label }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`w-full p-3 rounded-xl flex flex-col items-center gap-1 ${
+    className={`min-w-[64px] shrink-0 p-2 md:p-3 rounded-xl flex flex-col items-center gap-1 md:w-full ${
       ativo ? "bg-white/10 text-pink-500" : "text-zinc-500 hover:bg-white/5"
     }`}
   >
