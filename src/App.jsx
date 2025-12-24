@@ -14,11 +14,11 @@ import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
 
 import {
-  Activity, AlertOctagon, ArrowRight, BarChart3, Box,
+  Activity, AlertCircle, AlertOctagon, AlertTriangle, ArrowRight, ArrowRightLeft, BarChart3, Box,
   CalendarDays, CheckCircle2,
   ClipboardList,
   Download, Factory, FileText, History, Layers, Layout,
-  Pencil, Plus, PlusCircle, Scale, Search, Trash2,
+  Package, Pencil, Plus, PlusCircle, Scale, Search, Trash2,
   TrendingDown, TrendingUp,
   Upload, X
 } from 'lucide-react';
@@ -592,6 +592,8 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [pcpSelecionados, setPcpSelecionados] = useState([]);
   const [comercialBusca, setComercialBusca] = useState('');
   const [comercialEstoqueBusca, setComercialEstoqueBusca] = useState('');
+  const [comercialVisao, setComercialVisao] = useState('visao');
+  const [filtroEstoque, setFiltroEstoque] = useState('todos');
   const [mostrarSolicitarProducao, setMostrarSolicitarProducao] = useState(false);
   const [mostrarTransferenciaEstoque, setMostrarTransferenciaEstoque] = useState(false);
 
@@ -1797,6 +1799,16 @@ const handleDownloadModeloParadas = () => {
     }
   };
 
+  const abrirMovimentacaoEstoque = (item) => {
+    if (item?.cod) {
+      setFormTransfCod(item.cod);
+      setFormTransfDesc(item.desc || '');
+      setFormTransfComp(item.comp ? String(item.comp) : '');
+    }
+    setFormTransfQtd('');
+    setMostrarTransferenciaEstoque(true);
+  };
+
   const solicitarTransferenciaPedido = async (pedido) => {
     const chave = pedido?.sysId || pedido?.id;
     const obs = transferenciaObsPorPedido[chave] || '';
@@ -2561,6 +2573,66 @@ const parseNumberBR = (v) => {
       return cod.includes(termo) || desc.includes(termo);
     });
   }, [estoqueTelhas, comercialEstoqueBusca]);
+
+  const estoqueFiltradoComercial = useMemo(() => {
+    let lista = [...estoqueTelhas];
+    if (filtroEstoque === 'critico') {
+      lista = lista.filter((item) => Number(item.saldoQtd || 0) <= 500);
+    }
+    if (filtroEstoque === 'telhas') {
+      lista = lista.filter((item) => item.grupo === 'GRUPO_TELHAS');
+    }
+    if (comercialVisao === 'estoque' && comercialBusca.trim()) {
+      const termo = comercialBusca.trim().toLowerCase();
+      lista = lista.filter((item) => {
+        const cod = String(item.cod || '').toLowerCase();
+        const desc = String(item.desc || '').toLowerCase();
+        return cod.includes(termo) || desc.includes(termo);
+      });
+    }
+    return lista;
+  }, [estoqueTelhas, filtroEstoque, comercialVisao, comercialBusca]);
+
+  const estoqueCriticoComercial = useMemo(
+    () => estoqueTelhas.filter((item) => Number(item.saldoQtd || 0) <= 500).slice(0, 4),
+    [estoqueTelhas]
+  );
+
+  const getStockStatusComercial = (item) => {
+    const saldo = Number(item.saldoQtd || 0);
+    if (saldo <= 500) {
+      return {
+        label: 'Critico',
+        text: 'text-red-400',
+        bg: 'bg-red-500',
+        border: 'border-red-500/20',
+        bgSoft: 'bg-red-500/10',
+      };
+    }
+    if (saldo <= 1500) {
+      return {
+        label: 'Baixo',
+        text: 'text-amber-400',
+        bg: 'bg-amber-500',
+        border: 'border-amber-500/20',
+        bgSoft: 'bg-amber-500/10',
+      };
+    }
+    return {
+      label: 'Bom',
+      text: 'text-emerald-400',
+      bg: 'bg-emerald-500',
+      border: 'border-emerald-500/20',
+      bgSoft: 'bg-emerald-500/10',
+    };
+  };
+
+  const isVisaoGeralComercial = comercialVisao === 'visao';
+  const mostrarPedidosComercial = isVisaoGeralComercial || comercialVisao === 'pedidos';
+  const mostrarEstoqueComercial = isVisaoGeralComercial || comercialVisao === 'estoque';
+  const mostrarSolicitacoesComercial =
+    isVisaoGeralComercial || comercialVisao === 'solicitacoes';
+  const mostrarProntosComercial = isVisaoGeralComercial || comercialVisao === 'prontos';
 
 
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
@@ -3706,9 +3778,9 @@ const handleImportBackup = (json) => {
 
           {/* ABA COMERCIAL */}
           {abaAtiva === 'comercial' && (
-            <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
-              <div className="max-w-6xl mx-auto space-y-6">
-                <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex-1 bg-[#09090b] px-4 pb-8 pt-5 md:px-6 md:pt-6 overflow-y-auto">
+              <div className="w-full space-y-5">
+                <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-11 h-11 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center">
                       <Scale className="text-orange-300" size={22} />
@@ -3726,7 +3798,7 @@ const handleImportBackup = (json) => {
                         type="text"
                         value={comercialBusca}
                         onChange={(e) => setComercialBusca(e.target.value)}
-                        placeholder="Buscar ordem, cliente ou produto"
+                        placeholder={comercialVisao === 'estoque' ? 'Buscar produto...' : 'Buscar ordem, cliente ou produto'}
                         className="bg-transparent border-none outline-none text-sm text-zinc-200 ml-2 w-full placeholder-zinc-600"
                       />
                     </div>
@@ -3741,8 +3813,126 @@ const handleImportBackup = (json) => {
                   </div>
                 </header>
 
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr),360px] gap-6">
-                  <section className="flex flex-col gap-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setComercialVisao('visao')}
+                    className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
+                      comercialVisao === 'visao'
+                        ? 'bg-zinc-900 border-orange-500/50 shadow-[0_0_20px_rgba(0,0,0,0.3)] ring-1 ring-orange-500/50'
+                        : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-800/50 hover:border-white/10'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-orange-500">
+                      <TrendingUp size={80} strokeWidth={1} />
+                    </div>
+                    <div className="relative z-10 flex flex-col h-full justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-1.5 rounded-md bg-orange-500/10 text-orange-400">
+                            <TrendingUp size={16} />
+                          </div>
+                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Producao ativa</span>
+                        </div>
+                        <div className="text-2xl font-bold text-white tracking-tight">{ordensProgramadasOrdenadas.length.toString().padStart(2, '0')}</div>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-2 font-medium">Ordens em andamento</div>
+                    </div>
+                    {comercialVisao === 'visao' && <div className="absolute bottom-0 left-0 h-1 w-full bg-orange-500" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setComercialVisao('estoque')}
+                    className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
+                      comercialVisao === 'estoque'
+                        ? 'bg-zinc-900 border-sky-500/50 shadow-[0_0_20px_rgba(0,0,0,0.3)] ring-1 ring-sky-500/50'
+                        : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-800/50 hover:border-white/10'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-sky-500">
+                      <Box size={80} strokeWidth={1} />
+                    </div>
+                    <div className="relative z-10 flex flex-col h-full justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-1.5 rounded-md bg-sky-500/10 text-sky-400">
+                            <Box size={16} />
+                          </div>
+                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Estoque</span>
+                        </div>
+                        <div className="text-2xl font-bold text-white tracking-tight">{estoqueTelhas.length}</div>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-2 font-medium">Itens cadastrados</div>
+                    </div>
+                    {comercialVisao === 'estoque' && <div className="absolute bottom-0 left-0 h-1 w-full bg-sky-500" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setComercialVisao('pedidos')}
+                    className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
+                      comercialVisao === 'pedidos'
+                        ? 'bg-zinc-900 border-amber-500/50 shadow-[0_0_20px_rgba(0,0,0,0.3)] ring-1 ring-amber-500/50'
+                        : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-800/50 hover:border-white/10'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-amber-500">
+                      <ClipboardList size={80} strokeWidth={1} />
+                    </div>
+                    <div className="relative z-10 flex flex-col h-full justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-1.5 rounded-md bg-amber-500/10 text-amber-400">
+                            <ClipboardList size={16} />
+                          </div>
+                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Pedidos abertos</span>
+                        </div>
+                        <div className="text-2xl font-bold text-white tracking-tight">{pedidosComercialAbertos.length}</div>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-2 font-medium">Em atendimento</div>
+                    </div>
+                    {comercialVisao === 'pedidos' && <div className="absolute bottom-0 left-0 h-1 w-full bg-amber-500" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setComercialVisao('prontos')}
+                    className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
+                      comercialVisao === 'prontos'
+                        ? 'bg-zinc-900 border-emerald-500/50 shadow-[0_0_20px_rgba(0,0,0,0.3)] ring-1 ring-emerald-500/50'
+                        : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-800/50 hover:border-white/10'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-emerald-500">
+                      <CheckCircle2 size={80} strokeWidth={1} />
+                    </div>
+                    <div className="relative z-10 flex flex-col h-full justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400">
+                            <CheckCircle2 size={16} />
+                          </div>
+                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Prontos</span>
+                        </div>
+                        <div className="text-2xl font-bold text-white tracking-tight">{pedidosComercialProntos.length}</div>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-2 font-medium">Aguardando retirada</div>
+                    </div>
+                    {comercialVisao === 'prontos' && <div className="absolute bottom-0 left-0 h-1 w-full bg-emerald-500" />}
+                  </button>
+                </div>
+
+                {comercialVisao === 'visao' && (
+                <div
+                  className={
+                    isVisaoGeralComercial
+                      ? 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr),340px] gap-5'
+                      : 'grid grid-cols-1 gap-5'
+                  }
+                >
+                  {mostrarPedidosComercial && (
+                  <section className="flex flex-col gap-5">
                     <div className="flex items-center justify-between">
                       <div>
                         <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -3762,17 +3952,17 @@ const handleImportBackup = (json) => {
                         <table className="w-full text-left text-sm min-w-[680px]">
                           <thead className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
                             <tr>
-                              <th className="p-4">OP / Cliente</th>
-                              <th className="p-4">Produto / Maquina</th>
-                              <th className="p-4">Status</th>
-                              <th className="p-4">Data</th>
-                              <th className="p-4 text-right">Acao</th>
+                              <th className="px-4 py-3.5">OP / Cliente</th>
+                              <th className="px-4 py-3.5">Produto / Maquina</th>
+                              <th className="px-4 py-3.5">Status</th>
+                              <th className="px-4 py-3.5">Data</th>
+                              <th className="px-4 py-3.5 text-right">Acao</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-white/5">
                             {ordensComercialFiltradas.length === 0 && (
                               <tr>
-                                <td className="p-4 text-zinc-500" colSpan={5}>
+                                <td className="px-4 py-3.5 text-zinc-500" colSpan={5}>
                                   Nenhuma ordem encontrada.
                                 </td>
                               </tr>
@@ -3781,21 +3971,21 @@ const handleImportBackup = (json) => {
                               const badge = getStatusBadgeComercial(r.status);
                               return (
                                 <tr key={r.sysId || r.id} className="hover:bg-white/5">
-                                  <td className="p-4">
+                                  <td className="px-4 py-3.5">
                                     <div className="text-white font-semibold">#{r.id || r.romaneioId}</div>
                                     <div className="text-[11px] text-zinc-500">{r.cliente}</div>
                                   </td>
-                                  <td className="p-4">
+                                  <td className="px-4 py-3.5">
                                     <div className="text-zinc-200">{r.itens?.[0]?.desc || 'Item'}</div>
                                     <div className="text-[11px] text-zinc-500">{getMaquinaNomeComercial(r.maquinaId)}</div>
                                   </td>
-                                  <td className="p-4">
+                                  <td className="px-4 py-3.5">
                                     <span className={`text-[10px] px-2 py-1 rounded-full border ${badge.className}`}>
                                       {badge.label}
                                     </span>
                                   </td>
-                                  <td className="p-4 text-zinc-300">{formatarDataBR(getDataRomaneio(r))}</td>
-                                  <td className="p-4 text-right">
+                                  <td className="px-4 py-3.5 text-zinc-300">{formatarDataBR(getDataRomaneio(r))}</td>
+                                  <td className="px-4 py-3.5 text-right">
                                     <button
                                       type="button"
                                       onClick={() => abrirModalEdicao(r)}
@@ -3813,18 +4003,18 @@ const handleImportBackup = (json) => {
                     </div>
 
                     <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
-                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                         <h3 className="text-sm font-bold text-white">Pedidos em aberto</h3>
                         <span className="text-[11px] text-zinc-500">{pedidosComercialAbertos.length} pedidos</span>
                       </div>
                       <div className="divide-y divide-white/5">
                         {pedidosComercialAbertos.length === 0 && (
-                          <div className="p-4 text-zinc-500 text-sm">Nenhum pedido em aberto.</div>
+                          <div className="px-4 py-3 text-zinc-500 text-sm">Nenhum pedido em aberto.</div>
                         )}
                         {pedidosComercialAbertos.map((p) => {
                           const chave = p.sysId || p.id;
                           return (
-                            <div key={chave} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div key={chave} className="px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                               <div>
                                 <div className="text-white font-semibold">{p.cliente}</div>
                                 <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
@@ -3861,10 +4051,13 @@ const handleImportBackup = (json) => {
                       </div>
                     </div>
                   </section>
+                  )}
 
-                  <aside className="flex flex-col gap-6">
+                  {(mostrarEstoqueComercial || mostrarSolicitacoesComercial || mostrarProntosComercial) && (
+                  <aside className="flex flex-col gap-5">
+                    {mostrarEstoqueComercial && (
                     <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
-                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
                           <Box size={16} className="text-sky-400" />
                           Estoque Disponivel
@@ -3877,7 +4070,7 @@ const handleImportBackup = (json) => {
                           Solicitar transferencia
                         </button>
                       </div>
-                      <div className="p-4 space-y-4">
+                      <div className="px-4 py-3.5 space-y-3.5">
                         <div className="flex items-center bg-black/50 border border-white/10 rounded px-2 py-1.5 text-xs">
                           <Search size={12} className="text-zinc-500" />
                           <input
@@ -3906,7 +4099,7 @@ const handleImportBackup = (json) => {
                         ))}
                       </div>
                       {mostrarTransferenciaEstoque && (
-                        <div className="border-t border-white/10 p-4 space-y-3">
+                        <div className="border-t border-white/10 px-4 py-3.5 space-y-3">
                           <div className="text-xs text-zinc-400">Solicitar transferencia</div>
                           <input
                             value={formTransfCliente}
@@ -3953,9 +4146,11 @@ const handleImportBackup = (json) => {
                         </div>
                       )}
                     </div>
+                    )}
 
+                    {mostrarSolicitacoesComercial && (
                     <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
-                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
                           <ClipboardList size={16} className="text-purple-400" />
                           Minhas solicitacoes
@@ -3964,10 +4159,10 @@ const handleImportBackup = (json) => {
                       </div>
                       <div className="divide-y divide-white/5">
                         {solicitacoesComercial.length === 0 && (
-                          <div className="p-4 text-zinc-500 text-sm">Sem solicitacoes recentes.</div>
+                          <div className="px-4 py-3 text-zinc-500 text-sm">Sem solicitacoes recentes.</div>
                         )}
                         {solicitacoesComercial.map((req) => (
-                          <div key={req.sysId || req.id} className="p-4 flex items-center justify-between gap-3">
+                          <div key={req.sysId || req.id} className="px-4 py-3 flex items-center justify-between gap-3">
                             <div>
                               <div className="text-xs text-zinc-500 uppercase">{req.tipo || 'Pedido'}</div>
                               <div className="text-sm text-zinc-100">{req.cliente}</div>
@@ -3988,18 +4183,20 @@ const handleImportBackup = (json) => {
                         ))}
                       </div>
                     </div>
+                    )}
 
+                    {mostrarProntosComercial && (
                     <div className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden">
-                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                         <h3 className="text-sm font-bold text-white">Pedidos prontos (hoje/amanha)</h3>
                         <span className="text-[11px] text-zinc-500">{pedidosComercialProntos.length}</span>
                       </div>
                       <div className="divide-y divide-white/5 max-h-44 overflow-y-auto">
                         {pedidosComercialProntos.length === 0 && (
-                          <div className="p-4 text-zinc-500 text-sm">Nenhum pedido pronto.</div>
+                          <div className="px-4 py-3 text-zinc-500 text-sm">Nenhum pedido pronto.</div>
                         )}
                         {pedidosComercialProntos.slice(0, 4).map((p) => (
-                          <div key={p.sysId || p.id} className="p-4 flex items-center justify-between gap-3">
+                          <div key={p.sysId || p.id} className="px-4 py-3 flex items-center justify-between gap-3">
                             <div>
                               <div className="text-sm text-zinc-100">{p.cliente}</div>
                               <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id}</div>
@@ -4015,8 +4212,237 @@ const handleImportBackup = (json) => {
                         ))}
                       </div>
                     </div>
+                    )}
                   </aside>
+                  )}
                 </div>
+                )}
+
+                {comercialVisao === 'estoque' && (
+                  <div className="bg-zinc-900/50 border border-white/5 rounded-3xl overflow-hidden backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[500px]">
+                    <div className="p-5 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                          <Package className="text-sky-400" size={18} />
+                          Gestao de estoque
+                        </h2>
+                        <p className="text-sm text-zinc-500">Controle de niveis e movimentacoes</p>
+                      </div>
+                      <div className="flex items-center gap-2 bg-zinc-950 p-1 rounded-xl border border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => setFiltroEstoque('todos')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'todos' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroEstoque('critico')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${filtroEstoque === 'critico' ? 'bg-red-500/10 text-red-400 shadow-sm border border-red-500/10' : 'text-zinc-400 hover:text-white'}`}
+                        >
+                          <AlertCircle size={12} />
+                          Criticos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroEstoque('telhas')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'telhas' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                        >
+                          Telhas
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-zinc-950/30 text-xs font-semibold text-zinc-500 uppercase tracking-wider border-b border-white/5">
+                          <tr>
+                            <th className="px-5 py-3">Produto</th>
+                            <th className="px-5 py-3">Disponibilidade visual</th>
+                            <th className="px-5 py-3">Qtd atual</th>
+                            <th className="px-5 py-3">Status</th>
+                            <th className="px-5 py-3 text-right">Acoes</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {estoqueFiltradoComercial.map((item) => {
+                            const status = getStockStatusComercial(item);
+                            const percent = Math.min(100, Math.max(0, (Number(item.saldoQtd || 0) / 5000) * 100));
+                            return (
+                              <tr key={item.cod} className="group hover:bg-white/[0.02] transition-colors border-b border-white/5 last:border-0">
+                                <td className="px-5 py-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-lg bg-zinc-800 border border-white/5 flex items-center justify-center text-zinc-400 group-hover:border-white/20 transition-colors">
+                                      <Box size={16} />
+                                    </div>
+                                    <div>
+                                      <div className="text-sm font-medium text-white">{item.desc}</div>
+                                      <div className="text-[11px] text-zinc-500 font-mono flex items-center gap-2">
+                                        <span>COD: {item.cod}</span>
+                                        <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                                        <span>Telhas</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-5 py-4 w-48">
+                                  <div className="flex justify-between text-xs mb-1.5">
+                                    <span className="text-zinc-400">Nivel</span>
+                                    <span className="text-white font-mono">{percent.toFixed(0)}%</span>
+                                  </div>
+                                  <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                    <div className={`h-full ${status.bg} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+                                  </div>
+                                </td>
+                                <td className="px-5 py-4">
+                                  <div className="text-sm font-bold text-white tabular-nums">{Number(item.saldoQtd || 0).toLocaleString()}</div>
+                                  <div className="text-[10px] text-zinc-500">Kg: {Number(item.saldoKg || 0).toFixed(1)}</div>
+                                </td>
+                                <td className="px-5 py-4">
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${status.text} ${status.border} ${status.bgSoft}`}>
+                                    {status.label}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirMovimentacaoEstoque(item)}
+                                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-2 ml-auto"
+                                  >
+                                    <ArrowRightLeft size={12} /> Movimentar
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {estoqueFiltradoComercial.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="py-20 text-center text-zinc-500">
+                                <Box size={40} className="mx-auto mb-3 opacity-20" />
+                                Nenhum item encontrado com este filtro.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {comercialVisao === 'pedidos' && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="bg-zinc-900/50 border border-white/5 rounded-3xl overflow-hidden">
+                      <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white">Pedidos em aberto</h3>
+                        <span className="text-[11px] text-zinc-500">{pedidosComercialAbertos.length} pedidos</span>
+                      </div>
+                      <div className="divide-y divide-white/5">
+                        {pedidosComercialAbertos.length === 0 && (
+                          <div className="px-5 py-4 text-zinc-500 text-sm">Nenhum pedido em aberto.</div>
+                        )}
+                        {pedidosComercialAbertos.map((p) => {
+                          const chave = p.sysId || p.id;
+                          return (
+                            <div key={chave} className="px-5 py-4 flex flex-col gap-3">
+                              <div>
+                                <div className="text-white font-semibold">{p.cliente}</div>
+                                <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
+                              </div>
+                              <div className="flex flex-col md:flex-row gap-2 md:items-center">
+                                <input
+                                  value={transferenciaObsPorPedido[chave] || ''}
+                                  onChange={(e) =>
+                                    setTransferenciaObsPorPedido((prev) => ({
+                                      ...prev,
+                                      [chave]: e.target.value,
+                                    }))}
+                                  className="bg-black/50 border border-white/10 rounded p-2 text-white text-xs w-full md:w-48"
+                                  placeholder="Solicitar transferencia"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => solicitarTransferenciaPedido(p)}
+                                  className="px-3 py-2 rounded bg-amber-500/90 text-black text-xs font-bold hover:bg-amber-500"
+                                >
+                                  Transferir
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalEdicao(p)}
+                                  className="px-3 py-2 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                >
+                                  Abrir
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-900/50 border border-white/5 rounded-3xl overflow-hidden">
+                      <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white">Solicitacoes</h3>
+                        <span className="text-[11px] text-zinc-500">{solicitacoesComercial.length}</span>
+                      </div>
+                      <div className="divide-y divide-white/5">
+                        {solicitacoesComercial.length === 0 && (
+                          <div className="px-5 py-4 text-zinc-500 text-sm">Sem solicitacoes recentes.</div>
+                        )}
+                        {solicitacoesComercial.map((req) => (
+                          <div key={req.sysId || req.id} className="px-5 py-4 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs text-zinc-500 uppercase">{req.tipo || 'Pedido'}</div>
+                              <div className="text-sm text-zinc-100">{req.cliente}</div>
+                              <div className="text-[11px] text-zinc-500">{req.itens?.[0]?.desc || 'Item'}</div>
+                            </div>
+                            <span
+                              className={`text-[10px] px-2 py-1 rounded-full border ${
+                                req.status === 'PRONTO'
+                                  ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+                                  : req.status === 'RETIRADA'
+                                  ? 'border-sky-500/30 text-sky-300 bg-sky-500/10'
+                                  : 'border-amber-500/30 text-amber-300 bg-amber-500/10'
+                              }`}
+                            >
+                              {req.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {comercialVisao === 'prontos' && (
+                  <div className="bg-zinc-900/50 border border-white/5 rounded-3xl overflow-hidden">
+                    <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-white">Pedidos prontos (hoje/amanha)</h3>
+                      <span className="text-[11px] text-zinc-500">{pedidosComercialProntos.length}</span>
+                    </div>
+                    <div className="divide-y divide-white/5">
+                      {pedidosComercialProntos.length === 0 && (
+                        <div className="px-5 py-4 text-zinc-500 text-sm">Nenhum pedido pronto.</div>
+                      )}
+                      {pedidosComercialProntos.map((p) => (
+                        <div key={p.sysId || p.id} className="px-5 py-4 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm text-zinc-100">{p.cliente}</div>
+                            <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => marcarRetiradaPedido(p)}
+                            className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500"
+                          >
+                            Marcar retirada
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
 
@@ -4189,6 +4615,97 @@ const handleImportBackup = (json) => {
                         className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold"
                       >
                         Enviar pedido
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {mostrarTransferenciaEstoque && (
+                <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-lg overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                      <h3 className="text-lg font-bold text-white">Movimentar estoque</h3>
+                      <button
+                        type="button"
+                        onClick={() => setMostrarTransferenciaEstoque(false)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400">Destino / Cliente</label>
+                        <input
+                          value={formTransfCliente}
+                          onChange={(e) => setFormTransfCliente(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="Ex: Expedição / Cliente"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400">Produto</label>
+                        <select
+                          value={formTransfCod}
+                          onChange={handleSelectTransfProduto}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                        >
+                          <option value="">Selecionar telha...</option>
+                          {estoqueTelhas.map((p) => (
+                            <option key={p.cod} value={p.cod}>
+                              {p.cod} - {p.desc}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-zinc-400">Qtd</label>
+                          <input
+                            type="number"
+                            value={formTransfQtd}
+                            onChange={(e) => setFormTransfQtd(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                            placeholder="Qtd"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-zinc-400">Comp (m)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={formTransfComp}
+                            onChange={(e) => setFormTransfComp(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                            placeholder="Comp"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400">Observacao</label>
+                        <input
+                          value={formTransfObs}
+                          onChange={(e) => setFormTransfObs(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="Ex: urgente"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setMostrarTransferenciaEstoque(false)}
+                        className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={solicitarTransferenciaEstoque}
+                        className="px-4 py-2 bg-amber-500/90 hover:bg-amber-500 text-black text-sm font-bold rounded"
+                      >
+                        Enviar solicitacao
                       </button>
                     </div>
                   </div>
