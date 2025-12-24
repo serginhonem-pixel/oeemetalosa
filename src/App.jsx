@@ -580,7 +580,6 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [formPedidoQtd, setFormPedidoQtd] = useState('');
   const [formPedidoComp, setFormPedidoComp] = useState('');
   const [itensPedidoComercial, setItensPedidoComercial] = useState([]);
-  const [transferenciaObsPorPedido, setTransferenciaObsPorPedido] = useState({});
 
   // Comercial - solicitar transferencia do estoque
   const [formTransfCliente, setFormTransfCliente] = useState('');
@@ -596,6 +595,11 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [filtroEstoque, setFiltroEstoque] = useState('todos');
   const [mostrarSolicitarProducao, setMostrarSolicitarProducao] = useState(false);
   const [mostrarTransferenciaEstoque, setMostrarTransferenciaEstoque] = useState(false);
+  const [transferModalAberto, setTransferModalAberto] = useState(false);
+  const [transferPedidoSelecionado, setTransferPedidoSelecionado] = useState(null);
+  const [transferDestino, setTransferDestino] = useState('');
+  const [transferObs, setTransferObs] = useState('');
+  const [transferItens, setTransferItens] = useState([]);
 
   // PCP - apontamento de estoque de telhas
   const [formEstoqueTelhaData, setFormEstoqueTelhaData] = useState(hoje);
@@ -1799,6 +1803,50 @@ const handleDownloadModeloParadas = () => {
     }
   };
 
+  const abrirModalTransferenciaPedido = (pedido) => {
+    if (!pedido) return;
+    setTransferPedidoSelecionado(pedido);
+    setTransferDestino('');
+    setTransferObs('');
+    setTransferItens(
+      (pedido.itens || []).map((item, idx) => ({
+        key: item.tempId || `${item.cod}-${idx}`,
+        cod: item.cod,
+        desc: item.desc || '',
+        comp: item.comp,
+        qtd: Number(item.qtd || 0),
+      }))
+    );
+    setTransferModalAberto(true);
+  };
+
+  const confirmarTransferenciaPedido = async () => {
+    if (!transferPedidoSelecionado) return;
+    if (!transferDestino.trim()) {
+      alert('Informe o destino/cliente.');
+      return;
+    }
+    const itensValidos = transferItens
+      .map((item) => ({
+        ...item,
+        qtd: Number(item.qtd || 0),
+      }))
+      .filter((item) => item.qtd > 0);
+
+    if (itensValidos.length === 0) {
+      alert('Informe ao menos uma quantidade.');
+      return;
+    }
+
+    await atualizarStatusPedidoComercial(transferPedidoSelecionado, 'TRANSFERENCIA SOLICITADA', {
+      transferenciaDestino: transferDestino.trim(),
+      transferenciaObs: transferObs.trim(),
+      transferenciaItens: itensValidos,
+      transferenciaSolicitadaAt: new Date().toISOString(),
+    });
+    setTransferModalAberto(false);
+  };
+
   const abrirMovimentacaoEstoque = (item) => {
     if (item?.cod) {
       setFormTransfCod(item.cod);
@@ -2560,7 +2608,8 @@ const parseNumberBR = (v) => {
           p.origem === 'COMERCIAL' &&
           (p.status === 'TRANSFERENCIA SOLICITADA' ||
             p.status === 'PRONTO' ||
-            p.status === 'RETIRADA')
+            p.status === 'RETIRADA' ||
+            p.status === 'CONCLUIDO')
       ),
     [filaProducao]
   );
@@ -4020,19 +4069,9 @@ const handleImportBackup = (json) => {
                                 <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
                               </div>
                               <div className="flex flex-col md:flex-row gap-2 md:items-center w-full md:w-auto">
-                                <input
-                                  value={transferenciaObsPorPedido[chave] || ''}
-                                  onChange={(e) =>
-                                    setTransferenciaObsPorPedido((prev) => ({
-                                      ...prev,
-                                      [chave]: e.target.value,
-                                    }))}
-                                  className="bg-black/50 border border-white/10 rounded p-2 text-white text-xs w-full md:w-48"
-                                  placeholder="Solicitar transferencia"
-                                />
                                 <button
                                   type="button"
-                                  onClick={() => solicitarTransferenciaPedido(p)}
+                                  onClick={() => abrirModalTransferenciaPedido(p)}
                                   className="px-3 py-2 rounded bg-amber-500/90 text-black text-xs font-bold hover:bg-amber-500"
                                 >
                                   Transferir
@@ -4168,17 +4207,31 @@ const handleImportBackup = (json) => {
                               <div className="text-sm text-zinc-100">{req.cliente}</div>
                               <div className="text-[11px] text-zinc-500">{req.itens?.[0]?.desc || 'Item'}</div>
                             </div>
-                            <span
-                              className={`text-[10px] px-2 py-1 rounded-full border ${
-                                req.status === 'PRONTO'
-                                  ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
-                                  : req.status === 'RETIRADA'
-                                  ? 'border-sky-500/30 text-sky-300 bg-sky-500/10'
-                                  : 'border-amber-500/30 text-amber-300 bg-amber-500/10'
-                              }`}
-                            >
-                              {req.status}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => atualizarStatusPedidoComercial(req, 'CONCLUIDO', { concluidoAt: new Date().toISOString() })}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition ${
+                                  req.status === 'CONCLUIDO'
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 cursor-default'
+                                    : 'bg-zinc-900 text-zinc-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-200'
+                                }`}
+                                disabled={req.status === 'CONCLUIDO'}
+                              >
+                                {req.status === 'CONCLUIDO' ? 'Concluido' : 'Marcar concluido'}
+                              </button>
+                              <span
+                                className={`text-[10px] px-2 py-1 rounded-full border ${
+                                  req.status === 'PRONTO'
+                                    ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+                                    : req.status === 'RETIRADA' || req.status === 'CONCLUIDO'
+                                    ? 'border-sky-500/30 text-sky-300 bg-sky-500/10'
+                                    : 'border-amber-500/30 text-amber-300 bg-amber-500/10'
+                                }`}
+                              >
+                                {req.status}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -4350,19 +4403,9 @@ const handleImportBackup = (json) => {
                                 <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
                               </div>
                               <div className="flex flex-col md:flex-row gap-2 md:items-center">
-                                <input
-                                  value={transferenciaObsPorPedido[chave] || ''}
-                                  onChange={(e) =>
-                                    setTransferenciaObsPorPedido((prev) => ({
-                                      ...prev,
-                                      [chave]: e.target.value,
-                                    }))}
-                                  className="bg-black/50 border border-white/10 rounded p-2 text-white text-xs w-full md:w-48"
-                                  placeholder="Solicitar transferencia"
-                                />
                                 <button
                                   type="button"
-                                  onClick={() => solicitarTransferenciaPedido(p)}
+                                  onClick={() => abrirModalTransferenciaPedido(p)}
                                   className="px-3 py-2 rounded bg-amber-500/90 text-black text-xs font-bold hover:bg-amber-500"
                                 >
                                   Transferir
@@ -4397,17 +4440,31 @@ const handleImportBackup = (json) => {
                               <div className="text-sm text-zinc-100">{req.cliente}</div>
                               <div className="text-[11px] text-zinc-500">{req.itens?.[0]?.desc || 'Item'}</div>
                             </div>
-                            <span
-                              className={`text-[10px] px-2 py-1 rounded-full border ${
-                                req.status === 'PRONTO'
-                                  ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
-                                  : req.status === 'RETIRADA'
-                                  ? 'border-sky-500/30 text-sky-300 bg-sky-500/10'
-                                  : 'border-amber-500/30 text-amber-300 bg-amber-500/10'
-                              }`}
-                            >
-                              {req.status}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => atualizarStatusPedidoComercial(req, 'CONCLUIDO', { concluidoAt: new Date().toISOString() })}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition ${
+                                  req.status === 'CONCLUIDO'
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 cursor-default'
+                                    : 'bg-zinc-900 text-zinc-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-200'
+                                }`}
+                                disabled={req.status === 'CONCLUIDO'}
+                              >
+                                {req.status === 'CONCLUIDO' ? 'Concluido' : 'Marcar concluido'}
+                              </button>
+                              <span
+                                className={`text-[10px] px-2 py-1 rounded-full border ${
+                                  req.status === 'PRONTO'
+                                    ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+                                    : req.status === 'RETIRADA' || req.status === 'CONCLUIDO'
+                                    ? 'border-sky-500/30 text-sky-300 bg-sky-500/10'
+                                    : 'border-amber-500/30 text-amber-300 bg-amber-500/10'
+                                }`}
+                              >
+                                {req.status}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -4706,6 +4763,106 @@ const handleImportBackup = (json) => {
                         className="px-4 py-2 bg-amber-500/90 hover:bg-amber-500 text-black text-sm font-bold rounded"
                       >
                         Enviar solicitacao
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {transferModalAberto && (
+                <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                      <div>
+                        <h3 className="text-lg font-bold text-white">Solicitar transferencia</h3>
+                        <div className="text-xs text-zinc-500">
+                          #{transferPedidoSelecionado?.requisicao || transferPedidoSelecionado?.id} · {transferPedidoSelecionado?.cliente}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTransferModalAberto(false)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <div className="p-5 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-zinc-400">Destino / Cliente</label>
+                          <input
+                            value={transferDestino}
+                            onChange={(e) => setTransferDestino(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                            placeholder="Ex: Expedição / Cliente"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-zinc-400">Observacao</label>
+                          <input
+                            value={transferObs}
+                            onChange={(e) => setTransferObs(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                            placeholder="Ex: urgente"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="border border-white/10 rounded-xl overflow-hidden">
+                        <div className="px-4 py-2 text-xs text-zinc-500 bg-white/5 border-b border-white/10">
+                          Itens para transferir
+                        </div>
+                        <div className="divide-y divide-white/5">
+                          {transferItens.map((item, idx) => (
+                            <div key={item.key} className="px-4 py-3 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-zinc-100 truncate">{item.desc || item.cod}</div>
+                                <div className="text-[10px] text-zinc-500">Cod: {item.cod}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.qtd}
+                                  onChange={(e) => {
+                                    const valor = e.target.value;
+                                    setTransferItens((prev) =>
+                                      prev.map((p, i) =>
+                                        i === idx ? { ...p, qtd: valor } : p
+                                      )
+                                    );
+                                  }}
+                                  className="w-24 bg-black/50 border border-white/10 rounded p-2 text-white text-sm text-right"
+                                />
+                                <span className="text-[11px] text-zinc-500">un</span>
+                              </div>
+                            </div>
+                          ))}
+                          {transferItens.length === 0 && (
+                            <div className="px-4 py-6 text-center text-xs text-zinc-500">
+                              Nenhum item no pedido.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setTransferModalAberto(false)}
+                        className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmarTransferenciaPedido}
+                        className="px-4 py-2 bg-amber-500/90 hover:bg-amber-500 text-black text-sm font-bold rounded"
+                      >
+                        Confirmar transferencia
                       </button>
                     </div>
                   </div>
