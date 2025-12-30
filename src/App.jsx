@@ -6,7 +6,7 @@ import {
   getDocs,
   setDoc
 } from 'firebase/firestore';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 import { db } from "./services/firebase";
@@ -595,6 +595,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [filtroEstoque, setFiltroEstoque] = useState('todos');
   const [mostrarSolicitarProducao, setMostrarSolicitarProducao] = useState(false);
   const [mostrarTransferenciaEstoque, setMostrarTransferenciaEstoque] = useState(false);
+  const [comercialItensAbertos, setComercialItensAbertos] = useState({});
   const [transferModalAberto, setTransferModalAberto] = useState(false);
   const [transferPedidoSelecionado, setTransferPedidoSelecionado] = useState(null);
   const [transferDestino, setTransferDestino] = useState('');
@@ -1147,6 +1148,12 @@ const handleDownloadModeloParadas = () => {
     setFormEstoqueTelhaDesc('');
     setFormEstoqueTelhaComp('');
     setFormEstoqueTelhaQtd('');
+  };
+  const toggleItensComercial = (chave) => {
+    setComercialItensAbertos((prev) => ({
+      ...prev,
+      [chave]: !prev[chave],
+    }));
   };
   const handleSelectTransfProduto = (e) => {
     const codigo = e.target.value;
@@ -4018,32 +4025,66 @@ const handleImportBackup = (json) => {
                             )}
                             {ordensComercialFiltradas.map((r) => {
                               const badge = getStatusBadgeComercial(r.status);
+                              const chave = r.sysId || r.id;
+                              const itensAbertos = Boolean(comercialItensAbertos[chave]);
+                              const itens = Array.isArray(r.itens) ? r.itens : [];
                               return (
-                                <tr key={r.sysId || r.id} className="hover:bg-white/5">
-                                  <td className="px-4 py-3.5">
-                                    <div className="text-white font-semibold">#{r.id || r.romaneioId}</div>
-                                    <div className="text-[11px] text-zinc-500">{r.cliente}</div>
-                                  </td>
-                                  <td className="px-4 py-3.5">
-                                    <div className="text-zinc-200">{r.itens?.[0]?.desc || 'Item'}</div>
-                                    <div className="text-[11px] text-zinc-500">{getMaquinaNomeComercial(r.maquinaId)}</div>
-                                  </td>
-                                  <td className="px-4 py-3.5">
-                                    <span className={`text-[10px] px-2 py-1 rounded-full border ${badge.className}`}>
-                                      {badge.label}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3.5 text-zinc-300">{formatarDataBR(getDataRomaneio(r))}</td>
-                                  <td className="px-4 py-3.5 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => abrirModalEdicao(r)}
-                                      className="px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
-                                    >
-                                      Abrir
-                                    </button>
-                                  </td>
-                                </tr>
+                                <Fragment key={chave}>
+                                  <tr className="hover:bg-white/5">
+                                    <td className="px-4 py-3.5">
+                                      <div className="text-white font-semibold">#{r.id || r.romaneioId}</div>
+                                      <div className="text-[11px] text-zinc-500">{r.cliente}</div>
+                                    </td>
+                                    <td className="px-4 py-3.5">
+                                      <div className="text-zinc-200">{r.itens?.[0]?.desc || 'Item'}</div>
+                                      <div className="text-[11px] text-zinc-500">{getMaquinaNomeComercial(r.maquinaId)}</div>
+                                    </td>
+                                    <td className="px-4 py-3.5">
+                                      <span className={`text-[10px] px-2 py-1 rounded-full border ${badge.className}`}>
+                                        {badge.label}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3.5 text-zinc-300">{formatarDataBR(getDataRomaneio(r))}</td>
+                                    <td className="px-4 py-3.5 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleItensComercial(chave)}
+                                        className="px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                      >
+                                        Itens
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={handlePrint}
+                                        className="ml-2 px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                      >
+                                        Imprimir
+                                      </button>
+                                    </td>
+                                  </tr>
+                                  {itensAbertos && (
+                                    <tr className="bg-black/30">
+                                      <td className="px-4 py-3.5" colSpan={5}>
+                                        <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Itens</div>
+                                        <div className="mt-2 grid gap-2">
+                                          {itens.length === 0 ? (
+                                            <div className="text-sm text-zinc-500">Sem itens.</div>
+                                          ) : (
+                                            itens.map((item, idx) => (
+                                              <div key={`${chave}-item-${idx}`} className="flex flex-wrap items-center gap-3 text-xs text-zinc-200">
+                                                <span className="font-semibold text-white">{item.cod || '-'}</span>
+                                                <span className="text-zinc-300">{item.desc || 'Item'}</span>
+                                                <span className="text-zinc-400">{Number(item.qtd || 0)} un</span>
+                                                <span className="text-zinc-400">{Number(item.comp || 0)} m</span>
+                                                <span className="text-zinc-400">{Number(item.pesoTotal || 0)} kg</span>
+                                              </div>
+                                            ))
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
                               );
                             })}
                           </tbody>
@@ -4062,8 +4103,10 @@ const handleImportBackup = (json) => {
                         )}
                         {pedidosComercialAbertos.map((p) => {
                           const chave = p.sysId || p.id;
+                          const itensAbertos = Boolean(comercialItensAbertos[chave]);
+                          const itens = Array.isArray(p.itens) ? p.itens : [];
                           return (
-                            <div key={chave} className="px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div key={chave} className="px-4 py-3 flex flex-col gap-3">
                               <div>
                                 <div className="text-white font-semibold">{p.cliente}</div>
                                 <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
@@ -4078,12 +4121,39 @@ const handleImportBackup = (json) => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => abrirModalEdicao(p)}
+                                  onClick={() => toggleItensComercial(chave)}
                                   className="px-3 py-2 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
                                 >
-                                  Abrir
+                                  Itens
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handlePrint}
+                                  className="px-3 py-2 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                >
+                                  Imprimir
                                 </button>
                               </div>
+                              {itensAbertos && (
+                                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-xs text-zinc-200">
+                                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Itens</div>
+                                  <div className="mt-2 grid gap-2">
+                                    {itens.length === 0 ? (
+                                      <div className="text-sm text-zinc-500">Sem itens.</div>
+                                    ) : (
+                                      itens.map((item, idx) => (
+                                        <div key={`${chave}-pedido-item-${idx}`} className="flex flex-wrap items-center gap-3">
+                                          <span className="font-semibold text-white">{item.cod || '-'}</span>
+                                          <span className="text-zinc-300">{item.desc || 'Item'}</span>
+                                          <span className="text-zinc-400">{Number(item.qtd || 0)} un</span>
+                                          <span className="text-zinc-400">{Number(item.comp || 0)} m</span>
+                                          <span className="text-zinc-400">{Number(item.pesoTotal || 0)} kg</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -4396,6 +4466,8 @@ const handleImportBackup = (json) => {
                         )}
                         {pedidosComercialAbertos.map((p) => {
                           const chave = p.sysId || p.id;
+                          const itensAbertos = Boolean(comercialItensAbertos[chave]);
+                          const itens = Array.isArray(p.itens) ? p.itens : [];
                           return (
                             <div key={chave} className="px-5 py-4 flex flex-col gap-3">
                               <div>
@@ -4412,12 +4484,39 @@ const handleImportBackup = (json) => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => abrirModalEdicao(p)}
+                                  onClick={() => toggleItensComercial(chave)}
                                   className="px-3 py-2 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
                                 >
-                                  Abrir
+                                  Itens
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handlePrint}
+                                  className="px-3 py-2 rounded bg-zinc-800 text-zinc-200 text-xs hover:bg-zinc-700"
+                                >
+                                  Imprimir
                                 </button>
                               </div>
+                              {itensAbertos && (
+                                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-xs text-zinc-200">
+                                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Itens</div>
+                                  <div className="mt-2 grid gap-2">
+                                    {itens.length === 0 ? (
+                                      <div className="text-sm text-zinc-500">Sem itens.</div>
+                                    ) : (
+                                      itens.map((item, idx) => (
+                                        <div key={`${chave}-pedido-list-item-${idx}`} className="flex flex-wrap items-center gap-3">
+                                          <span className="font-semibold text-white">{item.cod || '-'}</span>
+                                          <span className="text-zinc-300">{item.desc || 'Item'}</span>
+                                          <span className="text-zinc-400">{Number(item.qtd || 0)} un</span>
+                                          <span className="text-zinc-400">{Number(item.comp || 0)} m</span>
+                                          <span className="text-zinc-400">{Number(item.pesoTotal || 0)} kg</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

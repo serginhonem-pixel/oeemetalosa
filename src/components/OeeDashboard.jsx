@@ -25,6 +25,11 @@ import { CATALOGO_PRODUTOS } from "../data/catalogoProdutos";
 import { CATALOGO_MAQUINAS } from "../data/catalogoMaquinas";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const DEFAULT_VELOCIDADE_M_POR_MIN = 25;
+const ORIGENS_EXCLUIDAS_OEE = new Set([
+  "FINALIZACAO_ORDEM",
+  "FINALIZACAO_RAPIDA",
+]);
 
 // ---------- HELPERS ----------
 
@@ -137,6 +142,12 @@ export default function OeeDashboard({
   const [rangeEnd, setRangeEnd] = useState(dataFimInd);
   const [metricMode, setMetricMode] = useState("pieces"); // 'pieces' | 'weight'
   const [preset, setPreset] = useState("custom"); 
+  const [velocidadeMpm, setVelocidadeMpm] = useState(
+    DEFAULT_VELOCIDADE_M_POR_MIN
+  );
+  const [velocidadeDraft, setVelocidadeDraft] = useState(
+    String(DEFAULT_VELOCIDADE_M_POR_MIN)
+  );
   
   // NOVO: Estado para filtro de máquina
   const [maquinaId, setMaquinaId] = useState(""); 
@@ -153,6 +164,12 @@ export default function OeeDashboard({
     () => CATALOGO_MAQUINAS.filter((m) => m.ativo),
     []
   );
+
+  const applyVelocidade = () => {
+    const parsed = Number(velocidadeDraft);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    setVelocidadeMpm(parsed);
+  };
 
   const handlePreset = (type) => {
     const hoje = new Date();
@@ -234,8 +251,13 @@ export default function OeeDashboard({
           !maquinaId ||
           idRegistro === maquinaId ||
           (!!nomeSelecionado && (idRegistro === nomeSelecionado || nomeRegistro === nomeSelecionado));
-  
-        return dataOk && maquinaOk;
+
+        const isProducao =
+          "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
+        const origem = String(item.origem || "").toUpperCase();
+        const origemOk = !isProducao || !ORIGENS_EXCLUIDAS_OEE.has(origem);
+
+        return dataOk && maquinaOk && origemOk;
     };
 
     const prodFiltrada = Array.isArray(historicoProducaoReal)
@@ -285,6 +307,7 @@ export default function OeeDashboard({
     // --- CÁLCULO DE PRODUÇÃO ---
     let producaoTotalPcs = 0;
     let producaoTotalKg = 0;
+    let producaoTotalMetros = 0;
     const dailyMap = {};
 
     if (endDate >= startDate) {
@@ -301,15 +324,20 @@ export default function OeeDashboard({
     prodFiltrada.forEach((item) => {
       const iso = (item.data || "").slice(0, 10);
       const qtd = Number(item.qtd) || 0;
+      const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
+      const compRegistro = Number(item.comp || item.compMetros || 0);
+      const compCatalogo = Number(prodInfo?.comp || 0);
+      const comp =
+        prodInfo && prodInfo.custom ? compRegistro : compCatalogo || compRegistro;
+
       producaoTotalPcs += qtd;
+      producaoTotalMetros += qtd * comp;
 
       // Usa peso já salvo no registro; se não houver, calcula a partir do catálogo
       let peso = Number(item.pesoTotal) || 0;
       if (!peso) {
-        const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
         if (prodInfo) {
           if (prodInfo.custom) {
-            const comp = Number(item.comp || item.compMetros || prodInfo.comp || 0);
             const kgMetro = Number(prodInfo.kgMetro || 0);
             peso = qtd * comp * kgMetro;
           } else {
@@ -349,7 +377,11 @@ export default function OeeDashboard({
       .slice(0, 5);
 
     // OEE
-    const performance = 100;
+    const producaoIdealMetros = tempoRodandoMin * velocidadeMpm;
+    const performance =
+      producaoIdealMetros > 0
+        ? (producaoTotalMetros / producaoIdealMetros) * 100
+        : 0;
     const qualidade = 100;
     const oeeGlobal =
       (disponibilidade / 100) * (performance / 100) * (qualidade / 100) * 100;
@@ -376,6 +408,7 @@ export default function OeeDashboard({
     historicoProducaoReal,
     historicoParadas,
     turnoHoras,
+    velocidadeMpm,
     maquinaId // IMPORTANTE: Recalcula tudo quando troca a máquina
   ]);
 
@@ -504,6 +537,30 @@ export default function OeeDashboard({
             </button>
           </div>
 
+          <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-lg self-end">
+            <span className="text-[10px] text-zinc-400 uppercase tracking-[0.18em] font-semibold">
+              Velocidade
+            </span>
+            <input
+              type="number"
+              min="1"
+              step="0.1"
+              value={velocidadeDraft}
+              onChange={(e) => setVelocidadeDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applyVelocidade();
+              }}
+              className="w-16 bg-transparent text-white text-sm font-medium outline-none text-right"
+            />
+            <span className="text-zinc-500 text-[11px]">m/min</span>
+            <button
+              onClick={applyVelocidade}
+              className="px-2 py-1 text-[10px] rounded bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+            >
+              Aplicar
+            </button>
+          </div>
+
           {/* INPUTS DE DATA (VISUAL MELHORADO) */}
           <div className="flex items-center gap-3 bg-zinc-900 px-4 py-2 rounded-2xl border border-white/10 text-xs shadow-sm">
             <CalendarDays className="text-zinc-400" size={16} />
@@ -555,7 +612,7 @@ export default function OeeDashboard({
           label="Performance"
           value={performance}
           accent="yellow"
-          helper="Meta fixa (100%)"
+          helper={`Base ${velocidadeMpm} m/min`}
         />
         <GaugeCard
           label="Qualidade"
