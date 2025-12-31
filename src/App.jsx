@@ -57,6 +57,7 @@ import GlobalScreen from './components/GlobalScreen';
 import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
+import logoMetalosa from './data/logo metalosa.bmp';
 
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -482,13 +483,20 @@ const PrintStyles = () => (
       html, body { background: white !important; font-family: sans-serif; font-size: 11px; color: #000; }
       .app-container, nav, .modal-overlay, .no-print { display: none !important; }
       #printable-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; z-index: 9999; }
-      .page-title { text-align: center; font-size: 16px; font-weight: bold; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
-      .romaneio-container { margin-bottom: 25px; page-break-inside: avoid; border: 1px solid #000; }
-      .client-header { background-color: #e5e5e5 !important; border-bottom: 1px solid #000; padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; }
-      .simple-table { width: 100%; border-collapse: collapse; }
-      .simple-table th { t  xt-align: left; padding: 4px; font-size: 9px; uppercase; border-bottom: 1px solid #000; background: #f0f0f0 !important; }
-      .simple-table td { padding: 4px; border-bottom: 1px solid #eee; }
-      .block-footer { display: flex; justify-content: flex-end; gap: 20px; padding: 5px 10px; border-top: 1px solid #000; font-weight: bold; background: #f9f9f9 !important; }
+      .print-header { border: 1px solid #000; margin-bottom: 12px; }
+      .print-brand { display: flex; justify-content: center; align-items: center; padding: 6px; border-bottom: 1px solid #000; }
+      .print-logo { height: 36px; object-fit: contain; }
+      .print-title { text-align: center; font-size: 14px; font-weight: bold; background: #c7def3 !important; border-bottom: 1px solid #000; padding: 6px; }
+      .print-subtitle { text-align: center; font-size: 11px; font-weight: bold; border-bottom: 1px solid #000; padding: 6px; }
+      .print-meta { display: grid; grid-template-columns: 90px 1fr 90px 1fr 120px; }
+      .print-meta div { padding: 6px; border-right: 1px solid #000; border-top: 1px solid #000; text-align: center; font-size: 10px; }
+      .print-meta div:nth-child(-n + 5) { border-top: none; }
+      .print-meta div:last-child { border-right: none; font-weight: bold; }
+      .print-table { width: 100%; border-collapse: collapse; }
+      .print-table th { text-align: center; padding: 4px; font-size: 9px; text-transform: uppercase; border: 1px solid #000; background: #c7def3 !important; }
+      .print-table td { padding: 4px; border: 1px solid #000; font-size: 9px; }
+      .print-table td.left { text-align: left; }
+      .print-table td.center { text-align: center; }
     }
   `}</style>
 );
@@ -519,7 +527,30 @@ export default function App() {
 
 
   const [dataFiltroImpressao, setDataFiltroImpressao] = useState(hoje);
+  const [numeroControleImpressao, setNumeroControleImpressao] = useState('');
   const [filaProducao, setFilaProducao] = useState([]);
+
+  useEffect(() => {
+    if (!dataFiltroImpressao) return;
+    try {
+      const seqKey = 'ordemProducaoControleSeq';
+      const diaKey = `ordemProducaoControle:${dataFiltroImpressao}`;
+      const existente = localStorage.getItem(diaKey);
+      if (existente) {
+        setNumeroControleImpressao(existente);
+        return;
+      }
+      const atual = parseInt(localStorage.getItem(seqKey) || '0', 10);
+      const proximo = atual + 1;
+      const label = String(proximo).padStart(3, '0');
+      localStorage.setItem(seqKey, String(proximo));
+      localStorage.setItem(diaKey, label);
+      setNumeroControleImpressao(label);
+    } catch (err) {
+      console.error('Erro ao gerar numero de controle da impressao:', err);
+      setNumeroControleImpressao('');
+    }
+  }, [dataFiltroImpressao]);
   
   // Paradas
   const [historicoParadas, setHistoricoParadas] = useState([]);
@@ -564,6 +595,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
 
 
   const [romaneioEmEdicaoId, setRomaneioEmEdicaoId] = useState(null);
+  const [romaneioEmEdicaoKey, setRomaneioEmEdicaoKey] = useState(null);
   const [formRomaneioId, setFormRomaneioId] = useState(''); 
   const [formCliente, setFormCliente] = useState('');
   const [formTotvs, setFormTotvs] = useState(''); 
@@ -601,6 +633,11 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [transferDestino, setTransferDestino] = useState('');
   const [transferObs, setTransferObs] = useState('');
   const [transferItens, setTransferItens] = useState([]);
+
+  const [mostrarConclusaoSolicitacao, setMostrarConclusaoSolicitacao] = useState(false);
+  const [conclusaoSolicitacaoAtual, setConclusaoSolicitacaoAtual] = useState(null);
+  const [conclusaoSolicitacaoPor, setConclusaoSolicitacaoPor] = useState('');
+  const [conclusaoSolicitacaoObs, setConclusaoSolicitacaoObs] = useState('');
 
   // PCP - apontamento de estoque de telhas
   const [formEstoqueTelhaData, setFormEstoqueTelhaData] = useState(hoje);
@@ -1345,10 +1382,15 @@ const handleDownloadModeloParadas = () => {
 
     // Modo localhost: apenas atualiza estado/localStorage, sem Firebase
     if (IS_LOCALHOST) {
-      let sysIdAtual = romaneioEmEdicaoId || `LOCAL-${Date.now()}`;
-      const atualizada = romaneioEmEdicaoId
+      const editKey = romaneioEmEdicaoKey || romaneioEmEdicaoId;
+      const sysIdAtual =
+        romaneioEmEdicaoId ||
+        (editKey && String(editKey).startsWith('LOCAL-') ? editKey : `LOCAL-${Date.now()}`);
+      const atualizada = editKey
         ? filaProducao.map((r) =>
-            r.sysId === romaneioEmEdicaoId ? { ...r, ...objAtual, sysId: sysIdAtual } : r
+            (r.sysId || r.id) === editKey
+              ? { ...r, ...objAtual, sysId: sysIdAtual }
+              : r
           )
         : [...filaProducao, { ...objAtual, sysId: sysIdAtual }];
 
@@ -1726,24 +1768,73 @@ const handleDownloadModeloParadas = () => {
     const agoraISO = new Date().toISOString();
     const requisicao = formPedidoRequisicao.trim();
     const idPedido = requisicao || `REQ-${Date.now()}`;
+    const normalizeTexto = (v) => String(v || '').trim().toLowerCase();
+    const estoquePorCod = new Map(
+      estoqueTelhas.map((item) => [String(item.cod), Number(item.saldoQtd || 0)])
+    );
+    const estoquePorDesc = new Map(
+      estoqueTelhas.map((item) => [normalizeTexto(item.desc), Number(item.saldoQtd || 0)])
+    );
+    const qtdPorItem = new Map();
+    itensPedidoComercial.forEach((item) => {
+      const cod = String(item.cod || '').trim();
+      const descKey = normalizeTexto(item.desc);
+      const key = cod || (descKey ? `desc:${descKey}` : '');
+      if (!key) return;
+      const prev = qtdPorItem.get(key) || 0;
+      qtdPorItem.set(key, prev + Number(item.qtd || 0));
+    });
+    const temEstoqueSuficiente = Array.from(qtdPorItem.entries()).every(
+      ([key, qtd]) => {
+        if (key.startsWith('desc:')) {
+          const desc = key.slice(5);
+          const saldo = estoquePorDesc.get(desc) ?? 0;
+          return qtd <= saldo;
+        }
+        const saldo = estoquePorCod.get(key) ?? 0;
+        return qtd <= saldo;
+      }
+    );
 
-    const obj = {
-      id: idPedido,
-      romaneioId: idPedido,
-      data: "",
-      dataProducao: "",
-      cliente: formPedidoCliente.trim(),
-      solicitante: formPedidoSolicitante.trim(),
-      totvs: "",
-      tipo: "REQ",
-      status: "FALTA PROGRAMAR",
-      origem: "COMERCIAL",
-      requisicao: requisicao || idPedido,
-      observacao: formPedidoObs || "",
-      itens: itensPedidoComercial,
-      createdAt: agoraISO,
-      updatedAt: agoraISO,
-    };
+    const obj = temEstoqueSuficiente
+      ? {
+          id: idPedido,
+          romaneioId: idPedido,
+          data: "",
+          dataProducao: "",
+          cliente: formPedidoCliente.trim(),
+          solicitante: formPedidoSolicitante.trim(),
+          totvs: "",
+          tipo: "TRANSF",
+          status: "TRANSFERENCIA SOLICITADA",
+          origem: "COMERCIAL",
+          requisicao: requisicao || idPedido,
+          observacao: formPedidoObs || "Estoque disponivel. Transferencia solicitada.",
+          itens: itensPedidoComercial,
+          transferenciaDestino: formPedidoCliente.trim(),
+          transferenciaObs: formPedidoObs || "",
+          transferenciaItens: itensPedidoComercial,
+          transferenciaSolicitadaAt: agoraISO,
+          createdAt: agoraISO,
+          updatedAt: agoraISO,
+        }
+      : {
+          id: idPedido,
+          romaneioId: idPedido,
+          data: "",
+          dataProducao: "",
+          cliente: formPedidoCliente.trim(),
+          solicitante: formPedidoSolicitante.trim(),
+          totvs: "",
+          tipo: "REQ",
+          status: "FALTA PROGRAMAR",
+          origem: "COMERCIAL",
+          requisicao: requisicao || idPedido,
+          observacao: formPedidoObs || "",
+          itens: itensPedidoComercial,
+          createdAt: agoraISO,
+          updatedAt: agoraISO,
+        };
 
     try {
       if (IS_LOCALHOST) {
@@ -1752,14 +1843,22 @@ const handleDownloadModeloParadas = () => {
           ...prev,
         ]);
         limparPedidoComercial();
-        alert("Pedido salvo (modo local).");
+        if (temEstoqueSuficiente) {
+          alert("Estoque disponivel. Transferencia solicitada (modo local).");
+        } else {
+          alert("Sem estoque. Solicitacao enviada para programar (modo local).");
+        }
         return;
       }
 
       const docRef = await addDoc(collection(db, "romaneios"), obj);
       setFilaProducao((prev) => [{ ...obj, sysId: docRef.id }, ...prev]);
       limparPedidoComercial();
-      alert("Pedido comercial enviado!");
+      if (temEstoqueSuficiente) {
+        alert("Estoque disponivel. Transferencia solicitada.");
+      } else {
+        alert("Sem estoque. Solicitacao enviada para programar.");
+      }
     } catch (err) {
       console.error("Erro ao salvar pedido comercial:", err);
       alert("Erro ao salvar pedido comercial. Veja o console (F12).");
@@ -1809,6 +1908,29 @@ const handleDownloadModeloParadas = () => {
       alert("Erro ao atualizar pedido. Veja o console (F12).");
     }
   };
+
+  const abrirConclusaoSolicitacao = (pedido) => {
+    setConclusaoSolicitacaoAtual(pedido);
+    setConclusaoSolicitacaoPor('');
+    setConclusaoSolicitacaoObs('');
+    setMostrarConclusaoSolicitacao(true);
+  };
+
+  const confirmarConclusaoSolicitacao = async () => {
+    if (!conclusaoSolicitacaoAtual) return;
+    if (!conclusaoSolicitacaoPor.trim()) {
+      alert('Informe quem concluiu.');
+      return;
+    }
+    await atualizarStatusPedidoComercial(conclusaoSolicitacaoAtual, 'CONCLUIDO', {
+      concluidoAt: new Date().toISOString(),
+      concluidoPor: conclusaoSolicitacaoPor.trim(),
+      concluidoObs: conclusaoSolicitacaoObs.trim(),
+    });
+    setMostrarConclusaoSolicitacao(false);
+    setConclusaoSolicitacaoAtual(null);
+  };
+
 
   const abrirModalTransferenciaPedido = (pedido) => {
     if (!pedido) return;
@@ -2036,7 +2158,8 @@ const abrirModalEdicao = (r) => {
     setPdfInfoRomaneio(null);
     setPdfErro('');
 
-    setRomaneioEmEdicaoId(r.sysId); // id do doc no Firebase
+    setRomaneioEmEdicaoId(r.sysId || null); // id do doc no Firebase
+    setRomaneioEmEdicaoKey(r.sysId || r.id || null);
     setMaquinaSelecionada(r.maquinaId || r.maquina || '');
     setFormRomaneioId(r.id || r.romaneioId || '');
     setFormCliente(r.cliente);
@@ -2058,6 +2181,7 @@ const abrirModalEdicao = (r) => {
     setIsEstoque(false);
     resetItemFields();
     setRomaneioEmEdicaoId(null);
+    setRomaneioEmEdicaoKey(null);
     setPdfItensEncontrados([]);
     setPdfItensSelecionados([]);
     setPdfInfoRomaneio(null);
@@ -2069,16 +2193,20 @@ const abrirModalEdicao = (r) => {
     setShowModalSelecaoMaquina(false);
     setShowModalNovaOrdem(true);
   };
-const deletarRomaneio = async (sysId) => {
+const deletarRomaneio = async (romaneioId) => {
   const ok = window.confirm("Excluir esse romaneio?");
   if (!ok) return;
 
-  // some da tela
-  setFilaProducao((prev) => prev.filter((r) => r.sysId !== sysId));
+  const alvoId = String(romaneioId || "");
+  setFilaProducao((prev) =>
+    prev.filter((r) => String(r.sysId || r.id) !== alvoId)
+  );
+
+  if (IS_LOCALHOST || !alvoId) return;
 
   // tenta apagar no Firestore
   try {
-    await deleteDoc(doc(db, "romaneios", String(sysId)));
+    await deleteDoc(doc(db, "romaneios", alvoId));
   } catch (err) {
     console.error("Erro ao apagar romaneio no Firebase:", err);
     alert("Erro ao apagar no servidor. Dá uma olhada no console (F12).");
@@ -2494,11 +2622,21 @@ const getMaquinaNomeComercial = (maquinaId) => {
 
   const isSemProgramar = (r) => {
     const dataRomaneio = getDataRomaneio(r);
+    const status = String(r?.status || '').toUpperCase().trim();
+    const tipo = String(r?.tipo || '').toUpperCase().trim();
+    if (status === 'TRANSFERENCIA SOLICITADA' || tipo === 'TRANSF') return false;
     return !dataRomaneio;
+  };
+
+  const isTransferenciaSolicitada = (r) => {
+    const status = String(r?.status || '').toUpperCase().trim();
+    const tipo = String(r?.tipo || '').toUpperCase().trim();
+    return status === 'TRANSFERENCIA SOLICITADA' || tipo === 'TRANSF';
   };
 
   const colunasAgenda = {
   semProgramar: filaProducao.filter((r) => isSemProgramar(r)),
+  transferir: filaProducao.filter((r) => isTransferenciaSolicitada(r)),
   hoje: filaProducao.filter((r) => !isSemProgramar(r) && getDataRomaneio(r) === hoje),
   amanha: filaProducao.filter((r) => !isSemProgramar(r) && getDataRomaneio(r) === amanha),
   futuro: filaProducao.filter((r) => {
@@ -2560,7 +2698,9 @@ const parseNumberBR = (v) => {
   const pedidosComercialProntos = useMemo(
     () =>
       filaProducao.filter((p) => {
-        if (p.status !== "PRONTO" || p.origem !== "COMERCIAL") return false;
+        if (p.origem !== "COMERCIAL") return false;
+        if (p.status === "CONCLUIDO") return true;
+        if (p.status !== "PRONTO") return false;
         const data = getDataRomaneio(p);
         return data === hoje || data === amanha;
       }),
@@ -3234,6 +3374,41 @@ const handleImportBackup = (json) => {
   alert('Dados carregados! O app está rodando com os dados do arquivo (Modo Offline).');
 };
 
+  const formatarDescricaoImpressao = (item) => {
+    const desc = String(item?.desc || '').trim();
+    const comp = Number(item?.comp);
+    if (!Number.isFinite(comp) || comp <= 0) return desc;
+    return `${desc} ${comp.toFixed(2)}M`;
+  };
+
+  const romaneiosParaImpressao = filaProducao
+    .filter((r) => getDataRomaneio(r) === dataFiltroImpressao)
+    .filter((r) => {
+      const temItens = Array.isArray(r.itens) && r.itens.length > 0;
+      if (!temItens) return false;
+      const pesoTotal = r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0);
+      return pesoTotal > 0;
+    })
+    .sort((a, b) => (a.cliente || '').localeCompare(b.cliente || ''));
+
+  const getRomaneioLabel = (romaneio) => {
+    const idLabel = romaneio?.id || romaneio?.romaneioId || '';
+    if (romaneio?.tipo === 'EST') return idLabel || 'ESTOQUE';
+    return idLabel;
+  };
+
+  const itensParaImpressao = romaneiosParaImpressao.flatMap((r) =>
+    (r.itens || []).map((item, idx) => ({
+      key: `${r.sysId || r.id || 'rom'}-${item.tempId || idx}`,
+      cod: item.cod || '',
+      desc: formatarDescricaoImpressao(item),
+      romaneioId: getRomaneioLabel(r),
+      destino: r.destino || r.transferenciaDestino || r.cliente || 'ESTOQUE',
+      qtd: item.qtd || '',
+      obs: r.totvs || '',
+    }))
+  );
+
 
 
 
@@ -3243,72 +3418,46 @@ const handleImportBackup = (json) => {
 
       {/* --- ÁREA DE IMPRESSÃO --- */}
       <div id="printable-area" className="print-page-container">
-    <div className="page-title text-center text-xl font-serif mb-6 border-b border-gray-400 pb-2">
-        PROGRAMAÇÃO DE PRODUÇÃO - DATA: {formatarDataBR(dataFiltroImpressao)}
-    </div>
-    
-    {filaProducao
-        // 1. Filtro por Data (Garantindo que a data exista)
-      .filter((r) => getDataRomaneio(r) === dataFiltroImpressao)
-        
-        // 2. Filtro de Segurança: Remove Romaneios sem itens ou com peso zero (para eliminar 'ESTOQUE 04' vazios)
-        .filter((r) => {
-            const temItens = Array.isArray(r.itens) && r.itens.length > 0;
-            if (!temItens) return false;
-            
-            const pesoTotal = r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0);
-            return pesoTotal > 0;
-        })
-        
-        // 3. Ordenação por Cliente
-        .sort((a, b) => (a.cliente || '').localeCompare(b.cliente || ''))
-        
-        .map((r) => (
-            // Usa o sysId como chave e adiciona uma margem inferior clara para separação
-            <div key={r.sysId} className="romaneio-container border border-gray-300 mb-6 p-4 rounded shadow-md break-after-page">
-                
-                {/* Cabeçalho do Cliente: Mais formal e claro */}
-                <div className="client-header bg-gray-100 p-2 mb-3 flex justify-between items-center text-sm font-bold border-b border-gray-300">
-                    <span className="text-gray-700 uppercase">CLIENTE: {r.cliente || 'ESTOQUE / MANUAL'}</span>
-                    <span className="text-blue-700 font-mono">ROMANEIO ID: {r.id}</span>
-                </div>
-                
-                <table className="simple-table w-full border-collapse text-sm">
-                    <thead>
-                        <tr className="bg-gray-50 border-b border-gray-300">
-                            <th className="py-2 px-3 text-left w-[10%]">CÓDIGO</th>
-                            <th className="py-2 px-3 text-left w-[60%]">DESCRIÇÃO / MEDIDA</th>
-                            <th className="py-2 px-3 text-center w-[10%]">QTD</th>
-                            <th className="py-2 px-3 text-right w-[10%]">PESO (kg)</th>
-                            <th className="py-2 px-3 text-center w-[10%]">CHK</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {r.itens.map((i, k) => (
-                            <tr key={k} className="border-b border-gray-100 last:border-b-0">
-                                <td className="py-2 px-3">{i.cod}</td>
-                                <td className="py-2 px-3">
-                                    <strong className="text-gray-800">{i.comp?.toFixed(2) || '0.00'}m</strong>
-                                    {' - '}
-                                    {i.desc} {i.perfil && `(${i.perfil})`}
-                                </td>
-                                <td className="py-2 px-3 text-center font-medium">{i.qtd}</td>
-                                <td className="py-2 px-3 text-right text-gray-700">{i.pesoTotal}</td>
-                                <td className="py-2 px-3 text-center">[ ]</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-                
-                {/* Rodapé Total */}
-                <div className="block-footer mt-3 pt-2 border-t-2 border-blue-200 flex justify-end">
-                    <span className="text-lg font-bold text-gray-800">
-                        TOTAL DO ROMANEIO: {r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)} kg
-                    </span>
-                </div>
-            </div>
-        ))}
-</div>
+        <div className="print-header">
+          <div className="print-brand">
+            <img src={logoMetalosa} alt="Metalosa" className="print-logo" />
+          </div>
+          <div className="print-title">ORDEM DE PRODUCAO</div>
+          <div className="print-subtitle">TELHA GALVALUME</div>
+          <div className="print-meta">
+            <div>PREV. INI:</div>
+            <div>{formatarDataBR(dataFiltroImpressao)}</div>
+            <div>PREV. FIM:</div>
+            <div>{formatarDataBR(dataFiltroImpressao)}</div>
+            <div>Nº {numeroControleImpressao || '---'}</div>
+          </div>
+        </div>
+
+        <table className="print-table">
+          <thead>
+            <tr>
+              <th>COD</th>
+              <th>DESCRICAO DO PRODUTO</th>
+              <th>ROMANEIO</th>
+              <th>DESTINO</th>
+              <th>QUANT. PCS</th>
+              <th>OBS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {itensParaImpressao.map((item) => (
+              <tr key={item.key}>
+                <td className="center">{item.cod}</td>
+                <td className="left">{item.desc}</td>
+                <td className="center">{item.romaneioId}</td>
+                <td className="center">{item.destino}</td>
+                <td className="center">{item.qtd}</td>
+                <td className="center">{item.obs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {/* --- APP CONTAINER --- */}
       <div className="app-container flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
@@ -3390,10 +3539,14 @@ const handleImportBackup = (json) => {
 
                 <ColunaKanban
                     titulo="FALTA PROGRAMAR"
+                    tituloCabecalho="COMERCIAL"
                     data={null}
                     cor="purple"
                     lista={colunasAgenda.semProgramar}
                     resumo={calcResumo(colunasAgenda.semProgramar)}
+                    listaSecundaria={colunasAgenda.transferir}
+                    resumoSecundario={calcResumo(colunasAgenda.transferir)}
+                    tituloSecundario="FALTA TRANSFERIR"
                     onEdit={abrirModalEdicao}
                 />
                 
@@ -3574,13 +3727,11 @@ const handleImportBackup = (json) => {
 </td>                                <td className="p-4">{r.cliente}</td>
                                 <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
                                 <td className="p-4 text-right">
-                                    {/* Verifica se o r.sysId ? v?lido antes de renderizar o bot?o */}
-                                    {r.sysId && (typeof r.sysId === 'string' && r.sysId.length > 5) ? (
-                                        <button onClick={() => deletarRomaneio(r.sysId)} className="text-zinc-400 hover:text-red-500">
+                                    {(IS_LOCALHOST || r.sysId) ? (
+                                        <button onClick={() => deletarRomaneio(rowId)} className="text-zinc-400 hover:text-red-500">
                                             <Trash2 size={16} />
                                         </button>
                                     ) : (
-                                        // Se o ID for inv?lido (como no Estoque Interno), exibe um placeholder ou nada
                                         <span className="text-zinc-600 cursor-not-allowed">--</span>
                                     )}
                                 </td>                           </tr>
@@ -4105,11 +4256,22 @@ const handleImportBackup = (json) => {
                           const chave = p.sysId || p.id;
                           const itensAbertos = Boolean(comercialItensAbertos[chave]);
                           const itens = Array.isArray(p.itens) ? p.itens : [];
+                          const tipoPedido =
+                            String(p?.status || '').toUpperCase().trim() ===
+                              'TRANSFERENCIA SOLICITADA' ||
+                            String(p?.tipo || '').toUpperCase().trim() === 'TRANSF'
+                              ? 'Transferencia'
+                              : 'Producao';
                           return (
                             <div key={chave} className="px-4 py-3 flex flex-col gap-3">
                               <div>
                                 <div className="text-white font-semibold">{p.cliente}</div>
                                 <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
+                                <div className="mt-1 inline-flex items-center gap-2">
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-sky-500/30 text-sky-300 bg-sky-500/10">
+                                    {tipoPedido}
+                                  </span>
+                                </div>
                               </div>
                               <div className="flex flex-col md:flex-row gap-2 md:items-center w-full md:w-auto">
                                 <button
@@ -4280,7 +4442,7 @@ const handleImportBackup = (json) => {
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => atualizarStatusPedidoComercial(req, 'CONCLUIDO', { concluidoAt: new Date().toISOString() })}
+                                onClick={() => abrirConclusaoSolicitacao(req)}
                                 className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition ${
                                   req.status === 'CONCLUIDO'
                                     ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 cursor-default'
@@ -4324,15 +4486,8 @@ const handleImportBackup = (json) => {
                               <div className="text-sm text-zinc-100">{p.cliente}</div>
                               <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id}</div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => marcarRetiradaPedido(p)}
-                              className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500"
-                            >
-                              Marcar retirada
-                            </button>
-                          </div>
-                        ))}
+                        </div>
+                      ))}
                       </div>
                     </div>
                     )}
@@ -4468,11 +4623,22 @@ const handleImportBackup = (json) => {
                           const chave = p.sysId || p.id;
                           const itensAbertos = Boolean(comercialItensAbertos[chave]);
                           const itens = Array.isArray(p.itens) ? p.itens : [];
+                          const tipoPedido =
+                            String(p?.status || '').toUpperCase().trim() ===
+                              'TRANSFERENCIA SOLICITADA' ||
+                            String(p?.tipo || '').toUpperCase().trim() === 'TRANSF'
+                              ? 'Transferencia'
+                              : 'Producao';
                           return (
                             <div key={chave} className="px-5 py-4 flex flex-col gap-3">
                               <div>
                                 <div className="text-white font-semibold">{p.cliente}</div>
                                 <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id} | {p.itens?.length || 0} itens</div>
+                                <div className="mt-1 inline-flex items-center gap-2">
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-sky-500/30 text-sky-300 bg-sky-500/10">
+                                    {tipoPedido}
+                                  </span>
+                                </div>
                               </div>
                               <div className="flex flex-col md:flex-row gap-2 md:items-center">
                                 <button
@@ -4542,7 +4708,7 @@ const handleImportBackup = (json) => {
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => atualizarStatusPedidoComercial(req, 'CONCLUIDO', { concluidoAt: new Date().toISOString() })}
+                                onClick={() => abrirConclusaoSolicitacao(req)}
                                 className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition ${
                                   req.status === 'CONCLUIDO'
                                     ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 cursor-default'
@@ -4587,13 +4753,6 @@ const handleImportBackup = (json) => {
                             <div className="text-sm text-zinc-100">{p.cliente}</div>
                             <div className="text-[11px] text-zinc-500">#{p.requisicao || p.id}</div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => marcarRetiradaPedido(p)}
-                            className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500"
-                          >
-                            Marcar retirada
-                          </button>
                         </div>
                       ))}
                     </div>
@@ -4771,6 +4930,61 @@ const handleImportBackup = (json) => {
                         className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold"
                       >
                         Enviar pedido
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              
+
+              {mostrarConclusaoSolicitacao && (
+                <div className="fixed inset-0 z-[85] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-lg overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                      <h3 className="text-lg font-bold text-white">Concluir solicitacao</h3>
+                      <button
+                        type="button"
+                        onClick={() => setMostrarConclusaoSolicitacao(false)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400">Concluido por</label>
+                        <input
+                          value={conclusaoSolicitacaoPor}
+                          onChange={(e) => setConclusaoSolicitacaoPor(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="Nome de quem concluiu"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400">Observacao</label>
+                        <input
+                          value={conclusaoSolicitacaoObs}
+                          onChange={(e) => setConclusaoSolicitacaoObs(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="Detalhes da conclusao (opcional)"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setMostrarConclusaoSolicitacao(false)}
+                        className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmarConclusaoSolicitacao}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded"
+                      >
+                        Concluir
                       </button>
                     </div>
                   </div>

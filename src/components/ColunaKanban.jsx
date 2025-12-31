@@ -67,10 +67,29 @@ const formatarDataBR = (data) => {
 };
 
 
-export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
+export const ColunaKanban = ({
+  titulo,
+  tituloCabecalho,
+  data,
+  cor,
+  lista,
+  resumo,
+  onEdit,
+  listaSecundaria,
+  resumoSecundario,
+  tituloSecundario,
+}) => {
   const safeLista = Array.isArray(lista) ? lista : [];
-  const totalPeso = resumo?.peso ?? 0;
-  const totalRomaneios = resumo?.total ?? safeLista.length;
+  const hasSecundaria = Array.isArray(listaSecundaria);
+  const safeListaSec = hasSecundaria ? listaSecundaria : [];
+  const totalPesoPrincipal = resumo?.peso ?? 0;
+  const totalRomaneiosPrincipal = resumo?.total ?? safeLista.length;
+  const totalPesoSecundario = resumoSecundario?.peso ?? 0;
+  const totalRomaneiosSecundario =
+    resumoSecundario?.total ?? safeListaSec.length;
+  const totalPeso = totalPesoPrincipal + (hasSecundaria ? totalPesoSecundario : 0);
+  const totalRomaneios =
+    totalRomaneiosPrincipal + (hasSecundaria ? totalRomaneiosSecundario : 0);
 
   const bgMap = {
     emerald: "border-emerald-500/40 bg-gradient-to-b from-emerald-500/10 to-zinc-950",
@@ -89,15 +108,15 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
   const chipClass =
     chipMap[cor] ?? "bg-zinc-800 text-zinc-200 border-white/10";
 
-  // Ordena por hora se tiver
-  const listaOrdenada = [...safeLista].sort((a, b) => {
-    const hA = String(a.horaJanela ?? a.hora ?? "");
-    const hB = String(b.horaJanela ?? b.hora ?? "");
-    if (hA && hB && hA !== hB) return hA.localeCompare(hB);
-    const cA = String(a.cliente ?? a.destino ?? "");
-    const cB = String(b.cliente ?? b.destino ?? "");
-    return cA.localeCompare(cB);
-  });
+  const ordenarLista = (items) =>
+    [...items].sort((a, b) => {
+      const hA = String(a.horaJanela ?? a.hora ?? "");
+      const hB = String(b.horaJanela ?? b.hora ?? "");
+      if (hA && hB && hA !== hB) return hA.localeCompare(hB);
+      const cA = String(a.cliente ?? a.destino ?? "");
+      const cB = String(b.cliente ?? b.destino ?? "");
+      return cA.localeCompare(cB);
+    });
 
       // calcula o peso do romaneio para exibir no card
   const getPesoRomaneio = (r) => {
@@ -151,11 +170,105 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
     return { qtd, m2 };
   };
 
-  const listaRender = listaOrdenada.filter((r) => {
-    const peso = getPesoRomaneio(r);
-    const { qtd, m2 } = getResumoItens(r);
-    return peso > 0 || qtd > 0 || m2 > 0;
-  });
+  const buildListaRender = (items) =>
+    ordenarLista(items).filter((r) => {
+      const peso = getPesoRomaneio(r);
+      const { qtd, m2 } = getResumoItens(r);
+      return peso > 0 || qtd > 0 || m2 > 0;
+    });
+
+  const listaRender = buildListaRender(safeLista);
+  const listaRenderSec = hasSecundaria ? buildListaRender(safeListaSec) : [];
+
+  const renderCards = (items) => {
+    if (items.length === 0) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-center text-zinc-500 text-xs gap-2 py-8">
+          <div className="w-8 h-8 rounded-full border border-dashed border-zinc-600 flex items-center justify-center text-[10px]">
+            0
+          </div>
+          <p>Nenhum romaneio.</p>
+        </div>
+      );
+    }
+
+    return items.map((r) => {
+      const peso = getPesoRomaneio(r);
+      const { qtd, m2 } = getResumoItens(r);
+      const maquina = getMaquinaNome(r);
+
+      return (
+        <button
+          key={r.sysId || r.id}
+          onClick={() => onEdit && onEdit(r)}
+          className={`
+            w-full text-left rounded-xl border border-white/5 bg-zinc-900/80 
+            hover:border-white/25 hover:bg-zinc-800/80 transition-colors
+            px-3 py-2.5 flex flex-col gap-1.5
+          `}
+        >
+          <div className="flex justify-between gap-2">
+            <div className="flex flex-col gap-1">
+              <div className="text-sm font-semibold text-zinc-100 truncate max-w-[200px]">
+                {r.cliente ?? r.destino ?? "Cliente não informado"}
+              </div>
+              <div className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
+                <Factory size={12} />
+                <span className="truncate max-w-[180px]">{maquina}</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] text-zinc-500">Peso</div>
+              <div className="text-sm font-bold text-zinc-100">
+                {peso.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] text-zinc-300">
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
+              {qtd.toLocaleString("pt-BR")} un
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
+              {m2.toFixed(2)} m2
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
+              {r.itens?.length || 0} itens
+            </span>
+          </div>
+
+          <div className="flex justify-between items-center gap-2 mt-1">
+            <div className="inline-flex items-center gap-2 text-[11px] text-zinc-400">
+              <span className="px-1.5 py-0.5 rounded border border-white/10 bg-black/30">
+                {r.placa ?? "Sem placa"}
+              </span>
+              {r.tipoCarga && (
+                <span className="px-1.5 py-0.5 rounded-full bg-zinc-800 text-[10px] uppercase tracking-[0.16em] text-zinc-400">
+                  {r.tipoCarga}
+                </span>
+              )}
+            </div>
+            {r.status && (
+              <span
+                className={`
+                  px-2 py-0.5 rounded-full text-[11px] font-medium
+                  ${
+                    r.status === "ATRASADO"
+                      ? "bg-red-500/15 text-red-300 border border-red-500/40"
+                      : r.status === "EM ANDAMENTO"
+                      ? "bg-amber-500/15 text-amber-300 border border-amber-500/40"
+                      : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
+                  }
+                `}
+              >
+                {r.status}
+              </span>
+            )}
+          </div>
+        </button>
+      );
+    });
+  };
 
 
 
@@ -187,7 +300,7 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
                     : "text-purple-400"
                 }`}
               >
-                {titulo}
+                {tituloCabecalho || titulo}
               </h2>
             </div>
           </div>
@@ -220,95 +333,53 @@ export const ColunaKanban = ({ titulo, data, cor, lista, resumo, onEdit }) => {
       </div>
 
       {/* Lista de cards */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {listaRender.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center text-zinc-500 text-xs gap-2">
-            <div className="w-8 h-8 rounded-full border border-dashed border-zinc-600 flex items-center justify-center text-[10px]">
-              0
+      <div
+        className={`flex-1 min-h-0 ${
+          hasSecundaria ? "grid grid-rows-[1fr_1fr] divide-y divide-white/5" : ""
+        }`}
+      >
+        <div className={`flex flex-col min-h-0 ${hasSecundaria ? "" : "h-full"}`}>
+          {hasSecundaria && (
+            <div className="px-3 pt-3 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
+                {titulo}
+              </span>
+              <div className="flex gap-1.5">
+                <span className="px-2 py-0.5 rounded-full text-[10px] border border-white/10 text-zinc-300">
+                  {totalRomaneiosPrincipal} romaneio
+                  {totalRomaneiosPrincipal === 1 ? "" : "s"}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] border border-white/10 text-zinc-300">
+                  {(totalPesoPrincipal / 1000).toFixed(1)} t
+                </span>
+              </div>
             </div>
-            <p>Nenhum romaneio programado.</p>
+          )}
+          <div className={`flex-1 overflow-y-auto p-3 ${hasSecundaria ? "pt-2" : ""} space-y-3`}>
+            {renderCards(listaRender)}
+          </div>
+        </div>
+        {hasSecundaria && (
+          <div className="flex flex-col min-h-0">
+            <div className="px-3 pt-3 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
+                {tituloSecundario || "FALTA TRANSFERIR"}
+              </span>
+              <div className="flex gap-1.5">
+                <span className="px-2 py-0.5 rounded-full text-[10px] border border-white/10 text-zinc-300">
+                  {totalRomaneiosSecundario} romaneio
+                  {totalRomaneiosSecundario === 1 ? "" : "s"}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] border border-white/10 text-zinc-300">
+                  {(totalPesoSecundario / 1000).toFixed(1)} t
+                </span>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 pt-2 space-y-3">
+              {renderCards(listaRenderSec)}
+            </div>
           </div>
         )}
-
-        {listaRender.map((r) => {
-          const peso = getPesoRomaneio(r);
-          const { qtd, m2 } = getResumoItens(r);
-          const maquina = getMaquinaNome(r);
-
-          return (
-          <button
-            key={r.sysId}
-            onClick={() => onEdit && onEdit(r)}
-            className={`
-              w-full text-left rounded-xl border border-white/5 bg-zinc-900/80 
-              hover:border-white/25 hover:bg-zinc-800/80 transition-colors
-              px-3 py-2.5 flex flex-col gap-1.5
-            `}
-          >
-            {/* Topo: cliente + máquina + peso */}
-            <div className="flex justify-between gap-2">
-              <div className="flex flex-col gap-1">
-                <div className="text-sm font-semibold text-zinc-100 truncate max-w-[200px]">
-                  {r.cliente ?? r.destino ?? "Cliente não informado"}
-                </div>
-                <div className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
-                  <Factory size={12} />
-                  <span className="truncate max-w-[180px]">{maquina}</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-[11px] text-zinc-500">Peso</div>
-                <div className="text-sm font-bold text-zinc-100">
-                  {peso.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg
-                </div>
-              </div>
-            </div>
-
-            {/* Resumo produção */}
-            <div className="flex items-center gap-2 text-[11px] text-zinc-300">
-              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
-                {qtd.toLocaleString("pt-BR")} un
-              </span>
-              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
-                {m2.toFixed(2)} m²
-              </span>
-              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-white/10">
-                {r.itens?.length || 0} itens
-              </span>
-            </div>
-
-            {/* Base: placa + status */}
-            <div className="flex justify-between items-center gap-2 mt-1">
-              <div className="inline-flex items-center gap-2 text-[11px] text-zinc-400">
-                <span className="px-1.5 py-0.5 rounded border border-white/10 bg-black/30">
-                  {r.placa ?? "Sem placa"}
-                </span>
-                {r.tipoCarga && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-zinc-800 text-[10px] uppercase tracking-[0.16em] text-zinc-400">
-                    {r.tipoCarga}
-                  </span>
-                )}
-              </div>
-              {r.status && (
-                <span
-                  className={`
-                    px-2 py-0.5 rounded-full text-[11px] font-medium
-                    ${
-                      r.status === "ATRASADO"
-                        ? "bg-red-500/15 text-red-300 border border-red-500/40"
-                        : r.status === "EM ANDAMENTO"
-                        ? "bg-amber-500/15 text-amber-300 border border-amber-500/40"
-                        : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
-                    }
-                  `}
-                >
-                  {r.status}
-                </span>
-              )}
-            </div>
-          </button>
-          );
-        })}
       </div>
     </div>
   );
