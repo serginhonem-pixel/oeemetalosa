@@ -130,6 +130,22 @@ const getLocalISODate = (baseDate = new Date()) => {
   return `${y}-${m}-${day}`;
 };
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const BR_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+
+const normalizeISODateInput = (value) => {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return getLocalISODate(value);
+  }
+  const raw = String(value).trim();
+  const base = raw.includes('T') ? raw.slice(0, 10) : raw;
+  if (ISO_DATE_RE.test(base)) return base;
+  const br = base.match(BR_DATE_RE);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  return base;
+};
+
 const processarDataExcel = (valorBruto) => {
   const hojeISO = getLocalISODate(); // hoje no fuso local
 
@@ -2841,7 +2857,12 @@ const parseNumberBR = (v) => {
   const agrupadoPorDia = {};
 
   // ========= helpers =========
-  const toISO = (d) => new Date(d).toISOString().split("T")[0];
+    const toISO = (d) => {
+      const iso = normalizeISODateInput(d);
+      if (!ISO_DATE_RE.test(iso)) return "";
+      const dt = new Date(`${iso}T12:00:00`);
+      return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().split("T")[0];
+    };
 
   const isDiaUtil = (iso) => {
     const dow = new Date(iso + "T12:00:00").getDay();

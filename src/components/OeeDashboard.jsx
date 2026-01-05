@@ -30,12 +30,39 @@ const ORIGENS_EXCLUIDAS_OEE = new Set([
   "FINALIZACAO_ORDEM",
   "FINALIZACAO_RAPIDA",
 ]);
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const BR_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+
+const normalizeISODateInput = (value) => {
+  if (!value) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const raw = String(value).trim();
+  const base = raw.includes("T") ? raw.slice(0, 10) : raw;
+  if (ISO_DATE_RE.test(base)) return base;
+  const br = base.match(BR_DATE_RE);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  return base;
+};
+
+const parseISODate = (value) => {
+  const iso = normalizeISODateInput(value);
+  if (!ISO_DATE_RE.test(iso)) return null;
+  const dt = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
 
 // ---------- HELPERS ----------
 
 const formatDateBR = (iso) => {
   if (!iso) return "-";
-  const [y, m, d] = iso.split("-");
+  const normalized = normalizeISODateInput(iso);
+  if (!ISO_DATE_RE.test(normalized)) return String(iso);
+  const [y, m, d] = normalized.split("-");
   if (!y || !m || !d) return iso;
   return `${d}/${m}/${y}`;
 };
@@ -140,6 +167,8 @@ export default function OeeDashboard({
 }) {
   const [rangeStart, setRangeStart] = useState(dataInicioInd);
   const [rangeEnd, setRangeEnd] = useState(dataFimInd);
+  const [rangeStartDraft, setRangeStartDraft] = useState(dataInicioInd);
+  const [rangeEndDraft, setRangeEndDraft] = useState(dataFimInd);
   const [metricMode, setMetricMode] = useState("pieces"); // 'pieces' | 'weight'
   const [preset, setPreset] = useState("custom"); 
   const [velocidadeMpm, setVelocidadeMpm] = useState(
@@ -156,8 +185,26 @@ export default function OeeDashboard({
   useEffect(() => {
     setRangeStart(dataInicioInd);
     setRangeEnd(dataFimInd);
+    setRangeStartDraft(dataInicioInd);
+    setRangeEndDraft(dataFimInd);
     setPreset("custom");
   }, [dataInicioInd, dataFimInd]);
+
+  useEffect(() => {
+    const nextStart = normalizeISODateInput(rangeStartDraft);
+    const nextEnd = normalizeISODateInput(rangeEndDraft);
+    if (
+      (nextStart && !ISO_DATE_RE.test(nextStart)) ||
+      (nextEnd && !ISO_DATE_RE.test(nextEnd))
+    ) {
+      return;
+    }
+    const id = setTimeout(() => {
+      setRangeStart(nextStart);
+      setRangeEnd(nextEnd);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [rangeStartDraft, rangeEndDraft]);
 
   // Lista de máquinas ativas
   const maquinasAtivas = useMemo(
@@ -193,8 +240,12 @@ export default function OeeDashboard({
     }
 
     setPreset(type);
-    setRangeStart(start.toISOString().split("T")[0]);
-    setRangeEnd(end.toISOString().split("T")[0]);
+    const startISO = start.toISOString().split("T")[0];
+    const endISO = end.toISOString().split("T")[0];
+    setRangeStart(startISO);
+    setRangeEnd(endISO);
+    setRangeStartDraft(startISO);
+    setRangeEndDraft(endISO);
   };
 
   const {
@@ -211,41 +262,62 @@ export default function OeeDashboard({
     dailyProductionData,
     paretoParadasData,
   } = useMemo(() => {
-    let start = rangeStart || dataInicioInd || todayISO();
-    let end = rangeEnd || dataFimInd || todayISO();
+    let startISO = normalizeISODateInput(
+      rangeStart || dataInicioInd || todayISO()
+    );
+    let endISO = normalizeISODateInput(rangeEnd || dataFimInd || todayISO());
 
-    if (start && end && start > end) {
-      const tmp = start;
-      start = end;
-      end = tmp;
+    if (ISO_DATE_RE.test(startISO) && ISO_DATE_RE.test(endISO) && startISO > endISO) {
+      const tmp = startISO;
+      startISO = endISO;
+      endISO = tmp;
     }
 
-    const startDate = new Date(`${start}T00:00:00`);
-    const endDate = new Date(`${end}T23:59:59`);
+    const startDate = parseISODate(startISO);
+    const endDate = parseISODate(endISO);
+    if (!startDate || !endDate) {
+      return {
+        diasNoPeriodo: 0,
+        oeeGlobal: 0,
+        disponibilidade: 0,
+        performance: 0,
+        qualidade: 0,
+        tempoTotalTurnoMin: 0,
+        tempoParadoMin: 0,
+        tempoRodandoMin: 0,
+        producaoTotalPcs: 0,
+        producaoTotalKg: 0,
+        dailyProductionData: [],
+        paretoParadasData: [],
+      };
+    }
 
     let diasNoPeriodo = 0;
     if (endDate >= startDate) {
       diasNoPeriodo = Math.floor((endDate - startDate) / MS_PER_DAY) + 1;
     }
 
-    // --- FUNÇÃO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
-    const filterData = (item) => {
-        // 1. Filtro de Data
-        if (!item.data) return false;
-        const d = new Date(`${item.data}T00:00:00`);
-        const dataOk = d >= startDate && d <= endDate;
-        
-        // 2. Filtro de Máquina (aceita id ou nome)
-        const idRegistro = item.maquinaId || item.maquina || item.maquinaid;
-        const nomeRegistro = item.maquinaNome || item.maquinaExibicao;
-
-        const maquinaSelecionadaObj = maquinasAtivas.find(
+    const maquinaSelecionadaObj = maquinaId
+      ? maquinasAtivas.find(
           (m) =>
             m.maquinaId === maquinaId ||
             m.id === maquinaId ||
             m.nomeExibicao === maquinaId
-        );
-        const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao;
+        )
+      : null;
+    const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao || "";
+
+    // --- FUNÇÃO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
+    const filterData = (item) => {
+        // 1. Filtro de Data
+        if (!item?.data) return false;
+        const itemISO = normalizeISODateInput(item.data);
+        const dataOk =
+          ISO_DATE_RE.test(itemISO) && itemISO >= startISO && itemISO <= endISO;
+        
+        // 2. Filtro de Máquina (aceita id ou nome)
+        const idRegistro = item.maquinaId || item.maquina || item.maquinaid;
+        const nomeRegistro = item.maquinaNome || item.maquinaExibicao;
 
         const maquinaOk =
           !maquinaId ||
@@ -322,7 +394,7 @@ export default function OeeDashboard({
     }
 
     prodFiltrada.forEach((item) => {
-      const iso = (item.data || "").slice(0, 10);
+      const iso = normalizeISODateInput(item.data);
       const qtd = Number(item.qtd) || 0;
       const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
       const compRegistro = Number(item.comp || item.compMetros || 0);
@@ -571,9 +643,9 @@ export default function OeeDashboard({
               <div className="flex gap-2 items-center">
                 <input
                   type="date"
-                  value={rangeStart || ""}
+                  value={rangeStartDraft || ""}
                   onChange={(e) => {
-                    setRangeStart(e.target.value);
+                    setRangeStartDraft(e.target.value);
                     setPreset("custom");
                   }}
                   className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
@@ -581,9 +653,9 @@ export default function OeeDashboard({
                 <span className="text-zinc-500 text-[10px]">até</span>
                 <input
                   type="date"
-                  value={rangeEnd || ""}
+                  value={rangeEndDraft || ""}
                   onChange={(e) => {
-                    setRangeEnd(e.target.value);
+                    setRangeEndDraft(e.target.value);
                     setPreset("custom");
                   }}
                   className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
