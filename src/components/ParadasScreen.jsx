@@ -377,7 +377,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
   // UI
   // ---------------------------------------------------------------------------
   return (
-    <div className="flex flex-col md:flex-row gap-6 h-full overflow-y-auto md:overflow-hidden">
+    <div className="flex flex-col md:flex-row gap-6 md:h-full overflow-y-auto md:overflow-hidden">
       {/* ESQUERDA */}
       <div className="w-full md:w-[380px] flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-6 shadow-2xl">
         <header className="flex items-center justify-between gap-4 border-b border-zinc-800 pb-4">
@@ -506,7 +506,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
       </div>
 
       {/* DIREITA */}
-      <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+      <div className="md:flex-1 min-h-[320px] bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col overflow-visible md:overflow-hidden shadow-2xl">
         <div className="p-6 border-b border-zinc-800 bg-zinc-900/50 flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">Histórico do Dia</h2>
@@ -530,7 +530,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
           <div className="text-center">#</div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 overflow-visible md:overflow-y-auto p-4 space-y-2">
           {paradasDoDia.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-4">
               <div className="w-16 h-16 rounded-full bg-zinc-900 flex items-center justify-center border border-zinc-800">
