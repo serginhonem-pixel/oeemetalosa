@@ -191,8 +191,8 @@ export default function OeeDashboard({
   useEffect(() => {
     setRangeStart(dataInicioInd);
     setRangeEnd(dataFimInd);
-    setRangeStartDraft(dataInicioInd);
-    setRangeEndDraft(dataFimInd);
+    setRangeStartDraft(formatDateBR(dataInicioInd || ""));
+    setRangeEndDraft(formatDateBR(dataFimInd || ""));
     setSelectedDayISO("");
     lastRangeStartRef.current = dataInicioInd || todayISO();
     lastRangeEndRef.current = dataFimInd || todayISO();
@@ -246,8 +246,8 @@ export default function OeeDashboard({
       const restoreEnd = lastRangeEndRef.current || todayISO();
       setRangeStart(restoreStart);
       setRangeEnd(restoreEnd);
-      setRangeStartDraft(restoreStart);
-      setRangeEndDraft(restoreEnd);
+      setRangeStartDraft(formatDateBR(restoreStart));
+      setRangeEndDraft(formatDateBR(restoreEnd));
       setSelectedDayISO("");
       return;
     }
@@ -260,8 +260,8 @@ export default function OeeDashboard({
     setSelectedDayISO(iso);
     setRangeStart(iso);
     setRangeEnd(iso);
-    setRangeStartDraft(iso);
-    setRangeEndDraft(iso);
+    setRangeStartDraft(formatDateBR(iso));
+    setRangeEndDraft(formatDateBR(iso));
   };
 
   const handlePreset = (type) => {
@@ -752,8 +752,8 @@ export default function OeeDashboard({
               <div className="flex gap-2 items-center">
                 <input
                   type="text"
-                  inputMode="numeric"
-                  placeholder="YYYY-MM-DD"
+                  inputMode="text"
+                  placeholder="DD/MM/AAAA"
                   value={rangeStartDraft || ""}
                   onChange={(e) => {
                     const next = e.target.value;
@@ -767,7 +767,10 @@ export default function OeeDashboard({
                     const normalized = normalizeISODateInput(rangeStartDraft);
                     if (!ISO_DATE_RE.test(normalized)) {
                       const fallback = lastValidStartRef.current || "";
-                      setRangeStartDraft(fallback);
+                      setRangeStartDraft(formatDateBR(fallback));
+                    } else {
+                      lastValidStartRef.current = normalized;
+                      setRangeStartDraft(formatDateBR(normalized));
                     }
                   }}
                   className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
@@ -775,8 +778,8 @@ export default function OeeDashboard({
                 <span className="text-zinc-500 text-[10px]">até</span>
                 <input
                   type="text"
-                  inputMode="numeric"
-                  placeholder="YYYY-MM-DD"
+                  inputMode="text"
+                  placeholder="DD/MM/AAAA"
                   value={rangeEndDraft || ""}
                   onChange={(e) => {
                     const next = e.target.value;
@@ -790,7 +793,10 @@ export default function OeeDashboard({
                     const normalized = normalizeISODateInput(rangeEndDraft);
                     if (!ISO_DATE_RE.test(normalized)) {
                       const fallback = lastValidEndRef.current || "";
-                      setRangeEndDraft(fallback);
+                      setRangeEndDraft(formatDateBR(fallback));
+                    } else {
+                      lastValidEndRef.current = normalized;
+                      setRangeEndDraft(formatDateBR(normalized));
                     }
                   }}
                   className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
