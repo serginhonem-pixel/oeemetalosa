@@ -191,7 +191,7 @@ export const ProducaoScreen = ({
   const m2Preview = compAtualNumero * qtdNumero;
 
   return (
-    <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-hidden flex flex-col">
+    <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto md:overflow-hidden flex flex-col">
       {/* HEADER PRINCIPAL */}
       <header className="mb-6 flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center">

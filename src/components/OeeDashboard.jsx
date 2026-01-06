@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   CalendarDays,
@@ -18,6 +18,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  Cell,
   LabelList,
 } from "recharts";
 
@@ -169,6 +170,11 @@ export default function OeeDashboard({
   const [rangeEnd, setRangeEnd] = useState(dataFimInd);
   const [rangeStartDraft, setRangeStartDraft] = useState(dataInicioInd);
   const [rangeEndDraft, setRangeEndDraft] = useState(dataFimInd);
+  const lastValidStartRef = useRef(normalizeISODateInput(dataInicioInd || todayISO()));
+  const lastValidEndRef = useRef(normalizeISODateInput(dataFimInd || todayISO()));
+  const [selectedDayISO, setSelectedDayISO] = useState("");
+  const lastRangeStartRef = useRef(dataInicioInd || todayISO());
+  const lastRangeEndRef = useRef(dataFimInd || todayISO());
   const [metricMode, setMetricMode] = useState("pieces"); // 'pieces' | 'weight'
   const [preset, setPreset] = useState("custom"); 
   const [velocidadeMpm, setVelocidadeMpm] = useState(
@@ -187,6 +193,15 @@ export default function OeeDashboard({
     setRangeEnd(dataFimInd);
     setRangeStartDraft(dataInicioInd);
     setRangeEndDraft(dataFimInd);
+    setSelectedDayISO("");
+    lastRangeStartRef.current = dataInicioInd || todayISO();
+    lastRangeEndRef.current = dataFimInd || todayISO();
+    if (ISO_DATE_RE.test(normalizeISODateInput(dataInicioInd || ""))) {
+      lastValidStartRef.current = normalizeISODateInput(dataInicioInd);
+    }
+    if (ISO_DATE_RE.test(normalizeISODateInput(dataFimInd || ""))) {
+      lastValidEndRef.current = normalizeISODateInput(dataFimInd);
+    }
     setPreset("custom");
   }, [dataInicioInd, dataFimInd]);
 
@@ -202,6 +217,10 @@ export default function OeeDashboard({
     const id = setTimeout(() => {
       setRangeStart(nextStart);
       setRangeEnd(nextEnd);
+      if (!selectedDayISO) {
+        lastRangeStartRef.current = nextStart || todayISO();
+        lastRangeEndRef.current = nextEnd || todayISO();
+      }
     }, 250);
     return () => clearTimeout(id);
   }, [rangeStartDraft, rangeEndDraft]);
@@ -216,6 +235,33 @@ export default function OeeDashboard({
     const parsed = Number(velocidadeDraft);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     setVelocidadeMpm(parsed);
+  };
+
+  const handleSelectDay = (entry) => {
+    const iso = entry?.date;
+    if (!ISO_DATE_RE.test(String(iso || ""))) return;
+
+    if (selectedDayISO === iso) {
+      const restoreStart = lastRangeStartRef.current || todayISO();
+      const restoreEnd = lastRangeEndRef.current || todayISO();
+      setRangeStart(restoreStart);
+      setRangeEnd(restoreEnd);
+      setRangeStartDraft(restoreStart);
+      setRangeEndDraft(restoreEnd);
+      setSelectedDayISO("");
+      return;
+    }
+
+    if (!selectedDayISO) {
+      lastRangeStartRef.current = rangeStart || todayISO();
+      lastRangeEndRef.current = rangeEnd || todayISO();
+    }
+
+    setSelectedDayISO(iso);
+    setRangeStart(iso);
+    setRangeEnd(iso);
+    setRangeStartDraft(iso);
+    setRangeEndDraft(iso);
   };
 
   const handlePreset = (type) => {
@@ -292,11 +338,6 @@ export default function OeeDashboard({
       };
     }
 
-    let diasNoPeriodo = 0;
-    if (endDate >= startDate) {
-      diasNoPeriodo = Math.floor((endDate - startDate) / MS_PER_DAY) + 1;
-    }
-
     const maquinaSelecionadaObj = maquinaId
       ? maquinasAtivas.find(
           (m) =>
@@ -336,8 +377,35 @@ export default function OeeDashboard({
       ? historicoProducaoReal.filter(filterData)
       : [];
 
+    const prodDiasSet = new Set(
+      prodFiltrada
+        .map((item) => normalizeISODateInput(item.data))
+        .filter((iso) => ISO_DATE_RE.test(iso))
+    );
+
+    const diasContados = new Set();
+    if (endDate >= startDate) {
+      for (
+        let dt = new Date(startDate);
+        dt <= endDate;
+        dt = new Date(dt.getTime() + MS_PER_DAY)
+      ) {
+        const iso = dt.toISOString().split("T")[0];
+        const day = dt.getDay();
+        const isWeekend = day === 0 || day === 6;
+        if (!isWeekend || prodDiasSet.has(iso)) {
+          diasContados.add(iso);
+        }
+      }
+    }
+
     const paradasFiltradas = Array.isArray(historicoParadas)
-      ? historicoParadas.filter(filterData)
+      ? historicoParadas
+          .filter(filterData)
+          .filter((item) => {
+            const iso = normalizeISODateInput(item.data);
+            return ISO_DATE_RE.test(iso) && diasContados.has(iso);
+          })
       : [];
 
     // --- CÁLCULO DE PARADAS ---
@@ -347,8 +415,6 @@ export default function OeeDashboard({
       return codMotivo !== 'TU001'; 
     });
 
-    const tempoTotalTurnoMin = diasNoPeriodo * (Number(turnoHoras) || 0) * 60;
-    
     const getDuracaoMin = (p) => {
       const direto = Number(p.duracao) || Number(p.duracaoMinutos);
       if (direto) return direto;
@@ -364,6 +430,16 @@ export default function OeeDashboard({
       const diff = paraMin(fim) - paraMin(inicio);
       return diff > 0 ? diff : 0;
     };
+
+    const paradasPorDia = new Map();
+    perdasDeDisponibilidade.forEach((p) => {
+      const iso = normalizeISODateInput(p.data);
+      if (!ISO_DATE_RE.test(iso) || !diasContados.has(iso)) return;
+      paradasPorDia.set(iso, (paradasPorDia.get(iso) || 0) + getDuracaoMin(p));
+    });
+
+    const diasNoPeriodo = new Set([...prodDiasSet, ...paradasPorDia.keys()]).size;
+    const tempoTotalTurnoMin = diasNoPeriodo * (Number(turnoHoras) || 0) * 60;
 
     const tempoParadoMin = perdasDeDisponibilidade.reduce(
       (acc, p) => acc + getDuracaoMin(p),
@@ -381,6 +457,7 @@ export default function OeeDashboard({
     let producaoTotalKg = 0;
     let producaoTotalMetros = 0;
     const dailyMap = {};
+    const turnoMin = (Number(turnoHoras) || 0) * 60;
 
     if (endDate >= startDate) {
       for (
@@ -389,7 +466,15 @@ export default function OeeDashboard({
         dt = new Date(dt.getTime() + MS_PER_DAY)
       ) {
         const iso = dt.toISOString().split("T")[0];
-        dailyMap[iso] = { date: iso, pieces: 0, weightKg: 0 };
+        dailyMap[iso] = {
+          date: iso,
+          pieces: 0,
+          weightKg: 0,
+          meters: 0,
+          paradasMin: paradasPorDia.get(iso) || 0,
+          counted: diasContados.has(iso),
+          turnoMin,
+        };
       }
     }
 
@@ -423,6 +508,7 @@ export default function OeeDashboard({
       if (dailyMap[iso]) {
         dailyMap[iso].pieces += qtd;
         dailyMap[iso].weightKg += peso;
+        dailyMap[iso].meters += qtd * comp;
       }
     });
 
@@ -431,6 +517,15 @@ export default function OeeDashboard({
       .map((d) => ({
         ...d,
         label: formatDateBR(d.date).slice(0, 5),
+        disponibilidadeDia:
+          d.counted && d.turnoMin > 0
+            ? ((Math.max(0, d.turnoMin - d.paradasMin) / d.turnoMin) * 100)
+            : 0,
+        performanceDia:
+          d.counted && Math.max(0, d.turnoMin - d.paradasMin) > 0
+            ? (d.meters / (Math.max(0, d.turnoMin - d.paradasMin) * velocidadeMpm)) * 100
+            : 0,
+        qualidadeDia: 100,
         weightKg: Number(d.weightKg.toFixed(1)),
       }));
 
@@ -449,7 +544,14 @@ export default function OeeDashboard({
       .slice(0, 5);
 
     // OEE
-    const producaoIdealMetros = tempoRodandoMin * velocidadeMpm;
+    const diasPerformance = new Set([...prodDiasSet, ...paradasPorDia.keys()]);
+    const tempoTotalTurnoMinPerf = diasPerformance.size * turnoMin;
+    const tempoParadoMinPerf = Array.from(diasPerformance).reduce(
+      (acc, iso) => acc + (paradasPorDia.get(iso) || 0),
+      0
+    );
+    const tempoRodandoMinPerf = Math.max(0, tempoTotalTurnoMinPerf - tempoParadoMinPerf);
+    const producaoIdealMetros = tempoRodandoMinPerf * velocidadeMpm;
     const performance =
       producaoIdealMetros > 0
         ? (producaoTotalMetros / producaoIdealMetros) * 100
@@ -490,16 +592,23 @@ export default function OeeDashboard({
 
   // --- LABEL CUSTOMIZADO (BARRAS) ---
   const renderProdLabel = (props) => {
-    const { x, y, width, value } = props;
+    const { x, y, width, height, value, payload } = props;
     if (!value) return null;
     const display = value.toLocaleString("pt-BR");
+    const isSelected =
+      selectedDayISO &&
+      payload?.date &&
+      normalizeISODateInput(payload.date) === selectedDayISO;
+    const labelY = isSelected ? y + height / 2 + 4 : y - 4;
+    const labelFill = isSelected ? "#0f172a" : "#e4e4e7";
     return (
       <text
         x={x + width / 2}
-        y={y - 4}
+        y={labelY}
         textAnchor="middle"
-        fill="#e4e4e7"
+        fill={labelFill}
         fontSize={10}
+        fontWeight={isSelected ? 800 : 400}
       >
         {display}
       </text>
@@ -642,21 +751,47 @@ export default function OeeDashboard({
               </span>
               <div className="flex gap-2 items-center">
                 <input
-                  type="date"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="YYYY-MM-DD"
                   value={rangeStartDraft || ""}
                   onChange={(e) => {
-                    setRangeStartDraft(e.target.value);
+                    const next = e.target.value;
+                    setRangeStartDraft(next);
+                    if (ISO_DATE_RE.test(next)) {
+                      lastValidStartRef.current = next;
+                    }
                     setPreset("custom");
+                  }}
+                  onBlur={() => {
+                    const normalized = normalizeISODateInput(rangeStartDraft);
+                    if (!ISO_DATE_RE.test(normalized)) {
+                      const fallback = lastValidStartRef.current || "";
+                      setRangeStartDraft(fallback);
+                    }
                   }}
                   className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
                 />
                 <span className="text-zinc-500 text-[10px]">até</span>
                 <input
-                  type="date"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="YYYY-MM-DD"
                   value={rangeEndDraft || ""}
                   onChange={(e) => {
-                    setRangeEndDraft(e.target.value);
+                    const next = e.target.value;
+                    setRangeEndDraft(next);
+                    if (ISO_DATE_RE.test(next)) {
+                      lastValidEndRef.current = next;
+                    }
                     setPreset("custom");
+                  }}
+                  onBlur={() => {
+                    const normalized = normalizeISODateInput(rangeEndDraft);
+                    if (!ISO_DATE_RE.test(normalized)) {
+                      const fallback = lastValidEndRef.current || "";
+                      setRangeEndDraft(fallback);
+                    }
                   }}
                   className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
                 />
@@ -741,6 +876,16 @@ export default function OeeDashboard({
                 Produção diária
               </h2>
             </div>
+            {selectedDayISO ? (
+              <button
+                type="button"
+                onClick={() => handleSelectDay({ date: selectedDayISO })}
+                className="text-[11px] px-2 py-1 rounded-full border border-emerald-500/40 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
+                title="Limpar filtro do dia"
+              >
+                Dia {formatDateBR(selectedDayISO)}
+              </button>
+            ) : null}
             <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden">
               <button
                 onClick={() => setMetricMode("pieces")}
@@ -772,18 +917,51 @@ export default function OeeDashboard({
                 <XAxis dataKey="label" stroke="#a1a1aa" />
                 <YAxis stroke="#a1a1aa" />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#020617",
-                    border: "1px solid #3f3f46",
-                    fontSize: 12,
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || !payload.length) return null;
+                    const point = payload[0]?.payload || {};
+                    const pesoText = `${Number(point.weightKg || 0).toLocaleString("pt-BR")} kg`;
+                    const pecasText = `${Number(point.pieces || 0).toLocaleString("pt-BR")} un.`;
+                    const destaqueLabel = metricMode === "pieces" ? "Peças produzidas" : "Peso produzido";
+                    const destaqueValue = metricMode === "pieces" ? pecasText : pesoText;
+
+                    return (
+                      <div className="bg-[#020617] border border-zinc-700 rounded-lg shadow-xl p-3 min-w-[220px]">
+                        <div className="text-[11px] text-zinc-400 mb-2 border-b border-zinc-800 pb-1">
+                          {label}
+                        </div>
+                        <div className="text-sm text-zinc-200 font-semibold mb-2">
+                          {destaqueLabel}: <span className="text-emerald-300">{destaqueValue}</span>
+                        </div>
+                        <div className="text-[11px] text-zinc-400 mb-2">
+                          {metricMode === "pieces" ? "Peso" : "Peças"}:{" "}
+                          <span className="text-emerald-300">
+                            {metricMode === "pieces" ? pesoText : pecasText}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-400">
+                          <div>
+                            <div className="uppercase text-[10px] text-zinc-500">Perf</div>
+                            <div className="text-emerald-300 font-semibold">
+                              {Number(payload[0]?.payload?.performanceDia || 0).toFixed(1)}%
+                            </div>
+                          </div>
+                          <div>
+                            <div className="uppercase text-[10px] text-zinc-500">Disp</div>
+                            <div className="text-sky-300 font-semibold">
+                              {Number(payload[0]?.payload?.disponibilidadeDia || 0).toFixed(1)}%
+                            </div>
+                          </div>
+                          <div>
+                            <div className="uppercase text-[10px] text-zinc-500">Qual</div>
+                            <div className="text-pink-300 font-semibold">
+                              {Number(payload[0]?.payload?.qualidadeDia || 0).toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
                   }}
-                  labelStyle={{ color: "#e4e4e7" }}
-                  formatter={(value) => [
-                    metricMode === "pieces"
-                      ? `${value.toLocaleString("pt-BR")} un.`
-                      : `${value.toLocaleString("pt-BR")} kg`,
-                    metricLabel,
-                  ]}
                 />
                 <Legend />
                 <Bar
@@ -791,7 +969,17 @@ export default function OeeDashboard({
                   name={metricLabel}
                   fill="#22c55e"
                   radius={[4, 4, 0, 0]}
+                  onClick={(data) => handleSelectDay(data?.payload)}
                 >
+                  {dailyProductionData.map((entry) => (
+                    <Cell
+                      key={`cell-${entry.date}`}
+                      fill="#22c55e"
+                      fillOpacity={
+                        selectedDayISO && entry.date !== selectedDayISO ? 0.35 : 1
+                      }
+                    />
+                  ))}
                   <LabelList content={renderProdLabel} />
                 </Bar>
               </BarChart>

@@ -1452,11 +1452,11 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
           </div>
 
           <div className="flex flex-wrap justify-center md:justify-end gap-2 items-center w-full md:w-auto">
-            <button
-              onClick={() => {
-                setPresentationMode((v) => !v);
-                setShowConfig(false);
-              }}
+              <button
+                onClick={() => {
+                  setPresentationMode((v) => !v);
+                  setShowConfig(false);
+                }}
               className={`flex items-center gap-2 px-3 h-9 rounded-md text-xs font-bold uppercase border transition-all ${
                 presentationMode
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
@@ -1464,14 +1464,14 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               }`}
               title="Alternar modo apresentação"
             >
-              {presentationMode ? <Projector size={14} /> : <LayoutDashboard size={14} />}
-              <span className="hidden sm:inline">{presentationMode ? 'Apresentação' : 'Operação'}</span>
-            </button>
+                {presentationMode ? <Projector size={14} /> : <LayoutDashboard size={14} />}
+                <span className="hidden sm:inline">{presentationMode ? 'Apresentação' : 'Operação'}</span>
+              </button>
 
-            <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
-              <select
-                value={mesRef}
-                onChange={(e) => setMesRef(e.target.value)}
+              <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
+                <select
+                  value={mesRef}
+                  onChange={(e) => setMesRef(e.target.value)}
                 className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase min-w-[140px]"
               >
                 {opcoesMes.map((k) => (

@@ -6,7 +6,7 @@ import {
   getDocs,
   setDoc
 } from 'firebase/firestore';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 import { db } from "./services/firebase";
@@ -587,9 +587,13 @@ export default function App() {
 
   // Indicadores
   const [dataInicioInd, setDataInicioInd] = useState(primeiroDiaMesAtual);
-const [dataFimInd, setDataFimInd] = useState(hoje);
+  const [dataFimInd, setDataFimInd] = useState(hoje);
+  const [dataInicioIndDraft, setDataInicioIndDraft] = useState(primeiroDiaMesAtual);
+  const [dataFimIndDraft, setDataFimIndDraft] = useState(hoje);
+  const lastValidInicioIndRef = useRef(primeiroDiaMesAtual);
+  const lastValidFimIndRef = useRef(hoje);
   const [capacidadeDiaria, setCapacidadeDiaria] = useState(15000); 
-  const [turnoHoras, setTurnoHoras] = useState(9);
+  const [turnoHoras, setTurnoHoras] = useState(8.8);
 
   // Modal Manual (COMPLETO)
   
@@ -695,6 +699,20 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
 
   const [dataInicioOEE, setDataInicioOEE] = useState(hojeISO);
 const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);   
+
+  useEffect(() => {
+    setDataInicioIndDraft(dataInicioInd);
+    if (ISO_DATE_RE.test(normalizeISODateInput(dataInicioInd || ''))) {
+      lastValidInicioIndRef.current = normalizeISODateInput(dataInicioInd);
+    }
+  }, [dataInicioInd]);
+
+  useEffect(() => {
+    setDataFimIndDraft(dataFimInd);
+    if (ISO_DATE_RE.test(normalizeISODateInput(dataFimInd || ''))) {
+      lastValidFimIndRef.current = normalizeISODateInput(dataFimInd);
+    }
+  }, [dataFimInd]);
 
 
 // ... seus useStates estão aqui em cima ...
@@ -3876,11 +3894,41 @@ const handleImportBackup = (json) => {
                   <div className="grid grid-cols-2 md:flex gap-3 bg-zinc-900/50 p-3 rounded-xl border border-white/10 shadow-xl items-center">
                     <div className="col-span-1">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Início</label>
-                      <input type="date" value={dataInicioInd} onChange={(e) => setDataInicioInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
+                      <input
+                        type="date"
+                        value={dataInicioIndDraft}
+                        onChange={(e) => {
+                          setDataInicioIndDraft(e.target.value);
+                        }}
+                        onBlur={() => {
+                          const normalized = normalizeISODateInput(dataInicioIndDraft);
+                          if (ISO_DATE_RE.test(normalized)) {
+                            setDataInicioInd(normalized);
+                          } else {
+                            setDataInicioIndDraft(lastValidInicioIndRef.current);
+                          }
+                        }}
+                        className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs"
+                      />
                     </div>
                     <div className="col-span-1">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase block mb-1">Fim</label>
-                      <input type="date" value={dataFimInd} onChange={(e) => setDataFimInd(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs" />
+                      <input
+                        type="date"
+                        value={dataFimIndDraft}
+                        onChange={(e) => {
+                          setDataFimIndDraft(e.target.value);
+                        }}
+                        onBlur={() => {
+                          const normalized = normalizeISODateInput(dataFimIndDraft);
+                          if (ISO_DATE_RE.test(normalized)) {
+                            setDataFimInd(normalized);
+                          } else {
+                            setDataFimIndDraft(lastValidFimIndRef.current);
+                          }
+                        }}
+                        className="w-full bg-black/50 border border-white/10 rounded p-1.5 text-white text-xs"
+                      />
                     </div>
                     <div className="col-span-2 md:col-span-1">
                       <label className="text-[10px] text-pink-500 font-bold uppercase block mb-1">Meta/Dia</label>
