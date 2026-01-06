@@ -464,8 +464,8 @@ export const ProducaoScreen = ({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            <table className="w-full text-left text-sm">
+          <div className="flex-1 overflow-y-auto overflow-x-auto">
+            <table className="w-full min-w-[720px] md:min-w-0 text-left text-sm">
               <thead className="bg-black/20 text-zinc-500 text-xs uppercase sticky top-0 backdrop-blur">
                 <tr>
                   <th className="p-4">Item</th>

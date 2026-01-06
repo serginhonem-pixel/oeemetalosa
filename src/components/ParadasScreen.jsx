@@ -377,7 +377,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
   // UI
   // ---------------------------------------------------------------------------
   return (
-    <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+    <div className="flex flex-col md:flex-row gap-6 h-full overflow-y-auto md:overflow-hidden">
       {/* ESQUERDA */}
       <div className="w-full md:w-[380px] flex-shrink-0 bg-zinc-950 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-6 shadow-2xl">
         <header className="flex items-center justify-between gap-4 border-b border-zinc-800 pb-4">
@@ -523,7 +523,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
           </div>
         </div>
 
-        <div className="grid grid-cols-[140px_1fr_180px_60px] gap-4 px-6 py-3 bg-zinc-900/30 border-b border-zinc-800 text-xs font-bold text-zinc-500 uppercase tracking-wider shrink-0">
+        <div className="hidden md:grid grid-cols-[140px_1fr_180px_60px] gap-4 px-6 py-3 bg-zinc-900/30 border-b border-zinc-800 text-xs font-bold text-zinc-500 uppercase tracking-wider shrink-0">
           <div>Horário / Dur.</div>
           <div>Motivo</div>
           <div className="text-right">Máquina</div>
@@ -542,7 +542,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
             paradasDoDia.map((p, idx) => (
               <div
                 key={`${p.data}-${p.inicioNorm}-${idx}`}
-                className={`group grid grid-cols-[140px_1fr_180px_60px] gap-4 items-center px-4 py-4 rounded-xl border transition-all
+                className={`group flex flex-col md:grid md:grid-cols-[140px_1fr_180px_60px] gap-3 md:gap-4 items-start md:items-center px-4 py-4 rounded-xl border transition-all
                   ${
                     p.isCritico
                       ? "bg-red-950/20 border-red-500/30 hover:border-red-500/50"
@@ -551,7 +551,10 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
                       : "bg-zinc-900/40 border-zinc-800/60 hover:bg-zinc-800/60 hover:border-zinc-700"
                   }`}
               >
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 w-full">
+                  <span className="md:hidden text-[10px] text-zinc-500 uppercase font-bold">
+                    Horário / Dur.
+                  </span>
                   <span className="text-sm font-mono font-medium text-zinc-200">
                     {p.inicioNorm || "-"} - {p.fimNorm || "-"}
                   </span>
@@ -569,7 +572,10 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
                   </div>
                 </div>
 
-                <div className="min-w-0 flex flex-col justify-center">
+                <div className="min-w-0 flex flex-col justify-center w-full">
+                  <span className="md:hidden text-[10px] text-zinc-500 uppercase font-bold">
+                    Motivo
+                  </span>
                   <span
                     className={`text-sm font-semibold block truncate ${
                       p.isCritico
@@ -584,13 +590,16 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
                   <span className="text-xs text-zinc-500 font-mono mt-0.5">{p.motivoNorm || "-"}</span>
                 </div>
 
-                <div className="text-right truncate flex items-center justify-end">
+                <div className="text-left md:text-right truncate flex items-center md:justify-end w-full">
+                  <span className="md:hidden text-[10px] text-zinc-500 uppercase font-bold mr-2">
+                    Máquina
+                  </span>
                   <span className="text-xs font-medium text-zinc-400 bg-zinc-900 px-2 py-1 rounded-lg border border-zinc-800 truncate max-w-full">
                     {getNomeMaquina(p.maquinaNorm)}
                   </span>
                 </div>
 
-                <div className="flex justify-center">
+                <div className="flex justify-end md:justify-center w-full">
                   {deletarParada && (
                     <button
                       onClick={() => deletarParada(p.id)}
