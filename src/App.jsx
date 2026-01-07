@@ -8,9 +8,10 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import * as XLSX from 'xlsx';
 
-import { db, auth } from "./services/firebase";
+import { db, auth, storage } from "./services/firebase";
 import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
 import {
@@ -65,6 +66,7 @@ import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 import logoMetalosa from './data/logo metalosa.bmp';
+import estoqueEstudoXlsx from './data/Estudo Estoque Telha.xlsx';
 
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -1003,6 +1005,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
 
   const [romaneioEmEdicaoId, setRomaneioEmEdicaoId] = useState(null);
   const [romaneioEmEdicaoKey, setRomaneioEmEdicaoKey] = useState(null);
+  const [romaneioEmEdicao, setRomaneioEmEdicao] = useState(null);
   const [formRomaneioId, setFormRomaneioId] = useState(''); 
   const [formCliente, setFormCliente] = useState('');
   const [formTotvs, setFormTotvs] = useState(''); 
@@ -1014,6 +1017,9 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [formPedidoSolicitante, setFormPedidoSolicitante] = useState('');
   const [formPedidoRequisicao, setFormPedidoRequisicao] = useState('');
   const [formPedidoObs, setFormPedidoObs] = useState('');
+  const [formPedidoRomaneioFile, setFormPedidoRomaneioFile] = useState(null);
+  const [formPedidoRomaneioUploading, setFormPedidoRomaneioUploading] = useState(false);
+  const [estoqueEstudo, setEstoqueEstudo] = useState({});
   const [formPedidoCod, setFormPedidoCod] = useState('');
   const [formPedidoDesc, setFormPedidoDesc] = useState('');
   const [formPedidoQtd, setFormPedidoQtd] = useState('');
@@ -1342,6 +1348,87 @@ try {
 
   carregarDados();
 }, []);
+
+  useEffect(() => {
+    const carregarEstoqueEstudo = async () => {
+      try {
+        const resp = await fetch(estoqueEstudoXlsx);
+        const data = await resp.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+
+        const sheetDados = wb.Sheets['Dados'];
+        const sheetConsolidacao =
+          wb.Sheets['Consolidação'] ||
+          wb.Sheets['Consolidacao'] ||
+          wb.Sheets['Consolidaçao'];
+
+        const normalizeHeader = (v) =>
+          String(v || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+
+        const parseSheet = (sheet) => {
+          if (!sheet) return { header: [], rows: [] };
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+          const header = rows[3] || [];
+          const dataRows = rows.slice(4).filter((row) =>
+            row.some((cell) => cell !== null && cell !== '')
+          );
+          return { header, rows: dataRows };
+        };
+
+        const dados = parseSheet(sheetDados);
+        const cons = parseSheet(sheetConsolidacao);
+
+        const idxProdutoDados = dados.header.findIndex(
+          (h) => normalizeHeader(h) === 'produto'
+        );
+        const idxDemanda = dados.header.findIndex(
+          (h) => normalizeHeader(h) === 'saida / demanda'
+        );
+
+        const idxProdutoCons = cons.header.findIndex(
+          (h) => normalizeHeader(h) === 'produto'
+        );
+        const idxEstoqueMax = cons.header.findIndex(
+          (h) => normalizeHeader(h) === 'estoque maximo'
+        );
+
+        const map = {};
+
+        if (idxProdutoDados >= 0) {
+          dados.rows.forEach((row) => {
+            const cod = row[idxProdutoDados];
+            if (!cod) return;
+            const key = String(cod).trim();
+            const demanda = idxDemanda >= 0 ? Number(row[idxDemanda] || 0) : 0;
+            if (!map[key]) map[key] = {};
+            if (demanda) map[key].demandaDiaria = demanda;
+          });
+        }
+
+        if (idxProdutoCons >= 0) {
+          cons.rows.forEach((row) => {
+            const cod = row[idxProdutoCons];
+            if (!cod) return;
+            const key = String(cod).trim();
+            const estoqueMax =
+              idxEstoqueMax >= 0 ? Number(row[idxEstoqueMax] || 0) : 0;
+            if (!map[key]) map[key] = {};
+            if (estoqueMax) map[key].estoqueMaximo = estoqueMax;
+          });
+        }
+
+        setEstoqueEstudo(map);
+      } catch (err) {
+        console.error('Erro ao ler estudo de estoque:', err);
+      }
+    };
+
+    carregarEstoqueEstudo();
+  }, []);
 
 
 
@@ -2335,11 +2422,71 @@ const handleDownloadModeloParadas = () => {
     });
   };
 
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Falha ao ler arquivo.'));
+      reader.readAsDataURL(file);
+    });
+
+  const uploadRomaneioAnexo = async (file, idPedido) => {
+    if (!file) return null;
+
+    const safeName = String(file.name || 'romaneio.pdf').replace(/[^\w.-]+/g, '_');
+    const payload = {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    };
+
+    if (IS_LOCALHOST) {
+      const localData = await readFileAsDataUrl(file);
+      return { ...payload, local: true, localData };
+    }
+
+    const storagePath = `romaneios/${idPedido}/${Date.now()}-${safeName}`;
+    const storageRef = ref(storage, storagePath);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    return { ...payload, url, path: storagePath };
+  };
+
+  const abrirRomaneioAnexo = async (anexo) => {
+    if (!anexo) return;
+
+    const dataUrl =
+      anexo.localData ||
+      (typeof anexo.url === 'string' && anexo.url.startsWith('data:')
+        ? anexo.url
+        : null);
+
+    if (dataUrl) {
+      try {
+        const blob = await fetch(dataUrl).then((res) => res.blob());
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        return;
+      } catch (err) {
+        console.error('Erro ao abrir romaneio local:', err);
+      }
+    }
+
+    if (anexo.url) {
+      window.open(anexo.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    alert('Romaneio nao encontrado.');
+  };
+
   const limparPedidoComercial = () => {
     setFormPedidoCliente('');
     setFormPedidoRequisicao('');
     setFormPedidoObs('');
     setItensPedidoComercial([]);
+    setFormPedidoRomaneioFile(null);
     resetItemPedidoComercial();
   };
 
@@ -2384,6 +2531,20 @@ const handleDownloadModeloParadas = () => {
       }
     );
 
+    let romaneioAnexo = null;
+    if (formPedidoRomaneioFile) {
+      setFormPedidoRomaneioUploading(true);
+      try {
+        romaneioAnexo = await uploadRomaneioAnexo(formPedidoRomaneioFile, idPedido);
+      } catch (err) {
+        console.error('Erro ao enviar romaneio:', err);
+        alert('Erro ao anexar romaneio. Tente novamente.');
+        setFormPedidoRomaneioUploading(false);
+        return;
+      }
+      setFormPedidoRomaneioUploading(false);
+    }
+
     const obj = temEstoqueSuficiente
       ? {
           id: idPedido,
@@ -2399,6 +2560,7 @@ const handleDownloadModeloParadas = () => {
           requisicao: requisicao || idPedido,
           observacao: formPedidoObs || "Estoque disponivel. Transferencia solicitada.",
           itens: itensPedidoComercial,
+          romaneioAnexo,
           transferenciaDestino: formPedidoCliente.trim(),
           transferenciaObs: formPedidoObs || "",
           transferenciaItens: itensPedidoComercial,
@@ -2420,6 +2582,7 @@ const handleDownloadModeloParadas = () => {
           requisicao: requisicao || idPedido,
           observacao: formPedidoObs || "",
           itens: itensPedidoComercial,
+          romaneioAnexo,
           createdAt: agoraISO,
           updatedAt: agoraISO,
         };
@@ -2735,6 +2898,35 @@ const handleDownloadModeloParadas = () => {
     });
   };
 
+  const moverRomaneioParaData = async (romaneioKey, dataISO) => {
+    if (!romaneioKey || !dataISO) return;
+
+    const agoraISO = new Date().toISOString();
+    const alvo = filaProducao.find((r) => (r.sysId || r.id) === romaneioKey);
+    if (!alvo) return;
+
+    setFilaProducao((prev) =>
+      prev.map((r) =>
+        (r.sysId || r.id) === romaneioKey
+          ? { ...r, data: dataISO, dataProducao: dataISO, updatedAt: agoraISO }
+          : r
+      )
+    );
+
+    if (IS_LOCALHOST) return;
+    if (!alvo.sysId) return;
+
+    try {
+      await safeUpdateDoc("romaneios", String(alvo.sysId), {
+        data: dataISO,
+        dataProducao: dataISO,
+        updatedAt: agoraISO,
+      });
+    } catch (err) {
+      console.error("Erro ao mover romaneio:", err);
+    }
+  };
+
 
 
 
@@ -2748,6 +2940,7 @@ const abrirModalEdicao = (r) => {
 
     setRomaneioEmEdicaoId(r.sysId || null); // id do doc no Firebase
     setRomaneioEmEdicaoKey(r.sysId || r.id || null);
+    setRomaneioEmEdicao(r || null);
     setMaquinaSelecionada(r.maquinaId || r.maquina || '');
     setFormRomaneioId(r.id || r.romaneioId || '');
     setFormCliente(r.cliente);
@@ -2770,6 +2963,7 @@ const abrirModalEdicao = (r) => {
     resetItemFields();
     setRomaneioEmEdicaoId(null);
     setRomaneioEmEdicaoKey(null);
+    setRomaneioEmEdicao(null);
     setPdfItensEncontrados([]);
     setPdfItensSelecionados([]);
     setPdfInfoRomaneio(null);
@@ -3381,6 +3575,17 @@ const parseNumberBR = (v) => {
     () => estoqueTelhas.filter((item) => Number(item.saldoQtd || 0) <= 500).slice(0, 4),
     [estoqueTelhas]
   );
+  const saldoPedidoComercialSelecionado = useMemo(() => {
+    const cod = String(formPedidoCod || '').trim();
+    const desc = String(formPedidoDesc || '').trim().toLowerCase();
+    if (!cod && !desc) return null;
+    if (cod) {
+      const item = estoqueTelhas.find((p) => String(p.cod) === cod);
+      return item ? Number(item.saldoQtd || 0) : 0;
+    }
+    const item = estoqueTelhas.find((p) => String(p.desc || '').trim().toLowerCase() === desc);
+    return item ? Number(item.saldoQtd || 0) : 0;
+  }, [estoqueTelhas, formPedidoCod, formPedidoDesc]);
 
   const getStockStatusComercial = (item) => {
     const saldo = Number(item.saldoQtd || 0);
@@ -4222,6 +4427,7 @@ const handleImportBackup = (json) => {
                     resumoSecundario={calcResumo(colunasAgenda.transferir)}
                     tituloSecundario="FALTA TRANSFERIR"
                     onEdit={abrirModalEdicao}
+                    enableDrag={effectiveViewMode !== 'comercial'}
                 />
                 
                 <ColunaKanban 
@@ -4230,7 +4436,10 @@ const handleImportBackup = (json) => {
                     cor="emerald" 
                     lista={colunasAgenda.hoje} 
                     resumo={calcResumo(colunasAgenda.hoje)} 
-                    onEdit={abrirModalEdicao} 
+                    onEdit={abrirModalEdicao}
+                    enableDrag={effectiveViewMode !== 'comercial'}
+                    enableDrop={effectiveViewMode !== 'comercial'}
+                    onDropRomaneio={(key) => moverRomaneioParaData(key, hoje)}
                 />
                 
                 <ColunaKanban 
@@ -4239,7 +4448,10 @@ const handleImportBackup = (json) => {
                     cor="blue" 
                     lista={colunasAgenda.amanha} 
                     resumo={calcResumo(colunasAgenda.amanha)} 
-                    onEdit={abrirModalEdicao} 
+                    onEdit={abrirModalEdicao}
+                    enableDrag={effectiveViewMode !== 'comercial'}
+                    enableDrop={effectiveViewMode !== 'comercial'}
+                    onDropRomaneio={(key) => moverRomaneioParaData(key, amanha)}
                 />
                 
                 {/* Coluna PRÓXIMOS com altura mínima corrigida */}
@@ -5142,6 +5354,19 @@ const handleImportBackup = (json) => {
                               <div className="text-xs text-zinc-500 uppercase">{req.tipo || 'Pedido'}</div>
                               <div className="text-sm text-zinc-100">{req.cliente}</div>
                               <div className="text-[11px] text-zinc-500">{req.itens?.[0]?.desc || 'Item'}</div>
+                              {req.romaneioAnexo?.url || req.romaneioAnexo?.localData ? (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirRomaneioAnexo(req.romaneioAnexo)}
+                                  className="text-[11px] text-sky-400 hover:text-sky-300"
+                                >
+                                  Romaneio: {req.romaneioAnexo.name || 'Abrir'}
+                                </button>
+                              ) : req.romaneioAnexo?.name ? (
+                                <div className="text-[11px] text-zinc-500">
+                                  Romaneio: {req.romaneioAnexo.name}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="flex items-center gap-2">
                               <button
@@ -5254,6 +5479,11 @@ const handleImportBackup = (json) => {
                             <th className="px-5 py-3">Produto</th>
                             <th className="px-5 py-3">Disponibilidade visual</th>
                             <th className="px-5 py-3">Qtd atual</th>
+                            <th className="px-5 py-3">Demanda diaria</th>
+                            <th className="px-5 py-3">Estoque maximo</th>
+                            {canManageEstoque && (
+                              <th className="px-5 py-3">Aviso producao</th>
+                            )}
                             <th className="px-5 py-3">Status</th>
                             <th className="px-5 py-3 text-right">
                               {canManageEstoque ? 'Acoes' : 'Solicitar'}
@@ -5263,7 +5493,38 @@ const handleImportBackup = (json) => {
                         <tbody className="divide-y divide-white/5">
                           {estoqueFiltradoComercial.map((item) => {
                             const status = getStockStatusComercial(item);
-                            const percent = Math.min(100, Math.max(0, (Number(item.saldoQtd || 0) / 5000) * 100));
+                            const estudo = estoqueEstudo[item.cod] || {};
+                            const demandaDiaria = estudo.demandaDiaria;
+                            const estoqueMaximo = estudo.estoqueMaximo;
+                            const maxBase = estoqueMaximo && estoqueMaximo > 0 ? estoqueMaximo : 5000;
+                            const percent = Math.min(
+                              100,
+                              Math.max(0, (Number(item.saldoQtd || 0) / maxBase) * 100)
+                            );
+                            const saldoQtd = Number(item.saldoQtd || 0);
+                            const faltaReposicao =
+                              estoqueMaximo && estoqueMaximo > 0
+                                ? Math.max(0, estoqueMaximo - saldoQtd)
+                                : 0;
+                            const capacidadeDia = Number(capacidadeDiaria || 0);
+                            const aviso =
+                              estoqueMaximo && capacidadeDia
+                                ? faltaReposicao <= 0
+                                  ? { label: 'OK', tone: 'text-emerald-300' }
+                                  : (() => {
+                                      const dias = Math.ceil(faltaReposicao / capacidadeDia);
+                                      const tone =
+                                        dias >= 3
+                                          ? 'text-red-300'
+                                          : dias >= 2
+                                          ? 'text-amber-300'
+                                          : 'text-emerald-300';
+                                      return {
+                                        label: `Repor ${faltaReposicao} un (~${dias}d)`,
+                                        tone,
+                                      };
+                                    })()
+                                : { label: '--', tone: 'text-zinc-500' };
                             return (
                               <tr key={item.cod} className="group hover:bg-white/[0.02] transition-colors border-b border-white/5 last:border-0">
                                 <td className="px-5 py-4">
@@ -5294,6 +5555,21 @@ const handleImportBackup = (json) => {
                                   <div className="text-sm font-bold text-white tabular-nums">{Number(item.saldoQtd || 0).toLocaleString()}</div>
                                   <div className="text-[10px] text-zinc-500">Kg: {Number(item.saldoKg || 0).toFixed(1)}</div>
                                 </td>
+                                <td className="px-5 py-4">
+                                  <div className="text-sm font-medium text-zinc-100 tabular-nums">
+                                    {demandaDiaria ? Number(demandaDiaria).toLocaleString() : '--'}
+                                  </div>
+                                </td>
+                                <td className="px-5 py-4">
+                                  <div className="text-sm font-medium text-zinc-100 tabular-nums">
+                                    {estoqueMaximo ? Number(estoqueMaximo).toLocaleString() : '--'}
+                                  </div>
+                                </td>
+                                {canManageEstoque && (
+                                  <td className="px-5 py-4">
+                                    <div className={`text-xs font-medium ${aviso.tone}`}>{aviso.label}</div>
+                                  </td>
+                                )}
                                 <td className="px-5 py-4">
                                   <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${status.text} ${status.border} ${status.bgSoft}`}>
                                     {status.label}
@@ -5339,7 +5615,7 @@ const handleImportBackup = (json) => {
                           })}
                           {estoqueFiltradoComercial.length === 0 && (
                             <tr>
-                              <td colSpan={5} className="py-20 text-center text-zinc-500">
+                              <td colSpan={canManageEstoque ? 8 : 7} className="py-20 text-center text-zinc-500">
                                 <Box size={40} className="mx-auto mb-3 opacity-20" />
                                 Nenhum item encontrado com este filtro.
                               </td>
@@ -5447,6 +5723,19 @@ const handleImportBackup = (json) => {
                               <div className="text-xs text-zinc-500 uppercase">{req.tipo || 'Pedido'}</div>
                               <div className="text-sm text-zinc-100">{req.cliente}</div>
                               <div className="text-[11px] text-zinc-500">{req.itens?.[0]?.desc || 'Item'}</div>
+                              {req.romaneioAnexo?.url || req.romaneioAnexo?.localData ? (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirRomaneioAnexo(req.romaneioAnexo)}
+                                  className="text-[11px] text-sky-400 hover:text-sky-300"
+                                >
+                                  Romaneio: {req.romaneioAnexo.name || 'Abrir'}
+                                </button>
+                              ) : req.romaneioAnexo?.name ? (
+                                <div className="text-[11px] text-zinc-500">
+                                  Romaneio: {req.romaneioAnexo.name}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="flex items-center gap-2">
                               <button
@@ -5565,6 +5854,27 @@ const handleImportBackup = (json) => {
                                   placeholder="Ex: urgente"
                                 />
                               </div>
+                              <div className="space-y-2 md:col-span-2">
+                                <label className="text-[11px] text-zinc-400">Romaneio (PDF)</label>
+                                <input
+                                  type="file"
+                                  accept="application/pdf"
+                                  onChange={(e) => setFormPedidoRomaneioFile(e.target.files?.[0] || null)}
+                                  className="w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-bold file:text-zinc-100 hover:file:bg-zinc-700"
+                                />
+                                {formPedidoRomaneioFile && (
+                                  <div className="flex items-center justify-between text-xs text-zinc-400">
+                                    <span className="truncate">{formPedidoRomaneioFile.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setFormPedidoRomaneioFile(null)}
+                                      className="text-zinc-500 hover:text-zinc-200"
+                                    >
+                                      Remover
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -5590,6 +5900,11 @@ const handleImportBackup = (json) => {
                               className="w-full bg-zinc-950/80 border border-white/10 rounded-lg p-2.5 text-white text-sm"
                               placeholder="Descricao"
                             />
+                            {saldoPedidoComercialSelecionado !== null && (
+                              <div className="text-xs text-zinc-400">
+                                Saldo disponivel: {saldoPedidoComercialSelecionado.toLocaleString()}
+                              </div>
+                            )}
                             <div className="grid grid-cols-2 gap-3">
                               <input
                                 type="number"
@@ -5607,6 +5922,11 @@ const handleImportBackup = (json) => {
                                 placeholder="Qtd"
                               />
                             </div>
+                            {saldoPedidoComercialSelecionado !== null && (
+                              <div className="text-xs text-zinc-400">
+                                Saldo atual: {saldoPedidoComercialSelecionado.toLocaleString()}
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={adicionarItemPedidoComercial}
@@ -5670,9 +5990,10 @@ const handleImportBackup = (json) => {
                       <button
                         type="button"
                         onClick={salvarPedidoComercial}
-                        className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold"
+                        disabled={formPedidoRomaneioUploading}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Enviar pedido
+                        {formPedidoRomaneioUploading ? 'Enviando...' : 'Enviar pedido'}
                       </button>
                     </div>
                   </div>
@@ -6040,60 +6361,28 @@ const handleImportBackup = (json) => {
                 <div className="bg-zinc-900/40 border border-white/10 rounded-xl p-4 space-y-3">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div className="flex flex-col md:flex-row md:items-center gap-3">
-                      <div className="text-xs font-bold text-zinc-400 uppercase tracking-wide">PDF do romaneio</div>
-                      <label className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded cursor-pointer text-sm w-fit">
-                        <Upload size={16} />
-                        {pdfLoading ? 'Lendo...' : 'Escolher PDF'}
-                        <input type="file" accept="application/pdf" onChange={handleUploadPdfRomaneio} className="hidden" />
-                      </label>
-                      {pdfInfoRomaneio && (
-                        <span className="text-xs text-emerald-400">
-                          #{pdfInfoRomaneio.id || 'ROMANEIO'} - {pdfItensEncontrados.length} itens
-                        </span>
-                      )}
-                      {pdfErro && <span className="text-xs text-red-400">{pdfErro}</span>}
-                    </div>
-                    <div className="text-[11px] text-zinc-500">
-                      Escolha a data e máquina na hora; o PDF só preenche os dados.
-                    </div>
-                  </div>
-
-                  {pdfItensEncontrados.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-[11px] text-zinc-400">Selecione quais itens incluir na ordem:</div>
-                      <div className="max-h-52 overflow-y-auto bg-black/30 border border-white/10 rounded-lg divide-y divide-white/5">
-                        {pdfItensEncontrados.map((item) => (
-                          <label
-                            key={item.tempId}
-                            className="flex items-start gap-3 p-3 hover:bg-white/5 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-1 accent-emerald-500"
-                              checked={pdfItensSelecionados.includes(item.tempId)}
-                              onChange={() => togglePdfItemSelecionado(item.tempId)}
-                            />
-                            <div className="flex-1">
-                              <div className="text-sm text-white font-semibold">{item.desc}</div>
-                              <div className="text-[11px] text-zinc-400">
-                                Cod {item.cod} / Qtd {item.qtd} / Peso {item.pesoTotal}kg{' '}
-                                {item.comp ? `/ ${item.comp.toFixed(2)}m` : ''}
-                              </div>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                      <div className="flex justify-end">
+                      <div className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Romaneio</div>
+                      {romaneioEmEdicao?.romaneioAnexo?.url ||
+                      romaneioEmEdicao?.romaneioAnexo?.localData ? (
                         <button
                           type="button"
-                          onClick={adicionarItensPdfSelecionados}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold"
+                          onClick={() => abrirRomaneioAnexo(romaneioEmEdicao.romaneioAnexo)}
+                          className="inline-flex items-center gap-2 px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm w-fit"
                         >
-                          Adicionar itens selecionados
+                          Ver romaneio
                         </button>
-                      </div>
+                      ) : romaneioEmEdicao?.romaneioAnexo?.name ? (
+                        <span className="text-xs text-zinc-400">
+                          Romaneio: {romaneioEmEdicao.romaneioAnexo.name}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Sem romaneio anexado.</span>
+                      )}
                     </div>
-                  )}
+                    <div className="text-[11px] text-zinc-500">
+                      Visualizacao do romaneio anexado a solicitacao.
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -6425,3 +6714,4 @@ const BotaoMenu = ({ ativo, onClick, icon, label }) => (
 );
 
 // --- COMPONENTE DE TOOLTIP CUSTOMIZADO ---
+

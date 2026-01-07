@@ -2,6 +2,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
 // 🔴 Config de PRODUÇÃO (site oficial)
 const firebaseConfigProd = {
@@ -35,4 +36,5 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app);
 export const IS_PRODUCTION = !isLocalhost;
 export const auth = getAuth(app);
+export const storage = getStorage(app);
     

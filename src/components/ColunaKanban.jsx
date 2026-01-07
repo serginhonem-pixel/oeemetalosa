@@ -3,6 +3,35 @@ import React from "react";
 import { Layers, CalendarDays, Pencil, Factory } from "lucide-react";
 import { CATALOGO_MAQUINAS } from "../data/catalogoMaquinas";
 
+const abrirRomaneioAnexo = async (anexo) => {
+  if (!anexo) return;
+
+  const dataUrl =
+    anexo.localData ||
+    (typeof anexo.url === "string" && anexo.url.startsWith("data:")
+      ? anexo.url
+      : null);
+
+  if (dataUrl) {
+    try {
+      const blob = await fetch(dataUrl).then((res) => res.blob());
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      return;
+    } catch (err) {
+      console.error("Erro ao abrir romaneio local:", err);
+    }
+  }
+
+  if (anexo.url) {
+    window.open(anexo.url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  alert("Romaneio nao encontrado.");
+};
+
 
 const CardRomaneio = ({ romaneio, onEdit }) => (
   <div className="bg-black/40 border border-white/5 rounded-xl p-3 hover:border-white/20 group relative">
@@ -78,6 +107,9 @@ export const ColunaKanban = ({
   listaSecundaria,
   resumoSecundario,
   tituloSecundario,
+  enableDrag = false,
+  enableDrop = false,
+  onDropRomaneio,
 }) => {
   const safeLista = Array.isArray(lista) ? lista : [];
   const hasSecundaria = Array.isArray(listaSecundaria);
@@ -196,11 +228,18 @@ export const ColunaKanban = ({
       const peso = getPesoRomaneio(r);
       const { qtd, m2 } = getResumoItens(r);
       const maquina = getMaquinaNome(r);
+      const dragKey = r.sysId || r.id;
 
       return (
         <button
           key={r.sysId || r.id}
           onClick={() => onEdit && onEdit(r)}
+          draggable={enableDrag}
+          onDragStart={(e) => {
+            if (!enableDrag || !dragKey) return;
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(dragKey));
+          }}
           className={`
             w-full text-left rounded-xl border border-white/5 bg-zinc-900/80 
             hover:border-white/25 hover:bg-zinc-800/80 transition-colors
@@ -265,6 +304,20 @@ export const ColunaKanban = ({
               </span>
             )}
           </div>
+
+          {r.romaneioAnexo?.url || r.romaneioAnexo?.localData ? (
+            <button
+              type="button"
+              onClick={() => abrirRomaneioAnexo(r.romaneioAnexo)}
+              className="text-[11px] text-sky-400 hover:text-sky-300 truncate text-left"
+            >
+              Romaneio: {r.romaneioAnexo.name || "Abrir"}
+            </button>
+          ) : r.romaneioAnexo?.name ? (
+            <div className="text-[11px] text-zinc-500 truncate">
+              Romaneio: {r.romaneioAnexo.name}
+            </div>
+          ) : null}
         </button>
       );
     });
@@ -334,7 +387,7 @@ export const ColunaKanban = ({
 
       {/* Lista de cards */}
       <div
-        className={`flex-1 min-h-0 ${
+      className={`flex-1 min-h-0 ${
           hasSecundaria ? "grid grid-rows-[1fr_1fr] divide-y divide-white/5" : ""
         }`}
       >
@@ -355,7 +408,21 @@ export const ColunaKanban = ({
               </div>
             </div>
           )}
-          <div className={`flex-1 overflow-y-auto p-3 ${hasSecundaria ? "pt-2" : ""} space-y-3`}>
+          <div
+            className={`flex-1 overflow-y-auto p-3 ${hasSecundaria ? "pt-2" : ""} space-y-3`}
+            onDragOver={(e) => {
+              if (!enableDrop) return;
+              e.preventDefault();
+            }}
+            onDrop={(e) => {
+              if (!enableDrop) return;
+              e.preventDefault();
+              const key = e.dataTransfer.getData("text/plain");
+              if (key && onDropRomaneio) {
+                onDropRomaneio(key);
+              }
+            }}
+          >
             {renderCards(listaRender)}
           </div>
         </div>
