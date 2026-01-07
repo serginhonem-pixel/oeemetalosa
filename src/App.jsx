@@ -3,22 +3,29 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   setDoc
 } from 'firebase/firestore';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
-import { db } from "./services/firebase";
+import { db, auth } from "./services/firebase";
 import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut
+} from 'firebase/auth';
 
 import {
   Activity, AlertCircle, AlertOctagon, AlertTriangle, ArrowRight, ArrowRightLeft, BarChart3, Box,
   CalendarDays, CheckCircle2,
   ClipboardList,
   Download, Factory, FileText, History, Layers, Layout,
-  Package, Pencil, Plus, PlusCircle, Scale, Search, Trash2,
+  LogOut, Package, Pencil, Plus, PlusCircle, Scale, Search, Trash2, User,
   TrendingDown, TrendingUp,
   Upload, X
 } from 'lucide-react';
@@ -66,6 +73,189 @@ GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const DEV_CACHE_KEY = getDevCacheKey();
+const DEV_VIEW_STORAGE_KEY = `${DEV_CACHE_KEY}:viewMode`;
+
+const LoginScreen = ({ onLogin, onResetPassword, error, info, pending }) => {
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    onLogin(email, senha);
+  };
+
+  const handleReset = (event) => {
+    event.preventDefault();
+    onResetPassword(email);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#050507] text-white flex items-center justify-center p-6">
+      <div className="w-full max-w-md bg-zinc-900/90 border border-white/10 rounded-2xl shadow-2xl p-6 md:p-8">
+        <div className="flex flex-col items-center gap-3 mb-6">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+            <Layout size={24} className="text-emerald-300" />
+          </div>
+          <div className="text-center">
+            <h1 className="text-xl font-bold">Telha OEE</h1>
+            <p className="text-sm text-zinc-400">Acesse com seu usuario e senha</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-400 uppercase">E-mail</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              placeholder="email@empresa.com"
+              autoComplete="email"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Senha</label>
+            <input
+              type="password"
+              value={senha}
+              onChange={(event) => setSenha(event.target.value)}
+              className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+          {info && (
+            <div className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
+              {info}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg disabled:opacity-50"
+            disabled={pending}
+          >
+            {pending ? 'Entrando...' : 'Entrar'}
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="w-full text-xs text-zinc-400 hover:text-white underline underline-offset-4"
+            disabled={pending}
+          >
+            Esqueci minha senha
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ProfileModal = ({ open, onClose, email, name, setor, onSave, onLogout, error, saving }) => {
+  const [formName, setFormName] = useState(name || '');
+  const [formSetor, setFormSetor] = useState(setor || '');
+
+  useEffect(() => {
+    setFormName(name || '');
+    setFormSetor(setor || '');
+  }, [name, setor, open]);
+
+  if (!open) return null;
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    onSave({ name: formName.trim(), setor: formSetor.trim() });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+      <div className="bg-zinc-900 rounded-2xl w-full max-w-md border border-white/10 shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+              <User size={18} className="text-emerald-300" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Perfil</h3>
+              <div className="text-[11px] text-zinc-400">{email}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-400 hover:text-white"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase">Nome</label>
+              <input
+                value={formName}
+                onChange={(event) => setFormName(event.target.value)}
+                className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                placeholder="Seu nome"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase">Setor</label>
+              <input
+                value={formSetor}
+                onChange={(event) => setFormSetor(event.target.value)}
+                className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                placeholder="PCP, Producao, etc"
+              />
+            </div>
+          </div>
+
+          {error ? (
+            <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onLogout}
+              className="px-4 py-2 bg-zinc-800 text-white rounded-lg"
+            >
+              Sair
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-zinc-800 text-white rounded-lg"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold disabled:opacity-50"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 
 const formatarDataBR = (dataISO) => {
@@ -520,6 +710,196 @@ const PrintStyles = () => (
 
 
 export default function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginError, setLoginError] = useState('');
+  const [loginInfo, setLoginInfo] = useState('');
+  const [loginPending, setLoginPending] = useState(false);
+  const [devViewMode, setDevViewMode] = useState(() => {
+    if (!IS_LOCALHOST) return 'admin';
+    try {
+      return localStorage.getItem(DEV_VIEW_STORAGE_KEY) || 'admin';
+    } catch (err) {
+      return 'admin';
+    }
+  });
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileSetor, setProfileSetor] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const isAdminUser =
+    authUser?.email && authUser.email.toLowerCase() === 'pcp@metalosa.com.br';
+  const effectiveViewMode = isAdminUser
+    ? (IS_LOCALHOST ? devViewMode : 'admin')
+    : 'comercial';
+
+  useEffect(() => {
+    if (!IS_LOCALHOST) return;
+    try {
+      localStorage.setItem(DEV_VIEW_STORAGE_KEY, devViewMode);
+    } catch (err) {
+      console.error('Erro ao salvar modo de visualizacao:', err);
+    }
+  }, [devViewMode]);
+
+
+  useEffect(() => {
+    if (showProfileModal) {
+      setProfileError('');
+    }
+  }, [showProfileModal]);
+  useEffect(() => {
+    if (!authUser) {
+      setProfileName('');
+      setProfileSetor('');
+      return;
+    }
+
+    let active = true;
+    const localKey = `profile:${authUser.uid}`;
+
+    try {
+      const raw = localStorage.getItem(localKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setProfileName(parsed?.name || '');
+        setProfileSetor(parsed?.setor || '');
+      }
+    } catch (err) {
+      console.error('Erro ao ler perfil local:', err);
+    }
+
+    const loadProfile = async () => {
+      try {
+        const snapshot = await getDoc(doc(db, 'users', authUser.uid));
+        if (!active) return;
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setProfileName(data?.name || '');
+          setProfileSetor(data?.setor || '');
+          try {
+            localStorage.setItem(localKey, JSON.stringify({
+              name: data?.name || '',
+              setor: data?.setor || '',
+              email: authUser.email || '',
+              updatedAt: Date.now(),
+            }));
+          } catch (err) {
+            console.error('Erro ao salvar perfil local:', err);
+          }
+        } else {
+          setProfileName('');
+          setProfileSetor('');
+        }
+      } catch (err) {
+        console.error('Erro ao carregar perfil:', err);
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      active = false;
+    };
+  }, [authUser]);
+
+  const handleLogin = async (email, senha) => {
+    setLoginError('');
+    setLoginInfo('');
+    setLoginPending(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, senha);
+    } catch (err) {
+      setLoginError('Credenciais invalidas ou acesso nao permitido.');
+    } finally {
+      setLoginPending(false);
+    }
+  };
+
+  const handleResetPassword = async (email) => {
+    setLoginError('');
+    setLoginInfo('');
+    const trimmed = String(email || '').trim();
+    if (!trimmed) {
+      setLoginError('Digite seu e-mail para receber o link.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, trimmed);
+      setLoginInfo('Link de redefinicao enviado para o seu e-mail.');
+    } catch (err) {
+      const msg = err?.message || 'Nao foi possivel enviar o link.';
+      setLoginError(msg);
+    }
+  };
+
+  const handleSaveProfile = async (data) => {
+    if (!authUser) return;
+    setProfileError('');
+    setProfileSaving(true);
+    const payload = {
+      name: data.name || '',
+      setor: data.setor || '',
+      email: authUser.email || '',
+      updatedAt: Date.now(),
+    };
+    try {
+      try {
+        localStorage.setItem(`profile:${authUser.uid}`, JSON.stringify(payload));
+      } catch (err) {
+        console.error('Erro ao salvar perfil local:', err);
+      }
+      setProfileName(payload.name);
+      setProfileSetor(payload.setor);
+      setShowProfileModal(false);
+    } finally {
+      setProfileSaving(false);
+    }
+
+    (async () => {
+      try {
+        await setDoc(doc(db, 'users', authUser.uid), payload, { merge: true });
+      } catch (err) {
+        const msg = err?.message || 'Salvo localmente. Nao foi possivel salvar no Firebase.';
+        console.error('Erro ao salvar perfil:', err);
+        setProfileError(msg);
+      }
+    })();
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Erro ao sair:', err);
+    }
+  };
+
+  const authGate = authLoading ? (
+    <div className="min-h-screen bg-[#050507] text-white flex items-center justify-center">
+      <div className="text-sm text-zinc-400">Carregando acesso...</div>
+    </div>
+  ) : !authUser ? (
+    <LoginScreen
+      onLogin={handleLogin}
+      onResetPassword={handleResetPassword}
+      error={loginError}
+      info={loginInfo}
+      pending={loginPending}
+    />
+  ) : null;
+
 
   const [maquinaSelecionada, setMaquinaSelecionada] = useState("");
   // datas base do app, agora 100% fuso local
@@ -534,6 +914,13 @@ export default function App() {
   );
 
   const [abaAtiva, setAbaAtiva] = useState('agenda');
+
+  useEffect(() => {
+    if (effectiveViewMode === 'comercial' && abaAtiva !== 'comercial') {
+      setAbaAtiva('comercial');
+    }
+  }, [effectiveViewMode, abaAtiva]);
+
 
   const toggleItemSelecionado = (id) => {
     setSelectedItemIds((prev) =>
@@ -643,7 +1030,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [pcpSelecionados, setPcpSelecionados] = useState([]);
   const [comercialBusca, setComercialBusca] = useState('');
   const [comercialEstoqueBusca, setComercialEstoqueBusca] = useState('');
-  const [comercialVisao, setComercialVisao] = useState('visao');
+  const [comercialVisao, setComercialVisao] = useState('estoque');
   const [filtroEstoque, setFiltroEstoque] = useState('todos');
   const [mostrarSolicitarProducao, setMostrarSolicitarProducao] = useState(false);
   const [mostrarTransferenciaEstoque, setMostrarTransferenciaEstoque] = useState(false);
@@ -653,6 +1040,19 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [transferDestino, setTransferDestino] = useState('');
   const [transferObs, setTransferObs] = useState('');
   const [transferItens, setTransferItens] = useState([]);
+  const [mostrarAjusteEstoque, setMostrarAjusteEstoque] = useState(false);
+  const [ajusteEstoqueModo, setAjusteEstoqueModo] = useState('novo');
+  const [ajusteEstoqueCod, setAjusteEstoqueCod] = useState('');
+  const [ajusteEstoqueDesc, setAjusteEstoqueDesc] = useState('');
+  const [ajusteEstoqueComp, setAjusteEstoqueComp] = useState('');
+  const [ajusteEstoqueQtd, setAjusteEstoqueQtd] = useState('');
+  const [ajusteEstoqueSaldoAtual, setAjusteEstoqueSaldoAtual] = useState(0);
+
+  useEffect(() => {
+    if (abaAtiva === 'comercial') {
+      setComercialVisao('estoque');
+    }
+  }, [abaAtiva]);
 
   const [mostrarConclusaoSolicitacao, setMostrarConclusaoSolicitacao] = useState(false);
   const [conclusaoSolicitacaoAtual, setConclusaoSolicitacaoAtual] = useState(null);
@@ -1366,6 +1766,160 @@ const handleDownloadModeloParadas = () => {
     } catch (err) {
       console.error("Erro ao apontar estoque:", err);
       alert("Erro ao salvar estoque. Veja o console (F12).");
+    }
+  };
+
+  const resetAjusteEstoque = () => {
+    setAjusteEstoqueModo('novo');
+    setAjusteEstoqueCod('');
+    setAjusteEstoqueDesc('');
+    setAjusteEstoqueComp('');
+    setAjusteEstoqueQtd('');
+    setAjusteEstoqueSaldoAtual(0);
+  };
+
+  const handleSelectAjusteEstoqueProduto = (e) => {
+    const codigo = e.target.value;
+    setAjusteEstoqueCod(codigo);
+    if (CATALOGO_PRODUTOS) {
+      const produto = CATALOGO_PRODUTOS.find((p) => p.cod === codigo);
+      setAjusteEstoqueDesc(produto?.desc || '');
+      setAjusteEstoqueComp(produto?.custom ? '' : String(produto?.comp || ''));
+    }
+  };
+
+  const abrirAjusteEstoqueNovo = () => {
+    resetAjusteEstoque();
+    setAjusteEstoqueModo('novo');
+    setMostrarAjusteEstoque(true);
+  };
+
+  const abrirAjusteEstoqueEdicao = (item) => {
+    const saldoAtual = Number(item?.saldoQtd || 0);
+    setAjusteEstoqueModo('editar');
+    setAjusteEstoqueCod(item?.cod || '');
+    setAjusteEstoqueDesc(item?.desc || '');
+    setAjusteEstoqueComp(
+      item?.comp !== undefined && item?.comp !== null ? String(item.comp) : ''
+    );
+    setAjusteEstoqueSaldoAtual(saldoAtual);
+    setAjusteEstoqueQtd(String(saldoAtual));
+    setMostrarAjusteEstoque(true);
+  };
+
+  const salvarAjusteEstoque = async ({ cod, desc, comp, qtd }) => {
+    const quantidade = Number(qtd);
+    if (!Number.isFinite(quantidade) || quantidade === 0) {
+      alert('Quantidade invalida.');
+      return false;
+    }
+
+    const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === cod);
+    const compNumero = parseFloat(comp) || produto?.comp || 0;
+    if (produto?.custom && !compNumero) {
+      alert('Informe o comprimento (m) para itens sob medida.');
+      return false;
+    }
+
+    const pesoPorPeca = produto
+      ? produto.custom
+        ? (produto.kgMetro || 0) * compNumero
+        : produto.pesoUnit || 0
+      : 0;
+    const pesoTotal = pesoPorPeca * quantidade;
+    const agoraISO = new Date().toISOString();
+
+    const obj = {
+      data: getLocalISODate(),
+      cod,
+      desc: desc || produto?.desc || 'Item s/ descricao',
+      qtd: quantidade,
+      comp: compNumero,
+      pesoTotal,
+      pesoPorPeca,
+      m2Total: compNumero * quantidade,
+      destino: 'Estoque',
+      maquinaId: '',
+      origem: 'AJUSTE_ESTOQUE',
+      createdAt: agoraISO,
+    };
+
+    try {
+      if (IS_LOCALHOST) {
+        setHistoricoProducaoReal((prev) => [{ id: `local-${Date.now()}`, ...obj }, ...prev]);
+        return true;
+      }
+
+      const docRef = await safeAddDoc('producao', obj);
+      const newId = docRef?.id || `local-${Date.now()}`;
+      setHistoricoProducaoReal((prev) => [{ id: newId, ...obj }, ...prev]);
+      return true;
+    } catch (err) {
+      console.error('Erro ao ajustar estoque:', err);
+      alert('Erro ao salvar estoque. Veja o console (F12).');
+      return false;
+    }
+  };
+
+  const aplicarAjusteEstoque = async () => {
+    if (!ajusteEstoqueCod) {
+      alert('Selecione um produto.');
+      return;
+    }
+
+    const novaQtd = parseInt(ajusteEstoqueQtd, 10);
+    if (!Number.isFinite(novaQtd)) {
+      alert('Quantidade invalida.');
+      return;
+    }
+
+    if (ajusteEstoqueModo === 'novo' && novaQtd <= 0) {
+      alert('Informe uma quantidade maior que zero.');
+      return;
+    }
+
+    const delta =
+      ajusteEstoqueModo === 'editar'
+        ? novaQtd - ajusteEstoqueSaldoAtual
+        : novaQtd;
+
+    if (!delta) {
+      alert('Nada a ajustar.');
+      return;
+    }
+
+    const ok = await salvarAjusteEstoque({
+      cod: ajusteEstoqueCod,
+      desc: ajusteEstoqueDesc,
+      comp: ajusteEstoqueComp,
+      qtd: delta,
+    });
+
+    if (ok) {
+      resetAjusteEstoque();
+      setMostrarAjusteEstoque(false);
+      alert('Estoque ajustado.');
+    }
+  };
+
+  const excluirItemEstoque = async (item) => {
+    const saldoAtual = Number(item?.saldoQtd || 0);
+    if (!saldoAtual) {
+      alert('Item sem saldo para excluir.');
+      return;
+    }
+    const ok = window.confirm('Excluir este item do estoque? Isso zera o saldo.');
+    if (!ok) return;
+
+    const salvou = await salvarAjusteEstoque({
+      cod: item?.cod,
+      desc: item?.desc,
+      comp: item?.comp,
+      qtd: -saldoAtual,
+    });
+
+    if (salvou) {
+      alert('Estoque zerado.');
     }
   };
   
@@ -2863,6 +3417,7 @@ const parseNumberBR = (v) => {
   const mostrarSolicitacoesComercial =
     isVisaoGeralComercial || comercialVisao === 'solicitacoes';
   const mostrarProntosComercial = isVisaoGeralComercial || comercialVisao === 'prontos';
+  const canManageEstoque = effectiveViewMode === 'admin';
 
 
   const calcResumo = (lista) => ({ itens: lista.reduce((a,r)=>a+r.itens.length,0), peso: lista.reduce((a,r)=>a+r.itens.reduce((s,i)=>s+parseFloat(i.pesoTotal||0),0),0) });
@@ -3451,9 +4006,20 @@ const handleImportBackup = (json) => {
 
 
 
-    return (
+    return authGate || (
     <>
       <PrintStyles />
+      <ProfileModal
+        open={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        email={authUser?.email || ''}
+        name={profileName}
+        setor={profileSetor}
+        onSave={handleSaveProfile}
+        onLogout={handleLogout}
+        error={profileError}
+        saving={profileSaving}
+      />
 
       {/* --- ÁREA DE IMPRESSÃO --- */}
       <div id="printable-area" className="print-page-container">
@@ -3499,7 +4065,7 @@ const handleImportBackup = (json) => {
       </div>
 
       {/* --- APP CONTAINER --- */}
-      <div className="app-container flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
+      <div className="app-container relative flex flex-col md:flex-row h-screen bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
         
         {/* --- MENU DE NAVEGAÇÃO (CORRIGIDO COM OEE) --- */}
         <nav className="
@@ -3507,24 +4073,93 @@ const handleImportBackup = (json) => {
             fixed bottom-0 w-full h-16 flex flex-row items-center px-2
             md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0
         ">
-          <div className="hidden md:flex mb-8 p-2 bg-blue-600 rounded-lg shadow-lg"><Layout className="text-white" size={24} /></div>
-          
-          <div className="flex flex-row w-full gap-2 overflow-x-auto md:flex-col md:gap-6 md:px-2 md:overflow-visible">
-            <BotaoMenu ativo={abaAtiva === 'agenda'} onClick={() => setAbaAtiva('agenda')} icon={<CalendarDays size={20} />} label="Agenda" />
-            <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
+          <div className="hidden md:flex flex-col items-center gap-2 mb-6 px-2 w-full">
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(true)}
+              className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center hover:bg-emerald-500/20"
+              aria-label="Editar perfil"
+            >
+              <User size={16} className="text-emerald-300" />
+            </button>
+            <div className="text-[10px] text-white font-semibold text-center truncate w-full">
+              {profileName || authUser?.email || 'Usuario'}
+            </div>
+          <div className="text-[9px] text-zinc-500 text-center truncate w-full">
+            {profileSetor || 'Sem setor'}
+          </div>
+        </div>
+        {IS_LOCALHOST && isAdminUser && (
+          <button
+            type="button"
+            onClick={() =>
+              setDevViewMode((prev) =>
+                prev === 'admin' ? 'comercial' : 'admin'
+              )
+            }
+            className="hidden md:inline-flex mx-auto mb-4 px-2 py-1 text-[9px] font-bold uppercase tracking-wide bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg"
+          >
+            Modo: {devViewMode === 'admin' ? 'Admin' : 'Comercial'}
+          </button>
+        )}
+          <div className="flex flex-row w-full gap-2 overflow-x-auto md:flex-col md:gap-4 md:px-2 md:overflow-y-auto md:pb-6 hide-scrollbar">
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'agenda'} onClick={() => setAbaAtiva('agenda')} icon={<CalendarDays size={20} />} label="Agenda" />
+            )}
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
+            )}
             <BotaoMenu ativo={abaAtiva === 'comercial'} onClick={() => setAbaAtiva('comercial')} icon={<Box size={20} />} label="Comercial" />
-            <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
-            <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
+            )}
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
+            )}
             
             {/* --- OEE ESTÁ DE VOLTA AQUI --- */}
-            <BotaoMenu ativo={abaAtiva === 'oee'} onClick={() => setAbaAtiva('oee')} icon={<Activity size={20} />} label="OEE" />
-            
-            <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'oee'} onClick={() => setAbaAtiva('oee')} icon={<Activity size={20} />} label="OEE" />
+            )}
+
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
+            )}
+            <div className="md:hidden">
+              <BotaoMenu
+                ativo={false}
+                onClick={() => setShowProfileModal(true)}
+                icon={<User size={20} />}
+                label="Perfil"
+              />
+            </div>
+            {IS_LOCALHOST && isAdminUser && (
+              <div className="md:hidden">
+                <BotaoMenu
+                  ativo={false}
+                  onClick={() =>
+                    setDevViewMode((prev) =>
+                      prev === 'admin' ? 'comercial' : 'admin'
+                    )
+                  }
+                  icon={<Layout size={20} />}
+                  label={devViewMode === 'admin' ? 'Admin' : 'Comercial'}
+                />
+              </div>
+            )}
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu
+                ativo={abaAtiva === 'global'}
+                onClick={() => setAbaAtiva('global')}
+                icon={<TrendingUp size={20} />}   // ou outro ?cone
+                label="Global"
+              />
+            )}
             <BotaoMenu
-              ativo={abaAtiva === 'global'}
-              onClick={() => setAbaAtiva('global')}
-              icon={<TrendingUp size={20} />}   // ou outro ícone
-              label="Global"
+              ativo={false}
+              onClick={handleLogout}
+              icon={<LogOut size={20} />}
+              label="Sair"
             />
 
           </div>
@@ -4092,33 +4727,6 @@ const handleImportBackup = (json) => {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
                   <button
                     type="button"
-                    onClick={() => setComercialVisao('visao')}
-                    className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
-                      comercialVisao === 'visao'
-                        ? 'bg-zinc-900 border-orange-500/50 shadow-[0_0_20px_rgba(0,0,0,0.3)] ring-1 ring-orange-500/50'
-                        : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-800/50 hover:border-white/10'
-                    }`}
-                  >
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-orange-500">
-                      <TrendingUp size={80} strokeWidth={1} />
-                    </div>
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="p-1.5 rounded-md bg-orange-500/10 text-orange-400">
-                            <TrendingUp size={16} />
-                          </div>
-                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Producao ativa</span>
-                        </div>
-                        <div className="text-2xl font-bold text-white tracking-tight">{ordensProgramadasOrdenadas.length.toString().padStart(2, '0')}</div>
-                      </div>
-                      <div className="text-xs text-zinc-500 mt-2 font-medium">Ordens em andamento</div>
-                    </div>
-                    {comercialVisao === 'visao' && <div className="absolute bottom-0 left-0 h-1 w-full bg-orange-500" />}
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => setComercialVisao('estoque')}
                     className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
                       comercialVisao === 'estoque'
@@ -4142,6 +4750,33 @@ const handleImportBackup = (json) => {
                       <div className="text-xs text-zinc-500 mt-2 font-medium">Itens cadastrados</div>
                     </div>
                     {comercialVisao === 'estoque' && <div className="absolute bottom-0 left-0 h-1 w-full bg-sky-500" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setComercialVisao('visao')}
+                    className={`relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-300 group w-full ${
+                      comercialVisao === 'visao'
+                        ? 'bg-zinc-900 border-orange-500/50 shadow-[0_0_20px_rgba(0,0,0,0.3)] ring-1 ring-orange-500/50'
+                        : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-800/50 hover:border-white/10'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-orange-500">
+                      <TrendingUp size={80} strokeWidth={1} />
+                    </div>
+                    <div className="relative z-10 flex flex-col h-full justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-1.5 rounded-md bg-orange-500/10 text-orange-400">
+                            <TrendingUp size={16} />
+                          </div>
+                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Producao ativa</span>
+                        </div>
+                        <div className="text-2xl font-bold text-white tracking-tight">{ordensProgramadasOrdenadas.length.toString().padStart(2, '0')}</div>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-2 font-medium">Ordens em andamento</div>
+                    </div>
+                    {comercialVisao === 'visao' && <div className="absolute bottom-0 left-0 h-1 w-full bg-orange-500" />}
                   </button>
 
                   <button
@@ -4575,29 +5210,40 @@ const handleImportBackup = (json) => {
                         </h2>
                         <p className="text-sm text-zinc-500">Controle de niveis e movimentacoes</p>
                       </div>
-                      <div className="flex items-center gap-2 bg-zinc-950 p-1 rounded-xl border border-white/5">
-                        <button
-                          type="button"
-                          onClick={() => setFiltroEstoque('todos')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'todos' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
-                        >
-                          Todos
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFiltroEstoque('critico')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${filtroEstoque === 'critico' ? 'bg-red-500/10 text-red-400 shadow-sm border border-red-500/10' : 'text-zinc-400 hover:text-white'}`}
-                        >
-                          <AlertCircle size={12} />
-                          Criticos
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFiltroEstoque('telhas')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'telhas' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
-                        >
-                          Telhas
-                        </button>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2 bg-zinc-950 p-1 rounded-xl border border-white/5">
+                          <button
+                            type="button"
+                            onClick={() => setFiltroEstoque('todos')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'todos' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                          >
+                            Todos
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFiltroEstoque('critico')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${filtroEstoque === 'critico' ? 'bg-red-500/10 text-red-400 shadow-sm border border-red-500/10' : 'text-zinc-400 hover:text-white'}`}
+                          >
+                            <AlertCircle size={12} />
+                            Criticos
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFiltroEstoque('telhas')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'telhas' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                          >
+                            Telhas
+                          </button>
+                        </div>
+                        {canManageEstoque && (
+                          <button
+                            type="button"
+                            onClick={abrirAjusteEstoqueNovo}
+                            className="px-3 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+                          >
+                            + Adicionar estoque
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -4609,7 +5255,9 @@ const handleImportBackup = (json) => {
                             <th className="px-5 py-3">Disponibilidade visual</th>
                             <th className="px-5 py-3">Qtd atual</th>
                             <th className="px-5 py-3">Status</th>
-                            <th className="px-5 py-3 text-right">Acoes</th>
+                            <th className="px-5 py-3 text-right">
+                              {canManageEstoque ? 'Acoes' : 'Solicitar'}
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -4652,13 +5300,39 @@ const handleImportBackup = (json) => {
                                   </span>
                                 </td>
                                 <td className="px-5 py-4 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => abrirMovimentacaoEstoque(item)}
-                                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-2 ml-auto"
-                                  >
-                                    <ArrowRightLeft size={12} /> Movimentar
-                                  </button>
+                                  {canManageEstoque ? (
+                                    <div className="flex flex-wrap justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => abrirAjusteEstoqueEdicao(item)}
+                                        className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors"
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => excluirItemEstoque(item)}
+                                        className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-300 px-3 py-1.5 rounded-lg border border-red-500/20 transition-colors"
+                                      >
+                                        Excluir
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => abrirMovimentacaoEstoque(item)}
+                                        className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-2"
+                                      >
+                                        <ArrowRightLeft size={12} /> Solicitar
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirMovimentacaoEstoque(item)}
+                                      className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-2 ml-auto"
+                                    >
+                                      <ArrowRightLeft size={12} /> Solicitar
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -5145,6 +5819,89 @@ const handleImportBackup = (json) => {
                         className="px-4 py-2 bg-amber-500/90 hover:bg-amber-500 text-black text-sm font-bold rounded"
                       >
                         Enviar solicitacao
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {canManageEstoque && mostrarAjusteEstoque && (
+                <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-lg overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                      <h3 className="text-lg font-bold text-white">
+                        {ajusteEstoqueModo === 'editar' ? 'Editar estoque' : 'Adicionar estoque'}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setMostrarAjusteEstoque(false)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400">Produto</label>
+                        <select
+                          value={ajusteEstoqueCod}
+                          onChange={handleSelectAjusteEstoqueProduto}
+                          disabled={ajusteEstoqueModo === 'editar'}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm disabled:opacity-60"
+                        >
+                          <option value="">Selecionar telha...</option>
+                          {CATALOGO_PRODUTOS.filter((p) => p.grupo === 'GRUPO_TELHAS').map((p) => (
+                            <option key={p.cod} value={p.cod}>
+                              {p.cod} - {p.desc}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-zinc-400">
+                            {ajusteEstoqueModo === 'editar' ? 'Novo saldo (qtd)' : 'Quantidade'}
+                          </label>
+                          <input
+                            type="number"
+                            value={ajusteEstoqueQtd}
+                            onChange={(e) => setAjusteEstoqueQtd(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-zinc-400">Comp (m)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={ajusteEstoqueComp}
+                            onChange={(e) => setAjusteEstoqueComp(e.target.value)}
+                            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                      {ajusteEstoqueModo === 'editar' && (
+                        <div className="text-xs text-zinc-500">
+                          Saldo atual: {Number(ajusteEstoqueSaldoAtual || 0).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setMostrarAjusteEstoque(false)}
+                        className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={aplicarAjusteEstoque}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded"
+                      >
+                        {ajusteEstoqueModo === 'editar' ? 'Salvar ajuste' : 'Adicionar'}
                       </button>
                     </div>
                   </div>

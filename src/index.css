@@ -5,3 +5,12 @@
 body {
   @apply bg-[#09090b] text-zinc-100;
 }
+
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
