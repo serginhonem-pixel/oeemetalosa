@@ -740,8 +740,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const adminEmails = new Set([
+    'pcp@metalosa.com.br',
+    'pcp1@metalosa.com.br',
+  ]);
   const isAdminUser =
-    authUser?.email && authUser.email.toLowerCase() === 'pcp@metalosa.com.br';
+    authUser?.email && adminEmails.has(authUser.email.toLowerCase());
   const effectiveViewMode = isAdminUser
     ? (IS_LOCALHOST ? devViewMode : 'admin')
     : 'comercial';
