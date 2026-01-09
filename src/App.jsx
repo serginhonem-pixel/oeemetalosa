@@ -743,6 +743,7 @@ export default function App() {
   const adminEmails = new Set([
     'pcp@metalosa.com.br',
     'pcp1@metalosa.com.br',
+    'pcp5@metalosa.com.br',
   ]);
   const isAdminUser =
     authUser?.email && adminEmails.has(authUser.email.toLowerCase());
