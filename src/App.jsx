@@ -744,6 +744,7 @@ export default function App() {
     'pcp@metalosa.com.br',
     'pcp1@metalosa.com.br',
     'pcp5@metalosa.com.br',
+    'industria@metalosa.com.br',
   ]);
   const isAdminUser =
     authUser?.email && adminEmails.has(authUser.email.toLowerCase());
