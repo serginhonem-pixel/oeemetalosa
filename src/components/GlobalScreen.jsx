@@ -133,6 +133,11 @@ const calcKPIsFor = (maquinaNome, maquinasArg, lancamentosArg, diasUteisArg) => 
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const toYYYYMM = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+const shiftMonth = (yyyyMM, delta) => {
+  const [y, m] = yyyyMM.split('-').map(Number);
+  const dt = new Date(y, m - 1 + delta, 1);
+  return toYYYYMM(dt);
+};
 
 function monthLabel(yyyyMM) {
   const [y, m] = yyyyMM.split('-').map(Number);
@@ -261,6 +266,7 @@ const GlobalScreen = () => {
 
   // ===== MÊS ATIVO =====
   const [mesRef, setMesRef] = useState(() => toYYYYMM(new Date()));
+  const prevMesRef = useMemo(() => shiftMonth(mesRef, -1), [mesRef]);
   const opcoesMes = useMemo(() => {
     const base = new Date();
     base.setDate(1);
@@ -276,6 +282,7 @@ const GlobalScreen = () => {
   const [config, setConfig] = useState({ diasUteis: 22 });
   const [maquinas, setMaquinas] = useState([]);
   const [lancamentos, setLancamentos] = useState([]);
+  const [prevLancamentos, setPrevLancamentos] = useState([]);
 
   const [busy, setBusy] = useState(false);
   const [exportando, setExportando] = useState(false);
@@ -481,6 +488,45 @@ const GlobalScreen = () => {
 
     return () => unsubLanc();
   }, [mesRef]);
+
+  useEffect(() => {
+    if (IS_LOCALHOST) {
+      const localLanc = localStorage.getItem('local_lancamentos');
+      if (localLanc) {
+        const arr = JSON.parse(localLanc);
+        setPrevLancamentos(arr.filter((l) => l.mesRef === prevMesRef));
+      } else {
+        setPrevLancamentos([]);
+      }
+      return;
+    }
+
+    const qLancPrev = query(
+      collection(db, 'global_lancamentos'),
+      where('mesRef', '==', prevMesRef),
+      limit(800)
+    );
+
+    const unsubPrev = onSnapshot(
+      qLancPrev,
+      (snap) => {
+        const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const ordenado = arr
+          .map((x) => ({ ...x, real: Number(x.real) || 0 }))
+          .sort((a, b) => {
+            const tA = a.createdAt?.seconds || 0;
+            const tB = b.createdAt?.seconds || 0;
+            return tB - tA;
+          });
+        setPrevLancamentos(ordenado);
+      },
+      (error) => {
+        console.error('Erro lancamentos mes anterior:', error);
+      }
+    );
+
+    return () => unsubPrev();
+  }, [prevMesRef]);
 
   // ====== Defaults UI ======
   useEffect(() => {
@@ -1341,6 +1387,26 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
     return 28;
   }, [dadosChart]);
 
+  const prevStats = useMemo(() => {
+    const lanc =
+      filtroMaquina === 'TODAS'
+        ? prevLancamentos
+        : prevLancamentos.filter((l) => l.maquina === filtroMaquina);
+
+    const byDay = new Map();
+    for (const l of lanc) {
+      const dia = l.dia || '';
+      const v = Number(l.real) || 0;
+      byDay.set(dia, (byDay.get(dia) || 0) + v);
+    }
+
+    const diasTrabalhados = Array.from(byDay.keys()).filter(Boolean).length;
+    const total = lanc.reduce((s, l) => s + (Number(l.real) || 0), 0);
+    const mediaDia = diasTrabalhados ? total / diasTrabalhados : 0;
+
+    return { total, mediaDia, diasTrabalhados };
+  }, [prevLancamentos, filtroMaquina]);
+
   // ===== KPIs (Resumo Executivo) =====
   const kpis = useMemo(() => {
     const meta = Number(dadosGrafico.metaTotalMes || 0);
@@ -1734,6 +1800,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     ))}
                   </select>
                 </div>
+              </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -1911,6 +1978,35 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     {formatCompact(dadosGrafico.projetadoValor)}
                   </span>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50 min-w-[150px]">
+                  <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Media mes anterior</p>
+                  <div className="text-xl font-black tracking-tight text-zinc-100">
+                    {formatCompact(prevStats.mediaDia)}
+                    {!dadosGrafico.unidadeMix && dadosGrafico.unidadeAtiva
+                      ? ` ${dadosGrafico.unidadeAtiva}`
+                      : ''}
+                  </div>
+                  <div className="text-[10px] text-zinc-600 mt-1">
+                    {monthLabel(prevMesRef)}
+                  </div>
+                </div>
+
+                <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50 min-w-[150px]">
+                  <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Total mes anterior</p>
+                  <div className="text-xl font-black tracking-tight text-zinc-100">
+                    {formatCompact(prevStats.total)}
+                    {!dadosGrafico.unidadeMix && dadosGrafico.unidadeAtiva
+                      ? ` ${dadosGrafico.unidadeAtiva}`
+                      : ''}
+                  </div>
+                  <div className="text-[10px] text-zinc-600 mt-1">
+                    {monthLabel(prevMesRef)}
+                  </div>
+                </div>
+              </div>
               </div>
             </div>
 
