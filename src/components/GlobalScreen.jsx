@@ -710,6 +710,7 @@ const GlobalScreen = () => {
       const valorTotalDia = agrupadoPorDia[dia];
       const performance = metaDiariaAtiva > 0 ? (valorTotalDia / metaDiariaAtiva) * 100 : 0;
       const prevValorDia = prevValoresOrdenados[idx] || 0;
+      const prevDiaLabel = prevDiasOrdenados[idx] || '';
       const prevPerformance = metaDiariaAtiva > 0 ? (prevValorDia / metaDiariaAtiva) * 100 : 0;
 
       return {
@@ -719,6 +720,7 @@ const GlobalScreen = () => {
         valorPlotado: performance,
         metaPlotada: 100,
         prevPlotada: prevPerformance,
+        prevDiaLabel,
         tipo: 'diario',
         performance,
         unidade: unidadeAtiva,
@@ -2110,6 +2112,12 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-zinc-400">Meta</span>
                                   <span className="text-zinc-300 font-mono">{formatInt(d.metaOriginal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-zinc-400">Dia mês anterior</span>
+                                  <span className="text-zinc-300 font-mono">
+                                    {d.prevDiaLabel || '-'}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-zinc-400">
