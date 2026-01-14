@@ -46,6 +46,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   query,
@@ -890,16 +891,46 @@ const GlobalScreen = () => {
   }, [perMachineAgg]);
 
   // ====== ACTIONS ======
-  const handleDownloadBackupGlobal = () => {
+  const handleDownloadBackupGlobal = async () => {
     try {
+      setBusy(true);
+      toast('Gerando backup JSON...', 0);
+
+      let allLancamentos = Array.isArray(lancamentos) ? [...lancamentos] : [];
+      let configsAll = [{ mesRef, ...config }];
+
+      if (!IS_LOCALHOST) {
+        const [snapLanc, snapCfg] = await Promise.all([
+          getDocs(query(collection(db, 'global_lancamentos'))),
+          getDocs(query(collection(db, 'global_config_mensal'))),
+        ]);
+
+        allLancamentos = snapLanc.docs.map((d) => ({ id: d.id, ...d.data() }));
+        allLancamentos = allLancamentos.map((x) => ({ ...x, real: Number(x.real) || 0 }));
+        configsAll = snapCfg.docs.map((d) => ({ mesRef: d.id, ...d.data() }));
+      } else {
+        const localLanc = localStorage.getItem('local_lancamentos');
+        if (localLanc) allLancamentos = JSON.parse(localLanc);
+        const localConfig = localStorage.getItem('local_config');
+        if (localConfig) configsAll = [{ mesRef, ...JSON.parse(localConfig) }];
+      }
+
+      const lancamentosMes = allLancamentos.filter(
+        (l) => String(l.mesRef || '') === String(mesRef)
+      );
+      const configMes =
+        configsAll.find((c) => String(c.mesRef || '') === String(mesRef)) || config;
+
       const payload = {
         type: 'GlobalScreenBackup',
-        version: 1,
+        version: 2,
         generatedAt: new Date().toISOString(),
         mesRef,
-        config,
+        config: configMes,
         maquinas,
-        lancamentos,
+        lancamentos: lancamentosMes,
+        lancamentosAll: allLancamentos,
+        configsAll,
       };
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -909,7 +940,7 @@ const GlobalScreen = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `backup-globalscreen-${payload.mesRef || 'mes'}-${new Date()
+      a.download = `backup-globalscreen-todos-meses-${new Date()
         .toISOString()
         .slice(0, 10)}.json`;
       a.click();
@@ -919,6 +950,8 @@ const GlobalScreen = () => {
     } catch (err) {
       console.error('Erro ao gerar backup JSON (GlobalScreen):', err);
       alert('Erro ao gerar backup JSON. Veja o console (F12).');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -2077,6 +2110,17 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-zinc-400">Meta</span>
                                   <span className="text-zinc-300 font-mono">{formatInt(d.metaOriginal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-zinc-400">
+                                    Média mês anterior ({monthLabel(prevMesRef)})
+                                  </span>
+                                  <span className="text-zinc-300 font-mono">
+                                    {formatInt(prevStats.mediaDia)}
+                                    {!dadosGrafico.unidadeMix && dadosGrafico.unidadeAtiva
+                                      ? ` ${dadosGrafico.unidadeAtiva}`
+                                      : ''}
+                                  </span>
                                 </div>
                                 <div className={`pt-2 mt-1 border-t border-zinc-800 text-xs font-bold flex justify-between ${d.performance >= 100 ? 'text-emerald-400' : 'text-orange-300'}`}>
                                   <span>Atingimento</span>
