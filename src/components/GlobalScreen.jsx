@@ -1800,7 +1800,6 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     ))}
                   </select>
                 </div>
-              </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -2006,7 +2005,6 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     {monthLabel(prevMesRef)}
                   </div>
                 </div>
-              </div>
               </div>
             </div>
 
