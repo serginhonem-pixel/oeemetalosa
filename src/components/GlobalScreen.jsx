@@ -682,17 +682,19 @@ const GlobalScreen = () => {
       return acc;
     }, {});
 
-    const prevByDayNumber = new Map();
-    for (const [dia, valor] of Object.entries(prevAgrupadoPorDia)) {
-      const dayNum = Number(dia?.split('/')?.[0] || 0);
-      if (dayNum) prevByDayNumber.set(dayNum, valor);
-    }
-
     const diasUnicos = Object.keys(agrupadoPorDia).sort((a, b) => {
       const da = Number(a?.split('/')?.[0] || 0);
       const db = Number(b?.split('/')?.[0] || 0);
       return da - db;
     });
+
+    const prevDiasOrdenados = Object.keys(prevAgrupadoPorDia).sort((a, b) => {
+      const da = Number(a?.split('/')?.[0] || 0);
+      const db = Number(b?.split('/')?.[0] || 0);
+      return da - db;
+    });
+
+    const prevValoresOrdenados = prevDiasOrdenados.map((dia) => prevAgrupadoPorDia[dia] || 0);
 
     const totalProduzido = lancamentosFiltrados.reduce(
       (acc, curr) => acc + (Number(curr.real) || 0),
@@ -703,11 +705,10 @@ const GlobalScreen = () => {
     const mediaDiaria = diasTrabalhados > 0 ? totalProduzido / diasTrabalhados : 0;
     const projetadoValor = diasTrabalhados > 0 ? Math.round(mediaDiaria * diasUteisVal) : 0;
 
-    const dadosProcessados = diasUnicos.map((dia) => {
+    const dadosProcessados = diasUnicos.map((dia, idx) => {
       const valorTotalDia = agrupadoPorDia[dia];
       const performance = metaDiariaAtiva > 0 ? (valorTotalDia / metaDiariaAtiva) * 100 : 0;
-      const dayNum = Number(dia?.split('/')?.[0] || 0);
-      const prevValorDia = dayNum ? (prevByDayNumber.get(dayNum) || 0) : 0;
+      const prevValorDia = prevValoresOrdenados[idx] || 0;
       const prevPerformance = metaDiariaAtiva > 0 ? (prevValorDia / metaDiariaAtiva) * 100 : 0;
 
       return {
