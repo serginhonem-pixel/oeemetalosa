@@ -3,6 +3,7 @@ import {
   ComposedChart,
   Bar,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -670,6 +671,23 @@ const GlobalScreen = () => {
       return acc;
     }, {});
 
+    const prevLancamentosFiltrados =
+      filtroMaquina === 'TODAS'
+        ? prevLancamentos
+        : prevLancamentos.filter((l) => l.maquina === filtroMaquina);
+
+    const prevAgrupadoPorDia = prevLancamentosFiltrados.reduce((acc, curr) => {
+      if (!acc[curr.dia]) acc[curr.dia] = 0;
+      acc[curr.dia] += Number(curr.real) || 0;
+      return acc;
+    }, {});
+
+    const prevByDayNumber = new Map();
+    for (const [dia, valor] of Object.entries(prevAgrupadoPorDia)) {
+      const dayNum = Number(dia?.split('/')?.[0] || 0);
+      if (dayNum) prevByDayNumber.set(dayNum, valor);
+    }
+
     const diasUnicos = Object.keys(agrupadoPorDia).sort((a, b) => {
       const da = Number(a?.split('/')?.[0] || 0);
       const db = Number(b?.split('/')?.[0] || 0);
@@ -688,6 +706,9 @@ const GlobalScreen = () => {
     const dadosProcessados = diasUnicos.map((dia) => {
       const valorTotalDia = agrupadoPorDia[dia];
       const performance = metaDiariaAtiva > 0 ? (valorTotalDia / metaDiariaAtiva) * 100 : 0;
+      const dayNum = Number(dia?.split('/')?.[0] || 0);
+      const prevValorDia = dayNum ? (prevByDayNumber.get(dayNum) || 0) : 0;
+      const prevPerformance = metaDiariaAtiva > 0 ? (prevValorDia / metaDiariaAtiva) * 100 : 0;
 
       return {
         name: dia,
@@ -695,6 +716,7 @@ const GlobalScreen = () => {
         metaOriginal: metaDiariaAtiva,
         valorPlotado: performance,
         metaPlotada: 100,
+        prevPlotada: prevPerformance,
         tipo: 'diario',
         performance,
         unidade: unidadeAtiva,
@@ -709,6 +731,7 @@ const GlobalScreen = () => {
       metaOriginal: metaTotalMes,
       valorPlotado: performanceProjetada,
       metaPlotada: 100,
+      prevPlotada: null,
       tipo: 'projetado',
       performance: performanceProjetada,
       unidade: unidadeAtiva,
@@ -739,7 +762,7 @@ const GlobalScreen = () => {
       necessarioDia,
       unidadeMix,
     };
-  }, [lancamentos, config, maquinas, filtroMaquina]);
+  }, [lancamentos, prevLancamentos, config, maquinas, filtroMaquina]);
 
   // (Tendência removida a pedido) — usamos apenas os dados do mês
   const dadosChart = useMemo(() => dadosGrafico.dados || [], [dadosGrafico.dados]);
@@ -2017,6 +2040,12 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dadosChart} margin={{ top: 80, right: 20, left: 10, bottom: 20 }} barCategoryGap={18}>
+                    <defs>
+                      <linearGradient id="prevMonthArea" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#71717a" stopOpacity={0.35} />
+                        <stop offset="90%" stopColor="#71717a" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
                     <XAxis
                       dataKey="name"
@@ -2088,6 +2117,16 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                       stroke="#a78bfa"
                       strokeOpacity={0.35}
                       strokeDasharray="6 6"
+                    />
+
+                    <Area
+                      isAnimationActive={false}
+                      type="monotone"
+                      dataKey="prevPlotada"
+                      stroke="#71717a"
+                      strokeWidth={2}
+                      fill="url(#prevMonthArea)"
+                      dot={false}
                     />
 
                     <Bar isAnimationActive={false} dataKey="valorPlotado" barSize={barSize} radius={[6, 6, 0, 0]}>
