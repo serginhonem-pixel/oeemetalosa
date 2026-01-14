@@ -301,12 +301,17 @@ const GlobalScreen = () => {
     return `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
   });
   const [novoValor, setNovoValor] = useState('');
+  const [novoValor2, setNovoValor2] = useState('');
   const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
 
   // Nova máquina inputs
   const [inputNomeMaquina, setInputNomeMaquina] = useState('');
   const [inputMetaMaquina, setInputMetaMaquina] = useState(100);
+  const [inputMetaMaquina2, setInputMetaMaquina2] = useState('');
   const [inputUnidadeMaquina, setInputUnidadeMaquina] = useState('pç');
+  const [inputUnidadeMaquina2, setInputUnidadeMaquina2] = useState('');
+
+  const [unitMode, setUnitMode] = useState('primaria');
 
   // Refs
   const chartCaptureRef = useRef(null);
@@ -405,9 +410,25 @@ const GlobalScreen = () => {
       if (localMaq) setMaquinas(JSON.parse(localMaq));
 
       const localLanc = localStorage.getItem('local_lancamentos');
-      if (localLanc) setLancamentos(JSON.parse(localLanc));
+      if (localLanc) {
+        const arr = JSON.parse(localLanc);
+        const filtered = arr.filter((l) => String(l.mesRef || '') === String(mesRef));
+        setLancamentos(filtered);
+      }
     }
   }, []);
+
+  useEffect(() => {
+    if (!IS_LOCALHOST) return;
+    const localLanc = localStorage.getItem('local_lancamentos');
+    if (localLanc) {
+      const arr = JSON.parse(localLanc);
+      const filtered = arr.filter((l) => String(l.mesRef || '') === String(mesRef));
+      setLancamentos(filtered);
+    } else {
+      setLancamentos([]);
+    }
+  }, [mesRef]);
 
   useEffect(() => {
     if (IS_LOCALHOST) localStorage.setItem('local_config', JSON.stringify(config));
@@ -418,8 +439,17 @@ const GlobalScreen = () => {
   }, [maquinas]);
 
   useEffect(() => {
-    if (IS_LOCALHOST) localStorage.setItem('local_lancamentos', JSON.stringify(lancamentos));
-  }, [lancamentos]);
+    if (!IS_LOCALHOST) return;
+    const localLanc = localStorage.getItem('local_lancamentos');
+    if (!localLanc) {
+      localStorage.setItem('local_lancamentos', JSON.stringify(lancamentos));
+      return;
+    }
+    const all = JSON.parse(localLanc);
+    const other = all.filter((l) => String(l.mesRef || '') !== String(mesRef));
+    const merged = [...other, ...lancamentos];
+    localStorage.setItem('local_lancamentos', JSON.stringify(merged));
+  }, [lancamentos, mesRef]);
 
   // ====== Firestore subscriptions (Apenas Produção) ======
   useEffect(() => {
@@ -474,7 +504,7 @@ const GlobalScreen = () => {
         const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         const ordenado = arr
-          .map((x) => ({ ...x, real: Number(x.real) || 0 }))
+          .map((x) => ({ ...x, real: Number(x.real) || 0, real2: Number(x.real2) || 0 }))
           .sort((a, b) => {
             const tA = a.createdAt?.seconds || 0;
             const tB = b.createdAt?.seconds || 0;
@@ -514,7 +544,7 @@ const GlobalScreen = () => {
       (snap) => {
         const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         const ordenado = arr
-          .map((x) => ({ ...x, real: Number(x.real) || 0 }))
+          .map((x) => ({ ...x, real: Number(x.real) || 0, real2: Number(x.real2) || 0 }))
           .sort((a, b) => {
             const tA = a.createdAt?.seconds || 0;
             const tB = b.createdAt?.seconds || 0;
@@ -547,10 +577,44 @@ const GlobalScreen = () => {
     if (filtroMaquina !== 'TODAS') setNovaMaquinaForm(filtroMaquina);
   }, [filtroMaquina]);
 
+  useEffect(() => {
+    if (!getUnidadeAtual2(novaMaquinaForm)) setNovoValor2('');
+  }, [novaMaquinaForm, maquinas]);
+
   const getUnidadeAtual = (nomeMaquina) => {
     const maq = maquinas.find((m) => m.nome === nomeMaquina);
     return maq ? maq.unidade : '';
   };
+
+  const getUnidadeAtual2 = (nomeMaquina) => {
+    const maq = maquinas.find((m) => m.nome === nomeMaquina);
+    return maq ? (maq.unidade2 || '') : '';
+  };
+
+  const getLancamentoValor = (l) => {
+    const maq = maquinas.find((m) => m.nome === l.maquina);
+    if (maq?.unidade2 && effectiveUnitMode === 'secundaria') {
+      return Number(l.real2) || 0;
+    }
+    return Number(l.real) || 0;
+  };
+
+  const getLancamentoUnidade = (l) => {
+    const maq = maquinas.find((m) => m.nome === l.maquina);
+    if (maq?.unidade2 && effectiveUnitMode === 'secundaria') return maq.unidade2 || '';
+    return maq?.unidade || '';
+  };
+
+  const activeMaquina = useMemo(
+    () => (filtroMaquina === 'TODAS' ? null : maquinas.find((m) => m.nome === filtroMaquina)),
+    [maquinas, filtroMaquina]
+  );
+  const hasUnidade2 = !!activeMaquina?.unidade2;
+  const effectiveUnitMode = hasUnidade2 && unitMode === 'secundaria' ? 'secundaria' : 'primaria';
+
+  useEffect(() => {
+    if (!hasUnidade2 && unitMode !== 'primaria') setUnitMode('primaria');
+  }, [hasUnidade2, unitMode]);
 
   // ====== Agregações por máquina (para ranking) ======
   const perMachineAgg = useMemo(() => {
@@ -655,11 +719,19 @@ const GlobalScreen = () => {
       }
     } else {
       const maq = maquinas.find((m) => m.nome === filtroMaquina);
-      metaDiariaAtiva = maq ? Number(maq.meta) || 0 : 0;
-      unidadeAtiva = maq ? maq.unidade : 'un';
+      if (maq && effectiveUnitMode === 'secundaria' && maq.unidade2) {
+        metaDiariaAtiva = Number(maq.meta2) || 0;
+        unidadeAtiva = maq.unidade2 || 'un';
+      } else {
+        metaDiariaAtiva = maq ? Number(maq.meta) || 0 : 0;
+        unidadeAtiva = maq ? maq.unidade : 'un';
+      }
     }
 
     const metaTotalMes = metaDiariaAtiva * diasUteisVal;
+
+    const valueKey =
+      filtroMaquina === 'TODAS' || effectiveUnitMode !== 'secundaria' ? 'real' : 'real2';
 
     const lancamentosFiltrados =
       filtroMaquina === 'TODAS'
@@ -668,7 +740,7 @@ const GlobalScreen = () => {
 
     const agrupadoPorDia = lancamentosFiltrados.reduce((acc, curr) => {
       if (!acc[curr.dia]) acc[curr.dia] = 0;
-      acc[curr.dia] += Number(curr.real) || 0;
+      acc[curr.dia] += Number(curr[valueKey]) || 0;
       return acc;
     }, {});
 
@@ -679,7 +751,7 @@ const GlobalScreen = () => {
 
     const prevAgrupadoPorDia = prevLancamentosFiltrados.reduce((acc, curr) => {
       if (!acc[curr.dia]) acc[curr.dia] = 0;
-      acc[curr.dia] += Number(curr.real) || 0;
+      acc[curr.dia] += Number(curr[valueKey]) || 0;
       return acc;
     }, {});
 
@@ -698,7 +770,7 @@ const GlobalScreen = () => {
     const prevValoresOrdenados = prevDiasOrdenados.map((dia) => prevAgrupadoPorDia[dia] || 0);
 
     const totalProduzido = lancamentosFiltrados.reduce(
-      (acc, curr) => acc + (Number(curr.real) || 0),
+      (acc, curr) => acc + (Number(curr[valueKey]) || 0),
       0
     );
 
@@ -710,6 +782,7 @@ const GlobalScreen = () => {
       const valorTotalDia = agrupadoPorDia[dia];
       const performance = metaDiariaAtiva > 0 ? (valorTotalDia / metaDiariaAtiva) * 100 : 0;
       const prevValorDia = prevValoresOrdenados[idx] || 0;
+      const prevDiaLabel = prevDiasOrdenados[idx] || '';
       const prevPerformance = metaDiariaAtiva > 0 ? (prevValorDia / metaDiariaAtiva) * 100 : 0;
 
       return {
@@ -719,6 +792,7 @@ const GlobalScreen = () => {
         valorPlotado: performance,
         metaPlotada: 100,
         prevPlotada: prevPerformance,
+        prevDiaLabel,
         tipo: 'diario',
         performance,
         unidade: unidadeAtiva,
@@ -764,7 +838,7 @@ const GlobalScreen = () => {
       necessarioDia,
       unidadeMix,
     };
-  }, [lancamentos, prevLancamentos, config, maquinas, filtroMaquina]);
+  }, [lancamentos, prevLancamentos, config, maquinas, filtroMaquina, effectiveUnitMode]);
 
   // (Tendência removida a pedido) — usamos apenas os dados do mês
   const dadosChart = useMemo(() => dadosGrafico.dados || [], [dadosGrafico.dados]);
@@ -906,7 +980,11 @@ const GlobalScreen = () => {
         ]);
 
         allLancamentos = snapLanc.docs.map((d) => ({ id: d.id, ...d.data() }));
-        allLancamentos = allLancamentos.map((x) => ({ ...x, real: Number(x.real) || 0 }));
+        allLancamentos = allLancamentos.map((x) => ({
+          ...x,
+          real: Number(x.real) || 0,
+          real2: Number(x.real2) || 0,
+        }));
         configsAll = snapCfg.docs.map((d) => ({ mesRef: d.id, ...d.data() }));
       } else {
         const localLanc = localStorage.getItem('local_lancamentos');
@@ -973,12 +1051,27 @@ const GlobalScreen = () => {
         const nextMes = raw.mesRef || raw?.data?.mesRef;
         const nextConfig = raw.config || raw?.data?.config;
         const nextMaq = raw.maquinas || raw?.data?.maquinas;
-        const nextLanc = raw.lancamentos || raw?.data?.lancamentos;
+        const allLanc = raw.lancamentosAll || raw.lancamentos || raw?.data?.lancamentos;
+        const allConfigs = raw.configsAll || (nextConfig ? [{ mesRef: nextMes, ...nextConfig }] : []);
 
         if (nextMes) setMesRef(String(nextMes));
-        if (nextConfig && typeof nextConfig === 'object') setConfig(nextConfig);
+        if (Array.isArray(allConfigs) && allConfigs.length > 0) {
+          const cfg =
+            allConfigs.find((c) => String(c.mesRef || '') === String(nextMes)) || nextConfig;
+          if (cfg && typeof cfg === 'object') setConfig(cfg);
+          localStorage.setItem('local_config', JSON.stringify(cfg || nextConfig || {}));
+        } else if (nextConfig && typeof nextConfig === 'object') {
+          setConfig(nextConfig);
+          localStorage.setItem('local_config', JSON.stringify(nextConfig));
+        }
         if (Array.isArray(nextMaq)) setMaquinas(nextMaq);
-        if (Array.isArray(nextLanc)) setLancamentos(nextLanc);
+        if (Array.isArray(allLanc)) {
+          localStorage.setItem('local_lancamentos', JSON.stringify(allLanc));
+          const filtered = allLanc.filter(
+            (l) => String(l.mesRef || '') === String(nextMes)
+          );
+          setLancamentos(filtered);
+        }
 
         toast('Backup carregado! (modo offline)', 2500);
       } catch (err) {
@@ -1034,6 +1127,9 @@ const GlobalScreen = () => {
     }
 
     const maqFinal = novaMaquinaForm || maquinas[0].nome;
+    const maqObj = maquinas.find((m) => m.nome === maqFinal);
+    const hasSecondUnit = !!maqObj?.unidade2;
+    const real2Val = hasSecondUnit && String(novoValor2 || '').trim() !== '' ? Number(novoValor2) : 0;
 
     if (IS_LOCALHOST) {
       setLancamentos((prev) => [
@@ -1042,6 +1138,7 @@ const GlobalScreen = () => {
           dia: isoToDiaLabel(novoDiaISO),
           diaISO: novoDiaISO,
           real: Number(novoValor),
+          real2: hasSecondUnit ? real2Val : undefined,
           maquina: maqFinal,
           mesRef,
           createdAt: { seconds: Date.now() / 1000 },
@@ -1049,6 +1146,7 @@ const GlobalScreen = () => {
         ...prev,
       ]);
       setNovoValor('');
+      setNovoValor2('');
       toast('Salvo localmente ✅');
       return;
     }
@@ -1059,11 +1157,13 @@ const GlobalScreen = () => {
         dia: isoToDiaLabel(novoDiaISO),
         diaISO: novoDiaISO,
         real: Number(novoValor),
+        real2: hasSecondUnit ? real2Val : undefined,
         maquina: maqFinal,
         mesRef,
         createdAt: serverTimestamp(),
       });
       setNovoValor('');
+      setNovoValor2('');
       toast('Lançamento salvo ✅');
     } catch (error) {
       console.error(error);
@@ -1104,12 +1204,18 @@ const GlobalScreen = () => {
       nome,
       meta: Number(inputMetaMaquina),
       unidade: inputUnidadeMaquina,
+      ...(inputUnidadeMaquina2 ? {
+        unidade2: inputUnidadeMaquina2,
+        meta2: Number(inputMetaMaquina2) || 0,
+      } : {}),
     };
 
     if (IS_LOCALHOST) {
       setMaquinas((prev) => [...prev, { id: `local-${Date.now()}`, ...novaMaq }]);
       setInputNomeMaquina('');
       setInputMetaMaquina(100);
+      setInputMetaMaquina2('');
+      setInputUnidadeMaquina2('');
       setInputUnidadeMaquina('pç');
       toast('Máquina add (Local) ✅');
       return;
@@ -1120,6 +1226,8 @@ const GlobalScreen = () => {
       await addDoc(collection(db, 'global_maquinas'), { ...novaMaq, createdAt: serverTimestamp() });
       setInputNomeMaquina('');
       setInputMetaMaquina(100);
+      setInputMetaMaquina2('');
+      setInputUnidadeMaquina2('');
       setInputUnidadeMaquina('pç');
       toast('Máquina adicionada ✅');
     } catch (error) {
@@ -1174,6 +1282,30 @@ const GlobalScreen = () => {
     }
   };
 
+  const handleUpdateMeta2 = async (nomeMaquina, novaMeta) => {
+    const valor = Number(novaMeta);
+    if (!Number.isFinite(valor)) return;
+
+    if (IS_LOCALHOST) {
+      setMaquinas((prev) =>
+        prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta2: valor } : m))
+      );
+      return;
+    }
+
+    const maq = maquinas.find((m) => m.nome === nomeMaquina);
+    if (!maq?.id) return;
+
+    setMaquinas((prev) => prev.map((m) => (m.nome === nomeMaquina ? { ...m, meta2: valor } : m)));
+
+    try {
+      await updateDoc(doc(db, 'global_maquinas', maq.id), { meta2: valor });
+    } catch (error) {
+      console.error('Erro meta2', error);
+      toast('Erro ao atualizar meta2 ❌');
+    }
+  };
+
   const handleUpdateUnidade = async (nomeMaquina, novaUnidade) => {
     if (!novaUnidade) return;
 
@@ -1196,6 +1328,31 @@ const GlobalScreen = () => {
     } catch (error) {
       console.error('Erro unidade', error);
       toast('Erro ao atualizar unidade ❌');
+    }
+  };
+
+  const handleUpdateUnidade2 = async (nomeMaquina, novaUnidade) => {
+    if (novaUnidade === undefined) return;
+
+    if (IS_LOCALHOST) {
+      setMaquinas((prev) =>
+        prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade2: novaUnidade } : m))
+      );
+      return;
+    }
+
+    const maq = maquinas.find((m) => m.nome === nomeMaquina);
+    if (!maq?.id) return;
+
+    setMaquinas((prev) =>
+      prev.map((m) => (m.nome === nomeMaquina ? { ...m, unidade2: novaUnidade } : m))
+    );
+
+    try {
+      await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade2: novaUnidade });
+    } catch (error) {
+      console.error('Erro unidade2', error);
+      toast('Erro ao atualizar unidade2 ❌');
     }
   };
 
@@ -1450,19 +1607,22 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
         ? prevLancamentos
         : prevLancamentos.filter((l) => l.maquina === filtroMaquina);
 
+    const valueKey =
+      filtroMaquina === 'TODAS' || effectiveUnitMode !== 'secundaria' ? 'real' : 'real2';
+
     const byDay = new Map();
     for (const l of lanc) {
       const dia = l.dia || '';
-      const v = Number(l.real) || 0;
+      const v = Number(l[valueKey]) || 0;
       byDay.set(dia, (byDay.get(dia) || 0) + v);
     }
 
     const diasTrabalhados = Array.from(byDay.keys()).filter(Boolean).length;
-    const total = lanc.reduce((s, l) => s + (Number(l.real) || 0), 0);
+    const total = lanc.reduce((s, l) => s + (Number(l[valueKey]) || 0), 0);
     const mediaDia = diasTrabalhados ? total / diasTrabalhados : 0;
 
     return { total, mediaDia, diasTrabalhados };
-  }, [prevLancamentos, filtroMaquina]);
+  }, [prevLancamentos, filtroMaquina, effectiveUnitMode]);
 
   // ===== KPIs (Resumo Executivo) =====
   const kpis = useMemo(() => {
@@ -1623,6 +1783,33 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               </select>
             </div>
 
+            {hasUnidade2 && filtroMaquina !== 'TODAS' && (
+              <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md h-9 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setUnitMode('primaria')}
+                  className={`px-3 text-[10px] font-bold uppercase transition-colors ${
+                    effectiveUnitMode === 'primaria'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  U1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnitMode('secundaria')}
+                  className={`px-3 text-[10px] font-bold uppercase transition-colors ${
+                    effectiveUnitMode === 'secundaria'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  U2
+                </button>
+              </div>
+            )}
+
             {!presentationMode && (
               <>
                 <button
@@ -1740,7 +1927,9 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                       <tr>
                         <th className="px-6 py-3">Máquina</th>
                         <th className="px-6 py-3 text-center">Unidade</th>
+                        <th className="px-6 py-3 text-center">Unidade 2</th>
                         <th className="px-6 py-3 text-right">Meta Diária</th>
+                        <th className="px-6 py-3 text-right">Meta 2</th>
                         <th className="px-6 py-3 w-10"></th>
                       </tr>
                     </thead>
@@ -1760,11 +1949,32 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                               <option value="cx">Caixas (cx)</option>
                             </select>
                           </td>
+                          <td className="px-6 py-2 text-center">
+                            <select
+                              value={m.unidade2 || ''}
+                              onChange={(e) => handleUpdateUnidade2(m.nome, e.target.value)}
+                              className="bg-black border border-zinc-700 text-zinc-300 text-xs rounded py-1 px-2 focus:border-blue-500 outline-none"
+                            >
+                              <option value="">-</option>
+                              <option value="p?">Pe?as (p?)</option>
+                              <option value="kg">Quilos (kg)</option>
+                              <option value="m">Metros (m)</option>
+                              <option value="cx">Caixas (cx)</option>
+                            </select>
+                          </td>
                           <td className="px-6 py-2">
                             <input
                               type="number"
                               value={m.meta}
                               onChange={(e) => handleUpdateMeta(m.nome, e.target.value)}
+                              className="w-full bg-transparent text-right font-mono text-zinc-300 focus:text-white outline-none border-b border-transparent focus:border-blue-500"
+                            />
+                          </td>
+                          <td className="px-6 py-2">
+                            <input
+                              type="number"
+                              value={m.meta2 || ''}
+                              onChange={(e) => handleUpdateMeta2(m.nome, e.target.value)}
                               className="w-full bg-transparent text-right font-mono text-zinc-300 focus:text-white outline-none border-b border-transparent focus:border-blue-500"
                             />
                           </td>
@@ -1800,12 +2010,30 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     <option value="m">m</option>
                     <option value="cx">Cx</option>
                   </select>
+                  <select
+                    className="w-24 bg-zinc-900 border border-zinc-700 rounded px-2 py-2 text-sm outline-none text-zinc-300 focus:border-blue-500"
+                    value={inputUnidadeMaquina2}
+                    onChange={(e) => setInputUnidadeMaquina2(e.target.value)}
+                  >
+                    <option value="">U2</option>
+                    <option value="p?">P?</option>
+                    <option value="kg">Kg</option>
+                    <option value="m">m</option>
+                    <option value="cx">Cx</option>
+                  </select>
                   <input
                     type="number"
                     placeholder="Meta"
                     className="w-24 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500 text-right"
                     value={inputMetaMaquina}
                     onChange={(e) => setInputMetaMaquina(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Meta2"
+                    className="w-24 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500 text-right"
+                    value={inputMetaMaquina2}
+                    onChange={(e) => setInputMetaMaquina2(e.target.value)}
                   />
                   <button
                     onClick={handleAddMaquina}
@@ -1887,6 +2115,22 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   </div>
                 </div>
 
+                {getUnidadeAtual2(novaMaquinaForm) ? (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide truncate">
+                      Qtd 2 ({getUnidadeAtual2(novaMaquinaForm)})
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      className="w-full p-2.5 bg-black border border-zinc-700 rounded-lg focus:border-blue-500 outline-none text-white font-mono font-bold text-right"
+                      value={novoValor2}
+                      onChange={(e) => setNovoValor2(e.target.value)}
+                      disabled={maquinas.length === 0}
+                    />
+                  </div>
+                ) : null}
+
                 <button
                   type="submit"
                   disabled={maquinas.length === 0 || !novoDiaISO || !novoValor}
@@ -1926,9 +2170,9 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                           {l.maquina}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-200 text-xs">
-                          {formatInt(l.real)}
+                          {formatInt(getLancamentoValor(l))}
                           <span className="text-[9px] text-zinc-600 ml-1 font-normal">
-                            {getUnidadeAtual(l.maquina)}
+                            {getLancamentoUnidade(l)}
                           </span>
                         </td>
                         <td className="px-2 py-2.5 text-right">
@@ -2110,6 +2354,12 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-zinc-400">Meta</span>
                                   <span className="text-zinc-300 font-mono">{formatInt(d.metaOriginal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-zinc-400">Dia mês anterior</span>
+                                  <span className="text-zinc-300 font-mono">
+                                    {d.prevDiaLabel || '-'}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-zinc-400">
