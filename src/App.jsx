@@ -432,7 +432,17 @@ const numeroFromText = (valor) => {
 
 const extrairCompDoTexto = (texto) => {
   if (!texto) return 0;
-  const m = String(texto).match(/(\d+[.,]\d+)\s*m/i);
+  const upper = String(texto).toUpperCase();
+  if (upper.includes('SOB MEDIDA')) {
+    const paren = String(texto).match(/\(\s*([\d.,]+)\s*\)/);
+    if (paren) {
+      const val = numeroFromText(paren[1]);
+      if (val > 0 && val <= 20) return val;
+    }
+  }
+  const m =
+    String(texto).match(/(\d+[.,]\d+)\s*m(?!m)/i) ||
+    String(texto).match(/(\d+)\s*m(?!m)/i);
   return m ? numeroFromText(m[1]) : 0;
 };
 
@@ -499,6 +509,93 @@ const extrairTextoPorOcr = async (file) => {
 const parseLinhasParaItens = (linhas, textoCompleto) => {
   const itens = [];
   const unitRegex = /^(PC|KG|M|UN|UNID|PCS?)$/i;
+  const unitInlineRegex = /\b(PC|KG|M|UN|UNID|PCS?)\b/i;
+
+  const shouldIgnoreLinha = (linha) => {
+    const upper = linha.toUpperCase();
+    if (/^(IT\s+C|PESO TOTAL|ENDERE|OBSERVA|ROMANEIO:)/i.test(linha)) return true;
+    if (/^(ROD\.|TELEFONE:|E-MAIL:|SITE:)/i.test(linha)) return true;
+    if (/^(CLIENTE:|VENDEDOR:|TRANSPORTADORA:|REDESPACHO:|CGC:|INS\. EST\.:|EMISS|DIGITADOR:)/i.test(linha)) return true;
+    if (upper.includes('CLIENTE')) return true;
+    if (upper.includes('TELEFONE')) return true;
+    if (upper.includes('CGC')) return true;
+    if (upper.includes('EMISS')) return true;
+    if (upper.includes('DIGITADOR')) return true;
+    if (upper.includes('ROMANEIO')) return true;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(linha)) return true;
+    return false;
+  };
+
+
+
+  // 1) Layout em 3 linhas: Descricao -> Codigo/Unidade -> Linha com quantidades
+  let pendDesc = '';
+  let pendCod = '';
+  let pendUnidade = '';
+  for (let idx = 0; idx < linhas.length; idx++) {
+    const raw = linhas[idx];
+    const linha = raw.replace(/\s+/g, ' ').trim();
+    if (!linha) continue;
+    if (shouldIgnoreLinha(linha)) continue;
+
+    const codeMatch = linha.match(/^(\d{4,6}[A-Z]?)\s+\d{3}\s+(PC|KG|M|UN|UNID|PCS?)$/i);
+    if (codeMatch) {
+      pendCod = codeMatch[1];
+      pendUnidade = codeMatch[2].toUpperCase();
+      continue;
+    }
+
+    const itemLine = linha.match(/^(\d{1,3})\s+/);
+    if (itemLine && pendCod && pendDesc) {
+      const parentesesMatch = `${pendDesc} ${linha}`.match(/\(\s*([\d.,]+)\s*\)/);
+      const qtdParenteses = parentesesMatch ? numeroFromText(parentesesMatch[1]) : 0;
+      const tokens = [...linha.matchAll(/(\d[\d.,]*)/g)].map((m) => numeroFromText(m[1]));
+      tokens.shift(); // remove o indice
+      const qtdLinha = tokens.length >= 3 ? tokens[tokens.length - 3] : tokens[0] || 0;
+      const qtdFinal = qtdParenteses > 0 ? qtdParenteses : qtdLinha;
+
+      const compDesc = extrairCompDoTexto(pendDesc);
+      const produtoCatalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === pendCod);
+      const perfilMaterial = inferirPerfilMaterial(pendDesc);
+      let comp = compDesc || produtoCatalogo?.comp || 0;
+      if (!comp && /\bPERFIL\b/i.test(pendDesc)) comp = 6;
+
+      const pesoCalculadoCatalogo = produtoCatalogo
+        ? produtoCatalogo.custom
+          ? comp * (produtoCatalogo.kgMetro || 0) * qtdFinal
+          : (produtoCatalogo.pesoUnit || 0) * qtdFinal
+        : 0;
+
+      const descBase = produtoCatalogo?.desc || pendDesc;
+      const descFinal =
+        produtoCatalogo?.custom && comp > 0
+          ? `${descBase} ${comp.toFixed(2)}m`
+          : descBase;
+
+      itens.push({
+        tempId: Math.random(),
+        cod: pendCod,
+        desc: descFinal,
+        perfil: produtoCatalogo?.perfil || perfilMaterial.perfil,
+        material: produtoCatalogo?.material || perfilMaterial.material,
+        comp,
+        qtd: qtdFinal,
+        pesoTotal: (pesoCalculadoCatalogo || 0).toFixed(2),
+        unidade: pendUnidade || (unitInlineRegex.exec(linha)?.[1] || 'UN'),
+      });
+
+      pendDesc = '';
+      pendCod = '';
+      pendUnidade = '';
+      continue;
+    }
+
+    if (!itemLine && !codeMatch) {
+      pendDesc = linha;
+    }
+  }
+
+  if (itens.length > 0) return itens;
 
   // Tenta interpretar cada linha individualmente, juntando com a próxima se for só a unidade
   for (let idx = 0; idx < linhas.length; idx++) {
@@ -506,18 +603,8 @@ const parseLinhasParaItens = (linhas, textoCompleto) => {
     let linha = raw.replace(/\s+/g, ' ').trim();
     if (!linha) continue;
 
-    // ignora cabeçalhos e linhas de endereço/rodapé
-    if (/^(IT\s+CÓD|PESO TOTAL|ENDEREÇO|OBSERVAÇÃO|ROMANEIO:)/i.test(linha)) continue;
-    if (/^(Rod\.|Telefone:|e-mail:|Site:)/i.test(linha)) continue;
-    if (/^(Cliente:|Vendedor:|Transportadora:|Redespacho:|CGC:|INS\. EST\.:|EMISSÃO:|DIGITADOR:)/i.test(linha)) continue;
-    const upper = linha.toUpperCase();
-    if (upper.includes('CLIENTE')) continue;
-    if (upper.includes('TELEFONE')) continue;
-    if (upper.includes('CGC')) continue;
-    if (upper.includes('EMISSÃO')) continue;
-    if (upper.includes('DIGITADOR')) continue;
-    if (upper.includes('ROMANEIO')) continue;
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(linha)) continue; // linha que é só data
+    // ignora cabecalhos e linhas de endereco/rodape
+    if (shouldIgnoreLinha(linha)) continue;
 
     // Só processa linhas que começam com índice + código
     if (!/^\d{1,3}\s+\d{4,6}[A-Z]?/.test(linha)) continue;
@@ -566,7 +653,8 @@ const parseLinhasParaItens = (linhas, textoCompleto) => {
     const produtoCatalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === cod);
     const perfilMaterial = inferirPerfilMaterial(descSemParenteses);
 
-    const comp = compDesc || produtoCatalogo?.comp || 0;
+    let comp = compDesc || produtoCatalogo?.comp || 0;
+    if (!comp && /\bPERFIL\b/i.test(descSemParenteses)) comp = 6;
     const pesoCalculadoCatalogo = produtoCatalogo
       ? produtoCatalogo.custom
         ? comp * (produtoCatalogo.kgMetro || 0) * qtdFinal
@@ -611,7 +699,8 @@ const parseLinhasParaItens = (linhas, textoCompleto) => {
       const produtoCatalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === cod);
       const perfilMaterial = inferirPerfilMaterial(descRaw);
 
-      const comp = compDesc || produtoCatalogo?.comp || 0;
+      let comp = compDesc || produtoCatalogo?.comp || 0;
+      if (!comp && /\bPERFIL\b/i.test(descRaw)) comp = 6;
       const pesoCalculadoCatalogo = produtoCatalogo
         ? produtoCatalogo.custom
           ? comp * (produtoCatalogo.kgMetro || 0) * qtd
@@ -645,7 +734,7 @@ const parseRomaneioPdf = async (file) => {
   const linhas = await extrairLinhasDoPdf(file);
   const textoCompleto = linhas.join('\n');
 
-  const idMatch = textoCompleto.match(/ROMANEIO:\s*([A-Z0-9]+)/i);
+  const idMatch = textoCompleto.match(/ROMANEIO:\s*([A-Z0-9]+)/i) || textoCompleto.match(/PEDIDO:\s*([A-Z0-9]+)/i);
   const clienteMatch = textoCompleto.match(/Cliente:\s*([^\n]+)/i);
 
   const romaneioId = idMatch ? idMatch[1].trim() : '';
@@ -691,18 +780,29 @@ const PrintStyles = () => (
       html, body { background: white !important; font-family: sans-serif; font-size: 11px; color: #000; }
       .app-container, nav, .modal-overlay, .no-print { display: none !important; }
       #printable-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; z-index: 9999; }
-      .print-header { border: 1px solid #000; margin-bottom: 12px; }
-      .print-brand { display: flex; justify-content: center; align-items: center; padding: 6px; border-bottom: 1px solid #000; }
-      .print-logo { height: 36px; object-fit: contain; }
-      .print-title { text-align: center; font-size: 14px; font-weight: bold; background: #c7def3 !important; border-bottom: 1px solid #000; padding: 6px; }
-      .print-subtitle { text-align: center; font-size: 11px; font-weight: bold; border-bottom: 1px solid #000; padding: 6px; }
-      .print-meta { display: grid; grid-template-columns: 90px 1fr 90px 1fr 120px; }
-      .print-meta div { padding: 6px; border-right: 1px solid #000; border-top: 1px solid #000; text-align: center; font-size: 10px; }
-      .print-meta div:nth-child(-n + 5) { border-top: none; }
-      .print-meta div:last-child { border-right: none; font-weight: bold; }
-      .print-table { width: 100%; border-collapse: collapse; }
-      .print-table th { text-align: center; padding: 4px; font-size: 9px; text-transform: uppercase; border: 1px solid #000; background: #c7def3 !important; }
-      .print-table td { padding: 4px; border: 1px solid #000; font-size: 9px; }
+      .print-section { page-break-after: always; }
+      .print-section:last-child { page-break-after: auto; }
+      .print-header { border: 1px solid #000; padding: 8px; margin-bottom: 10px; box-sizing: border-box; }
+      .print-header-top { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; gap: 10px; }
+      .print-brand { display: flex; align-items: center; justify-content: flex-start; }
+      .print-logo { height: 32px; object-fit: contain; }
+      .print-headings { text-align: center; }
+      .print-title { font-size: 14px; font-weight: bold; letter-spacing: 0.3px; }
+      .print-subtitle { font-size: 11px; font-weight: bold; margin-top: 2px; }
+      .print-control { text-align: right; font-size: 10px; }
+      .print-control-label { text-transform: uppercase; letter-spacing: 0.6px; color: #333; }
+      .print-control-value { font-weight: bold; font-size: 12px; margin-top: 2px; }
+      .print-meta-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-top: 8px; border-top: 1px solid #000; border-bottom: 1px solid #000; border-left: 1px solid #000; border-right: 1px solid #000; }
+      .print-meta-chip { border: none; border-right: 1px solid #000; padding: 6px; text-align: center; font-size: 10px; }
+      .print-meta-chip:last-child { border-right: none; }
+      .print-meta-chip span { display: block; text-transform: uppercase; font-size: 9px; color: #333; }
+      .print-meta-chip strong { display: block; margin-top: 2px; font-size: 10px; }
+      .print-table { width: 100%; border-collapse: collapse; border-left: 1px solid #000; border-right: 1px solid #000; }
+      .print-table th { text-align: left; padding: 6px; font-size: 9px; text-transform: uppercase; border-top: 1px solid #000; border-bottom: 1px solid #000; background: #e8eef5 !important; }
+      .print-table th.center { text-align: center; }
+      .print-table td { padding: 6px; border-bottom: 1px solid #000; font-size: 9px; }
+      .print-table td.center { text-align: center; }
+      .print-table td.left { text-align: left; }
       .print-table td.left { text-align: left; }
       .print-table td.center { text-align: center; }
     }
@@ -1025,6 +1125,8 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [formPedidoObs, setFormPedidoObs] = useState('');
   const [formPedidoRomaneioFile, setFormPedidoRomaneioFile] = useState(null);
   const [formPedidoRomaneioUploading, setFormPedidoRomaneioUploading] = useState(false);
+  const [formPedidoRomaneioParsing, setFormPedidoRomaneioParsing] = useState(false);
+  const [formPedidoRomaneioErro, setFormPedidoRomaneioErro] = useState('');
   const [estoqueEstudo, setEstoqueEstudo] = useState({});
   const [formPedidoCod, setFormPedidoCod] = useState('');
   const [formPedidoDesc, setFormPedidoDesc] = useState('');
@@ -1082,6 +1184,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   // PDF Romaneio
   const [pdfItensEncontrados, setPdfItensEncontrados] = useState([]);
   const [pdfItensSelecionados, setPdfItensSelecionados] = useState([]);
+  const [pdfItensMaquina, setPdfItensMaquina] = useState({});
   const [pdfInfoRomaneio, setPdfInfoRomaneio] = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfErro, setPdfErro] = useState('');
@@ -1569,6 +1672,12 @@ useEffect(() => {
       setPdfInfoRomaneio({ id: parsed.id, cliente: parsed.cliente });
       setPdfItensEncontrados(parsed.itens);
       setPdfItensSelecionados(parsed.itens.map((i) => i.tempId));
+      setPdfItensMaquina(
+        parsed.itens.reduce((acc, item) => {
+          acc[item.tempId] = inferirMaquinaPorItem(item);
+          return acc;
+        }, {})
+      );
 
       if (parsed.id && !formRomaneioId) setFormRomaneioId(parsed.id);
       if (parsed.cliente) setFormCliente(parsed.cliente);
@@ -1577,6 +1686,36 @@ useEffect(() => {
       setPdfErro(`Não consegui ler o PDF (${err?.message || 'erro desconhecido'}). Veja o console para detalhes.`);
     } finally {
       setPdfLoading(false);
+      e.target.value = null;
+    }
+  };
+
+  const handleUploadPedidoRomaneio = async (e) => {
+    const file = e.target.files?.[0] || null;
+    setFormPedidoRomaneioFile(file);
+    if (!file) return;
+
+    setFormPedidoRomaneioErro('');
+    setFormPedidoRomaneioParsing(true);
+
+    try {
+      const parsed = await parseRomaneioPdf(file);
+      if (!parsed?.itens?.length) {
+        throw new Error('Nenhum item encontrado no PDF.');
+      }
+
+      setItensPedidoComercial(parsed.itens);
+      if (parsed.cliente) {
+        setFormPedidoCliente((prev) => prev || parsed.cliente);
+      }
+      if (parsed.id) {
+        setFormPedidoRequisicao((prev) => prev || parsed.id);
+      }
+    } catch (err) {
+      console.error('Erro ao ler PDF do romaneio (comercial):', err);
+      setFormPedidoRomaneioErro(`Nao consegui ler o PDF (${err?.message || 'erro desconhecido'}). Veja o console para detalhes.`);
+    } finally {
+      setFormPedidoRomaneioParsing(false);
       e.target.value = null;
     }
   };
@@ -1600,6 +1739,7 @@ useEffect(() => {
     setItensNoPedido((prev) => [...prev, ...selecionados]);
     setPdfItensEncontrados([]);
     setPdfItensSelecionados([]);
+    setPdfItensMaquina({});
     setPdfInfoRomaneio(null);
   };
 
@@ -1746,6 +1886,15 @@ const handleDownloadModeloParadas = () => {
     resetItemFields();
   };
   const removerItemDaLista = (id) => setItensNoPedido(itensNoPedido.filter(i => i.tempId !== id));
+  const inferirMaquinaPorItem = (item) => {
+    const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === item?.cod);
+    const grupo =
+      produto?.grupo ||
+      (/TELHA|CUMEEIRA/i.test(item?.desc || '') ? 'GRUPO_TELHAS' : /PERFIL/i.test(item?.desc || '') ? 'GRUPO_PERFIS' : '');
+    if (!grupo) return '';
+    const maquinaDefault = CATALOGO_MAQUINAS.find((m) => m.grupo === grupo);
+    return maquinaDefault?.maquinaId || maquinaDefault?.id || '';
+  };
   const inferirMaquinaPorItens = (itens) => {
     if (!Array.isArray(itens) || itens.length === 0) return '';
     const grupos = itens.map((i) => {
@@ -2395,6 +2544,12 @@ const handleDownloadModeloParadas = () => {
         className: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
       };
     }
+    if (status === 'PROGRAMADO') {
+      return {
+        label: 'PROGRAMADO',
+        className: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+      };
+    }
     if (status === 'FALTA PROGRAMAR') {
       return {
         label: 'EM ABERTO',
@@ -2493,6 +2648,8 @@ const handleDownloadModeloParadas = () => {
     setFormPedidoObs('');
     setItensPedidoComercial([]);
     setFormPedidoRomaneioFile(null);
+    setFormPedidoRomaneioParsing(false);
+    setFormPedidoRomaneioErro('');
     resetItemPedidoComercial();
   };
 
@@ -2516,17 +2673,17 @@ const handleDownloadModeloParadas = () => {
     const estoquePorDesc = new Map(
       estoqueTelhas.map((item) => [normalizeTexto(item.desc), Number(item.saldoQtd || 0)])
     );
-    const qtdPorItem = new Map();
-    itensPedidoComercial.forEach((item) => {
-      const cod = String(item.cod || '').trim();
-      const descKey = normalizeTexto(item.desc);
-      const key = cod || (descKey ? `desc:${descKey}` : '');
-      if (!key) return;
-      const prev = qtdPorItem.get(key) || 0;
-      qtdPorItem.set(key, prev + Number(item.qtd || 0));
-    });
-    const temEstoqueSuficiente = Array.from(qtdPorItem.entries()).every(
-      ([key, qtd]) => {
+    const temEstoqueSuficiente = (itens) => {
+      const qtdPorItem = new Map();
+      itens.forEach((item) => {
+        const cod = String(item.cod || '').trim();
+        const descKey = normalizeTexto(item.desc);
+        const key = cod || (descKey ? `desc:${descKey}` : '');
+        if (!key) return;
+        const prev = qtdPorItem.get(key) || 0;
+        qtdPorItem.set(key, prev + Number(item.qtd || 0));
+      });
+      return Array.from(qtdPorItem.entries()).every(([key, qtd]) => {
         if (key.startsWith('desc:')) {
           const desc = key.slice(5);
           const saldo = estoquePorDesc.get(desc) ?? 0;
@@ -2534,8 +2691,15 @@ const handleDownloadModeloParadas = () => {
         }
         const saldo = estoquePorCod.get(key) ?? 0;
         return qtd <= saldo;
-      }
-    );
+      });
+    };
+
+    const itensPorMaquina = itensPedidoComercial.reduce((acc, item) => {
+      const maquinaId = inferirMaquinaPorItem(item) || 'CONFORMADORA_TELHAS';
+      if (!acc[maquinaId]) acc[maquinaId] = [];
+      acc[maquinaId].push(item);
+      return acc;
+    }, {});
 
     let romaneioAnexo = null;
     if (formPedidoRomaneioFile) {
@@ -2551,70 +2715,91 @@ const handleDownloadModeloParadas = () => {
       setFormPedidoRomaneioUploading(false);
     }
 
-    const obj = temEstoqueSuficiente
-      ? {
-          id: idPedido,
-          romaneioId: idPedido,
-          data: "",
-          dataProducao: "",
-          cliente: formPedidoCliente.trim(),
-          solicitante: formPedidoSolicitante.trim(),
-          totvs: "",
-          tipo: "TRANSF",
-          status: "TRANSFERENCIA SOLICITADA",
-          origem: "COMERCIAL",
-          requisicao: requisicao || idPedido,
-          observacao: formPedidoObs || "Estoque disponivel. Transferencia solicitada.",
-          itens: itensPedidoComercial,
-          romaneioAnexo,
-          transferenciaDestino: formPedidoCliente.trim(),
-          transferenciaObs: formPedidoObs || "",
-          transferenciaItens: itensPedidoComercial,
-          transferenciaSolicitadaAt: agoraISO,
-          createdAt: agoraISO,
-          updatedAt: agoraISO,
-        }
-      : {
-          id: idPedido,
-          romaneioId: idPedido,
-          data: "",
-          dataProducao: "",
-          cliente: formPedidoCliente.trim(),
-          solicitante: formPedidoSolicitante.trim(),
-          totvs: "",
+    const grupos = Object.entries(itensPorMaquina).map(([maquinaId, itens]) => ({
+      maquinaId,
+      itens,
+    }));
+
+    const pedidos = grupos.map((grupo, idx) => {
+      const idPedidoGrupo = grupos.length > 1 ? `${idPedido}-${idx + 1}` : idPedido;
+      const temEstoque = temEstoqueSuficiente(grupo.itens);
+      const base = {
+        id: idPedidoGrupo,
+        romaneioId: idPedido,
+        data: "",
+        dataProducao: "",
+        cliente: formPedidoCliente.trim(),
+        solicitante: formPedidoSolicitante.trim(),
+        totvs: "",
+        origem: "COMERCIAL",
+        requisicao: requisicao || idPedido,
+        observacao: formPedidoObs || "",
+        itens: grupo.itens,
+        romaneioAnexo,
+        createdAt: agoraISO,
+        updatedAt: agoraISO,
+        maquinaId: grupo.maquinaId === 'SEM_MAQUINA' ? '' : grupo.maquinaId,
+      };
+      if (temEstoque) {
+        return {
+          obj: {
+            ...base,
+            tipo: "TRANSF",
+            status: "TRANSFERENCIA SOLICITADA",
+            observacao: formPedidoObs || "Estoque disponivel. Transferencia solicitada.",
+            transferenciaDestino: formPedidoCliente.trim(),
+            transferenciaObs: formPedidoObs || "",
+            transferenciaItens: grupo.itens,
+            transferenciaSolicitadaAt: agoraISO,
+          },
+          temEstoque: true,
+        };
+      }
+      return {
+        obj: {
+          ...base,
           tipo: "REQ",
           status: "FALTA PROGRAMAR",
-          origem: "COMERCIAL",
-          requisicao: requisicao || idPedido,
-          observacao: formPedidoObs || "",
-          itens: itensPedidoComercial,
-          romaneioAnexo,
-          createdAt: agoraISO,
-          updatedAt: agoraISO,
-        };
+        },
+        temEstoque: false,
+      };
+    });
 
     try {
+      const countTransf = pedidos.filter((p) => p.temEstoque).length;
+      const countReq = pedidos.length - countTransf;
+
       if (IS_LOCALHOST) {
-        setFilaProducao((prev) => [
-          { ...obj, sysId: `LOCAL-${Date.now()}` },
-          ...prev,
-        ]);
+        const baseNow = Date.now();
+        const novos = pedidos.map((p, idx) => ({
+          ...p.obj,
+          sysId: `LOCAL-${baseNow}-${idx}`,
+        }));
+        setFilaProducao((prev) => [...novos, ...prev]);
         limparPedidoComercial();
-        if (temEstoqueSuficiente) {
-          alert("Estoque disponivel. Transferencia solicitada (modo local).");
+        if (countTransf && countReq) {
+          alert(`Solicitacoes criadas (modo local): ${countReq} para programar, ${countTransf} transferencia.`);
+        } else if (countTransf) {
+          alert(`Estoque disponivel. ${countTransf} transferencia(s) solicitada(s) (modo local).`);
         } else {
-          alert("Sem estoque. Solicitacao enviada para programar (modo local).");
+          alert(`Sem estoque. ${countReq} solicitacao(oes) enviada(s) para programar (modo local).`);
         }
         return;
       }
 
-      const docRef = await addDoc(collection(db, "romaneios"), obj);
-      setFilaProducao((prev) => [{ ...obj, sysId: docRef.id }, ...prev]);
+      const novosDocs = [];
+      for (const pedido of pedidos) {
+        const docRef = await addDoc(collection(db, "romaneios"), pedido.obj);
+        novosDocs.push({ ...pedido.obj, sysId: docRef.id });
+      }
+      setFilaProducao((prev) => [...novosDocs, ...prev]);
       limparPedidoComercial();
-      if (temEstoqueSuficiente) {
-        alert("Estoque disponivel. Transferencia solicitada.");
+      if (countTransf && countReq) {
+        alert(`Solicitacoes criadas: ${countReq} para programar, ${countTransf} transferencia.`);
+      } else if (countTransf) {
+        alert(`Estoque disponivel. ${countTransf} transferencia(s) solicitada(s).`);
       } else {
-        alert("Sem estoque. Solicitacao enviada para programar.");
+        alert(`Sem estoque. ${countReq} solicitacao(oes) enviada(s) para programar.`);
       }
     } catch (err) {
       console.error("Erro ao salvar pedido comercial:", err);
@@ -2910,11 +3095,13 @@ const handleDownloadModeloParadas = () => {
     const agoraISO = new Date().toISOString();
     const alvo = filaProducao.find((r) => (r.sysId || r.id) === romaneioKey);
     if (!alvo) return;
+    const novoStatus =
+      alvo.status === 'FALTA PROGRAMAR' ? 'PROGRAMADO' : alvo.status;
 
     setFilaProducao((prev) =>
       prev.map((r) =>
         (r.sysId || r.id) === romaneioKey
-          ? { ...r, data: dataISO, dataProducao: dataISO, updatedAt: agoraISO }
+          ? { ...r, data: dataISO, dataProducao: dataISO, status: novoStatus, updatedAt: agoraISO }
           : r
       )
     );
@@ -2926,6 +3113,7 @@ const handleDownloadModeloParadas = () => {
       await safeUpdateDoc("romaneios", String(alvo.sysId), {
         data: dataISO,
         dataProducao: dataISO,
+        status: novoStatus,
         updatedAt: agoraISO,
       });
     } catch (err) {
@@ -2941,6 +3129,7 @@ const abrirModalNovo = () => { limparFormularioGeral(); setShowModalSelecaoMaqui
 const abrirModalEdicao = (r) => {
     setPdfItensEncontrados([]);
     setPdfItensSelecionados([]);
+    setPdfItensMaquina({});
     setPdfInfoRomaneio(null);
     setPdfErro('');
 
@@ -2972,14 +3161,106 @@ const abrirModalEdicao = (r) => {
     setRomaneioEmEdicao(null);
     setPdfItensEncontrados([]);
     setPdfItensSelecionados([]);
+    setPdfItensMaquina({});
     setPdfInfoRomaneio(null);
     setPdfErro('');
   };
   const abrirSelecaoMaquina = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
-  const handleEscolherMaquina = (id) => {
-    setMaquinaSelecionada(id);
+  const handlePdfItemMaquinaChange = (tempId, maquinaId) => {
+    setPdfItensMaquina((prev) => ({
+      ...prev,
+      [tempId]: maquinaId,
+    }));
+  };
+
+  const criarOrdensPorMaquina = async () => {
+    const baseRomaneioId = formRomaneioId || pdfInfoRomaneio?.id;
+    if (!baseRomaneioId || !formDataProducao) {
+      alert("Preencha o Romaneio e a Data.");
+      return;
+    }
+    if (!formCliente && !isEstoque) {
+      alert("Preencha o Cliente.");
+      return;
+    }
+    if (!pdfItensEncontrados.length) {
+      alert("Nenhum item do PDF encontrado.");
+      return;
+    }
+
+    const itensSemMaquina = pdfItensEncontrados.filter(
+      (item) => !pdfItensMaquina[item.tempId]
+    );
+    if (itensSemMaquina.length) {
+      alert("Selecione a maquina para todos os itens.");
+      return;
+    }
+
+    const agrupado = {};
+    pdfItensEncontrados.forEach((item) => {
+      const maquinaId = pdfItensMaquina[item.tempId];
+      if (!maquinaId) return;
+      if (!agrupado[maquinaId]) agrupado[maquinaId] = [];
+      agrupado[maquinaId].push(item);
+    });
+
+    const maquinas = Object.keys(agrupado);
+    if (!maquinas.length) {
+      alert("Nenhuma maquina selecionada.");
+      return;
+    }
+
+    const agoraISO = new Date().toISOString();
+    const cliente = formCliente || pdfInfoRomaneio?.cliente || "";
+    const totvs = formTotvs || "";
+    const tipo = isEstoque ? "EST" : "PED";
+
+    const ordens = maquinas.map((maquinaId, idx) => {
+      const sufixo = maquinas.length > 1 ? `-${idx + 1}` : "";
+      return {
+        id: `${baseRomaneioId}${sufixo}`,
+        romaneioId: baseRomaneioId,
+        data: formDataProducao,
+        dataProducao: formDataProducao,
+        cliente,
+        totvs,
+        tipo,
+        maquinaId,
+        itens: agrupado[maquinaId],
+        updatedAt: agoraISO,
+      };
+    });
+
+    if (IS_LOCALHOST) {
+      const baseNow = Date.now();
+      const novos = ordens.map((o, idx) => ({
+        ...o,
+        sysId: `LOCAL-${baseNow}-${idx}`,
+      }));
+      setFilaProducao((prev) => [...prev, ...novos]);
+      alert(`${ordens.length} ordem(ns) criada(s) (modo local).`);
+    } else {
+      for (const ordem of ordens) {
+        await addDoc(collection(db, "romaneios"), ordem);
+      }
+      const romaneiosSnapshot = await getDocs(collection(db, "romaneios"));
+      const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
+        sysId: docSnap.id,
+        ...docSnap.data(),
+      }));
+      setFilaProducao(listaRomaneios);
+      alert(`${ordens.length} ordem(ns) criada(s)!`);
+    }
+
     setShowModalSelecaoMaquina(false);
-    setShowModalNovaOrdem(true);
+    setShowModalNovaOrdem(false);
+    setMaquinaSelecionada("");
+    setItensNoPedido([]);
+    setPdfItensEncontrados([]);
+    setPdfItensSelecionados([]);
+    setPdfItensMaquina({});
+    setPdfInfoRomaneio(null);
+    setPdfErro('');
   };
 const deletarRomaneio = async (romaneioId) => {
   const ok = window.confirm("Excluir esse romaneio?");
@@ -3146,9 +3427,9 @@ const deletarProducaoReal = async (id) => {
   const file = e.target.files?.[0];
   if (!file) return;
 
-  // exige máquina
+  // exige maquina
   if (!maquinaId) {
-    alert("Selecione uma máquina antes de importar a produção.");
+    alert("Selecione uma maquina antes de importar a produção.");
     e.target.value = null;
     return;
   }
@@ -3197,7 +3478,7 @@ const deletarProducaoReal = async (id) => {
             qtd,
             destino,
 
-            // ✅ máquina vem do filtro selecionado na tela
+            // ✅ maquina vem do filtro selecionado na tela
             maquinaId,
             // opcional (se quiser redundância):
             // maquina: maquinaId,
@@ -3711,7 +3992,7 @@ const parseNumberBR = (v) => {
     agrupadoPorDia[iso].pesoPlanejado += pesoDia;
   });
 
-  // ========= 3) executado no período + filtro por máquina =========
+  // ========= 3) executado no período + filtro por maquina =========
   const producaoNoPeriodoBase = historicoProducaoReal.filter(
     (p) => p.data >= dataInicioInd && p.data <= dataFimInd
   );
@@ -3860,7 +4141,7 @@ const parseNumberBR = (v) => {
 
 
 
-// --- Helper: evento de tempo útil (máquina rodando) -----------------
+// --- Helper: evento de tempo útil (maquina rodando) -----------------
 const ehTempoUtil = (evento) => {
   const grupo = String(evento.grupo || '').toUpperCase().trim();
   const cod   = String(evento.codMotivo || evento.codigo || '').toUpperCase().trim();
@@ -4004,7 +4285,7 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
     const turnoHorasNum = Number(turnoHoras) || 0;
     const tempoTurnoTotal = diasPeriodo * turnoHorasNum * 60; // minutos de turno no período
 
-    // Convenção: códigos que começam com "TU" = máquina rodando
+    // Convenção: códigos que começam com "TU" = maquina rodando
     const ehCodigoRodando = (cod) =>
       String(cod || "").toUpperCase().startsWith("TU");
 
@@ -4026,7 +4307,7 @@ const gerarNovoIdRomaneio = (romaneiosExistentes, dataISO) => {
       const desc = p.descMotivo || cod || "Motivo não informado";
 
       if (ehCodigoRodando(cod)) {
-        // TU = máquina rodando
+        // TU = maquina rodando
         tempoProduzindoMin += dur;
       } else {
         // Qualquer outro código = parada
@@ -4202,16 +4483,49 @@ const handleImportBackup = (json) => {
     return idLabel;
   };
 
-  const itensParaImpressao = romaneiosParaImpressao.flatMap((r) =>
-    (r.itens || []).map((item, idx) => ({
-      key: `${r.sysId || r.id || 'rom'}-${item.tempId || idx}`,
-      cod: item.cod || '',
-      desc: formatarDescricaoImpressao(item),
-      romaneioId: getRomaneioLabel(r),
-      destino: r.destino || r.transferenciaDestino || r.cliente || 'ESTOQUE',
-      qtd: item.qtd || '',
-      obs: r.totvs || '',
-    }))
+  const getMaquinaIdRomaneio = (r) =>
+    r.maquinaId || r.maquina || inferirMaquinaPorItens(r.itens) || 'SEM_MAQUINA';
+
+  const romaneiosPorMaquina = romaneiosParaImpressao.reduce((acc, r) => {
+    const maquinaId = getMaquinaIdRomaneio(r);
+    if (!acc[maquinaId]) acc[maquinaId] = [];
+    acc[maquinaId].push(r);
+    return acc;
+  }, {});
+
+  const impressaoPorMaquina = Object.entries(romaneiosPorMaquina).map(
+    ([maquinaId, romaneios]) => {
+      const itens = romaneios.flatMap((r) =>
+        (r.itens || []).map((item, idx) => ({
+          key: `${r.sysId || r.id || 'rom'}-${item.tempId || idx}`,
+          cod: item.cod || '',
+          desc: formatarDescricaoImpressao(item),
+          romaneioId: getRomaneioLabel(r),
+          destino: r.destino || r.transferenciaDestino || r.cliente || 'ESTOQUE',
+          qtd: item.qtd || '',
+          comp: Number(item.comp || 0),
+          obs: r.totvs || '',
+          pesoTotal: Number(item.pesoTotal || 0),
+        }))
+      );
+
+      const totalQtd = itens.reduce((acc, item) => acc + Number(item.qtd || 0), 0);
+      const totalMetros = itens.reduce(
+        (acc, item) => acc + Number(item.comp || 0) * Number(item.qtd || 0),
+        0
+      );
+      const totalPeso = itens.reduce((acc, item) => acc + Number(item.pesoTotal || 0), 0);
+
+      return {
+        maquinaId,
+        maquinaLabel: getMaquinaNomeComercial(maquinaId),
+        romaneiosCount: romaneios.length,
+        itens,
+        totalQtd,
+        totalMetros,
+        totalPeso,
+      };
+    }
   );
 
 
@@ -4234,45 +4548,82 @@ const handleImportBackup = (json) => {
 
       {/* --- ÁREA DE IMPRESSÃO --- */}
       <div id="printable-area" className="print-page-container">
-        <div className="print-header">
-          <div className="print-brand">
-            <img src={logoMetalosa} alt="Metalosa" className="print-logo" />
-          </div>
-          <div className="print-title">ORDEM DE PRODUCAO</div>
-          <div className="print-subtitle">TELHA GALVALUME</div>
-          <div className="print-meta">
-            <div>PREV. INI:</div>
-            <div>{formatarDataBR(dataFiltroImpressao)}</div>
-            <div>PREV. FIM:</div>
-            <div>{formatarDataBR(dataFiltroImpressao)}</div>
-            <div>Nº {numeroControleImpressao || '---'}</div>
-          </div>
-        </div>
+        {impressaoPorMaquina.map((bloco) => (
+          <div key={bloco.maquinaId} className="print-section">
+            <div className="print-header">
+              <div className="print-header-top">
+                <div className="print-brand">
+                  <img src={logoMetalosa} alt="Metalosa" className="print-logo" />
+                </div>
+                <div className="print-headings">
+                  <div className="print-title">ORDEM DE PRODUCAO</div>
+                  <div className="print-subtitle">{bloco.maquinaLabel}</div>
+                </div>
+                <div className="print-control">
+                  <div className="print-control-label">No</div>
+                  <div className="print-control-value">{numeroControleImpressao || '---'}</div>
+                </div>
+              </div>
+              <div className="print-meta-row">
+                <div className="print-meta-chip">
+                  <span>Prev. ini</span>
+                  <strong>{formatarDataBR(dataFiltroImpressao)}</strong>
+                </div>
+                <div className="print-meta-chip">
+                  <span>Prev. fim</span>
+                  <strong>{formatarDataBR(dataFiltroImpressao)}</strong>
+                </div>
+                <div className="print-meta-chip">
+                  <span>Romaneios</span>
+                  <strong>{bloco.romaneiosCount}</strong>
+                </div>
+                <div className="print-meta-chip">
+                  <span>Itens</span>
+                  <strong>{bloco.itens.length}</strong>
+                </div>
+                <div className="print-meta-chip">
+                  <span>Peso</span>
+                  <strong>{bloco.totalPeso.toFixed(2)}</strong>
+                </div>
+              </div>
+            </div>
 
-        <table className="print-table">
-          <thead>
-            <tr>
-              <th>COD</th>
-              <th>DESCRICAO DO PRODUTO</th>
-              <th>ROMANEIO</th>
-              <th>DESTINO</th>
-              <th>QUANT. PCS</th>
-              <th>OBS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {itensParaImpressao.map((item) => (
-              <tr key={item.key}>
-                <td className="center">{item.cod}</td>
-                <td className="left">{item.desc}</td>
-                <td className="center">{item.romaneioId}</td>
-                <td className="center">{item.destino}</td>
-                <td className="center">{item.qtd}</td>
-                <td className="center">{item.obs}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            <table className="print-table">
+              <thead>
+                <tr>
+                  <th className="center">COD</th>
+                  <th>DESCRICAO DO PRODUTO</th>
+                  <th className="center">ROMANEIO</th>
+                  <th>DESTINO</th>
+                  <th className="center">METROS</th>
+                  <th className="center">QUANT. PCS</th>
+                  <th className="center">OBS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bloco.itens.map((item) => (
+                  <tr key={item.key}>
+                    <td className="center">{item.cod}</td>
+                    <td className="left">{item.desc}</td>
+                    <td className="center">{item.romaneioId}</td>
+                    <td className="center">{item.destino}</td>
+                    <td className="center">{item.comp ? (item.comp * Number(item.qtd || 0)).toFixed(2) : ''}</td>
+                    <td className="center">{item.qtd}</td>
+                    <td className="center">{item.obs}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td className="left" colSpan={4}>TOTAL</td>
+                  <td className="center">{bloco.totalMetros.toFixed(2)}</td>
+                  <td className="center">{bloco.totalQtd}</td>
+                  <td className="center">{bloco.totalPeso.toFixed(2)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ))}
       </div>
 
       {/* --- APP CONTAINER --- */}
@@ -5801,7 +6152,7 @@ const handleImportBackup = (json) => {
 
               {mostrarSolicitarProducao && (
                 <div className="fixed inset-0 z-[80] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-5xl overflow-hidden">
+                  <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-5xl overflow-hidden max-h-[90vh] flex flex-col">
                     <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                       <h3 className="text-lg font-bold text-white">Nova solicitacao de producao</h3>
                       <button
@@ -5812,7 +6163,7 @@ const handleImportBackup = (json) => {
                         <X size={18} />
                       </button>
                     </div>
-                    <div className="p-6 space-y-6">
+                    <div className="p-6 space-y-6 overflow-y-auto flex-1">
                       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr,0.9fr] gap-6">
                         <div className="space-y-4">
                           <div className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-4">
@@ -5865,15 +6216,31 @@ const handleImportBackup = (json) => {
                                 <input
                                   type="file"
                                   accept="application/pdf"
-                                  onChange={(e) => setFormPedidoRomaneioFile(e.target.files?.[0] || null)}
+                                  onChange={handleUploadPedidoRomaneio}
                                   className="w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-bold file:text-zinc-100 hover:file:bg-zinc-700"
                                 />
+                                {formPedidoRomaneioParsing && (
+                                  <div className="text-xs text-zinc-400">Lendo PDF...</div>
+                                )}
+                                {formPedidoRomaneioErro && (
+                                  <div className="text-xs text-red-400">{formPedidoRomaneioErro}</div>
+                                )}
+                                {formPedidoRomaneioFile && itensPedidoComercial.length > 0 && (
+                                  <div className="text-xs text-zinc-400">
+                                    Itens importados: {itensPedidoComercial.length}
+                                  </div>
+                                )}
                                 {formPedidoRomaneioFile && (
                                   <div className="flex items-center justify-between text-xs text-zinc-400">
                                     <span className="truncate">{formPedidoRomaneioFile.name}</span>
                                     <button
                                       type="button"
-                                      onClick={() => setFormPedidoRomaneioFile(null)}
+                                      onClick={() => {
+                                        setFormPedidoRomaneioFile(null);
+                                        setFormPedidoRomaneioParsing(false);
+                                        setFormPedidoRomaneioErro('');
+                                        setItensPedidoComercial([]);
+                                      }}
                                       className="text-zinc-500 hover:text-zinc-200"
                                     >
                                       Remover
@@ -6391,6 +6758,77 @@ const handleImportBackup = (json) => {
                   </div>
                 </div>
 
+                <div className="bg-zinc-900/40 border border-white/10 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Itens do PDF</div>
+                    <div className="text-[11px] text-zinc-500">
+                      Importe o romaneio na tela anterior (Defina a maquina por item).
+                    </div>
+                  </div>
+                  {pdfErro && (
+                    <div className="text-xs text-red-400">{pdfErro}</div>
+                  )}
+                  {pdfInfoRomaneio && (
+                    <div className="text-xs text-zinc-400">
+                      Romaneio: <span className="text-white">{pdfInfoRomaneio.id || '-'}</span>
+                      {' '}| Cliente: <span className="text-white">{pdfInfoRomaneio.cliente || '-'}</span>
+                    </div>
+                  )}
+                  {pdfItensEncontrados.length === 0 ? (
+                    <div className="text-xs text-zinc-500">Nenhum item importado.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-white/5 text-xs text-zinc-500">
+                            <tr>
+                              <th className="p-3 w-8 text-center">Sel</th>
+                              <th className="p-3">Item</th>
+                              <th className="text-center">Comp</th>
+                              <th className="text-center">Qtd</th>
+                              <th className="text-right">Peso</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {pdfItensEncontrados.map((item) => (
+                              <tr key={item.tempId}>
+                                <td className="p-3 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={pdfItensSelecionados.includes(item.tempId)}
+                                    onChange={() => togglePdfItemSelecionado(item.tempId)}
+                                    className="h-4 w-4 accent-emerald-500"
+                                  />
+                                </td>
+                                <td className="p-3 text-zinc-300">
+                                  <b>{item.desc}</b>
+                                  <div className="text-[10px]">{item.cod}</div>
+                                </td>
+                                <td className="p-3 text-center">{item.comp}</td>
+                                <td className="p-3 text-center font-bold text-white">{item.qtd}</td>
+                                <td className="p-3 text-right">{item.pesoTotal}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div className="text-xs text-zinc-400">
+                          {pdfItensSelecionados.length} item(ns) selecionado(s).
+                        </div>
+                        <button
+                          type="button"
+                          onClick={adicionarItensPdfSelecionados}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg disabled:opacity-40"
+                          disabled={pdfItensSelecionados.length === 0}
+                        >
+                          Adicionar itens do PDF
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-3">
                         <label className="text-xs font-bold text-blue-400 block mb-1">Romaneio</label>
@@ -6541,7 +6979,7 @@ const handleImportBackup = (json) => {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-              <h3 className="text-lg font-bold text-white">Escolha a máquina</h3>
+              <h3 className="text-lg font-bold text-white">Defina a maquina por item</h3>
               <button
                 onClick={() => setShowModalSelecaoMaquina(false)}
                 className="text-zinc-400 hover:text-white"
@@ -6551,29 +6989,101 @@ const handleImportBackup = (json) => {
             </div>
 
             <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-              {CATALOGO_MAQUINAS.map((m) => (
-                <button
-                  key={m.maquinaId || m.id}
-                  onClick={() => handleEscolherMaquina(m.maquinaId || m.id)}
-                  className="w-full text-left bg-zinc-800/70 hover:bg-zinc-800 border border-white/10 hover:border-emerald-400/40 rounded-xl px-4 py-3 flex items-center justify-between gap-3 transition-colors"
-                >
-                  <div>
-                    <div className="text-sm font-semibold text-white">
-                      {m.nomeExibicao}
-                    </div>
-                    <div className="text-[11px] text-zinc-400">
-                      {m.grupo === 'GRUPO_TELHAS' ? 'Linha de Telhas' : 'Perfil / Dobra'}
-                    </div>
+              <div className="bg-zinc-800/70 border border-white/10 rounded-xl px-4 py-3 space-y-2">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Importar PDF</div>
+                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm w-fit cursor-pointer disabled:opacity-50">
+                      <Upload size={16} />
+                      {pdfLoading ? 'Lendo PDF...' : 'Subir romaneio'}
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={handleUploadPdfRomaneio}
+                        disabled={pdfLoading}
+                        className="hidden"
+                      />
+                    </label>
                   </div>
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                    Selecionar
-                  </span>
+                  <div className="text-[11px] text-zinc-500">
+                    Leia o PDF antes de definir as maquinas.
+                  </div>
+                </div>
+                {pdfErro && (
+                  <div className="text-xs text-red-400">{pdfErro}</div>
+                )}
+                {pdfInfoRomaneio && (
+                  <div className="text-xs text-zinc-400">
+                    Romaneio: <span className="text-white">{pdfInfoRomaneio.id || '-'}</span>
+                    {' '}| Itens: <span className="text-white">{pdfItensEncontrados.length}</span>
+                  </div>
+                )}
+              </div>
+              {pdfItensEncontrados.length === 0 ? (
+                <div className="text-xs text-zinc-500">Nenhum item importado.</div>
+              ) : (
+                <div className="bg-zinc-950 rounded-xl border border-white/10 overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 text-xs text-zinc-500">
+                      <tr>
+                        <th className="p-3">Item</th>
+                        <th className="text-center">Comp</th>
+                        <th className="text-center">Qtd</th>
+                        <th className="text-center">Maquina</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {pdfItensEncontrados.map((item) => (
+                        <tr key={item.tempId}>
+                          <td className="p-3 text-zinc-300">
+                            <b>{item.desc}</b>
+                            <div className="text-[10px]">{item.cod}</div>
+                          </td>
+                          <td className="p-3 text-center">{item.comp}</td>
+                          <td className="p-3 text-center font-bold text-white">{item.qtd}</td>
+                          <td className="p-3 text-center">
+                            <select
+                              value={pdfItensMaquina[item.tempId] || ''}
+                              onChange={(e) => handlePdfItemMaquinaChange(item.tempId, e.target.value)}
+                              className="bg-black/60 border border-white/10 rounded px-2 py-1 text-xs text-white"
+                            >
+                              <option value="">Selecione...</option>
+                              {CATALOGO_MAQUINAS.map((m) => (
+                                <option key={m.maquinaId || m.id} value={m.maquinaId || m.id}>
+                                  {m.nomeExibicao}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-zinc-400">
+                  {pdfItensEncontrados.length > 0 &&
+                  pdfItensEncontrados.some((i) => !pdfItensMaquina[i.tempId])
+                    ? 'Faltam maquinas em alguns itens.'
+                    : 'Maquinas definidas.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={criarOrdensPorMaquina}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg disabled:opacity-40"
+                  disabled={
+                    !pdfItensEncontrados.length ||
+                    pdfItensEncontrados.some((i) => !pdfItensMaquina[i.tempId])
+                  }
+                >
+                  Criar ordens
                 </button>
-              ))}
+              </div>
             </div>
 
             <div className="p-4 border-t border-white/10 bg-white/5 text-[12px] text-zinc-400">
-              Selecione primeiro a máquina para abrir o formulário de romaneio.
+              Defina a maquina de cada item e crie as ordens.
             </div>
           </div>
         </div>
