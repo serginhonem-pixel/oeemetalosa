@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ComposedChart,
   Bar,
@@ -180,8 +180,8 @@ const pct = (n) => `${Number(n || 0).toFixed(1)}%`;
 const getPaceStatus = (pace) => {
   const p = Number(pace || 0);
   if (p >= 100) return { label: 'OK', tone: 'good', icon: CheckCircle2 };
-  if (p >= 95) return { label: 'Atenção', tone: 'warn', icon: AlertTriangle };
-  return { label: 'Crítico', tone: 'bad', icon: XCircle };
+  if (p >= 95) return { label: 'AtenÃ§Ã£o', tone: 'warn', icon: AlertTriangle };
+  return { label: 'CrÃ­tico', tone: 'bad', icon: XCircle };
 };
 
 const KpiCard = ({
@@ -263,10 +263,10 @@ const MiniPanel = ({ title, children }) => (
 );
 
 const GlobalScreen = () => {
-  // ===== ROOT REF (pra ajustar o layout pai no modo apresentação) =====
+  // ===== ROOT REF (pra ajustar o layout pai no modo apresentaÃ§Ã£o) =====
   const pageRootRef = useRef(null);
 
-  // ===== MÊS ATIVO =====
+  // ===== MÃŠS ATIVO =====
   const [mesRef, setMesRef] = useState(() => toYYYYMM(new Date()));
   const prevMesRef = useMemo(() => shiftMonth(mesRef, -1), [mesRef]);
   const opcoesMes = useMemo(() => {
@@ -291,7 +291,7 @@ const GlobalScreen = () => {
   const [statusMsg, setStatusMsg] = useState('');
   const [showConfig, setShowConfig] = useState(false);
 
-  // MODO APRESENTAÇÃO
+  // MODO APRESENTAÃ‡ÃƒO
   const [presentationMode, setPresentationMode] = useState(false);
 
   // Filtros e Forms
@@ -304,11 +304,11 @@ const GlobalScreen = () => {
   const [novoValor2, setNovoValor2] = useState('');
   const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
 
-  // Nova máquina inputs
+  // Nova mÃ¡quina inputs
   const [inputNomeMaquina, setInputNomeMaquina] = useState('');
   const [inputMetaMaquina, setInputMetaMaquina] = useState(100);
   const [inputMetaMaquina2, setInputMetaMaquina2] = useState('');
-  const [inputUnidadeMaquina, setInputUnidadeMaquina] = useState('pç');
+  const [inputUnidadeMaquina, setInputUnidadeMaquina] = useState('pÃ§');
   const [inputUnidadeMaquina2, setInputUnidadeMaquina2] = useState('');
 
   const [unitMode, setUnitMode] = useState('primaria');
@@ -323,14 +323,14 @@ const GlobalScreen = () => {
   };
 
   // ============================================================
-  //  MODO APRESENTAÇÃO: esconder sidebar E recuperar espaço
+  //  MODO APRESENTAÃ‡ÃƒO: esconder sidebar E recuperar espaÃ§o
   //  (zera margin/padding-left e max-width nos wrappers do layout)
   // ============================================================
   useEffect(() => {
     const root = pageRootRef.current;
     if (!root) return;
 
-    // 1) esconder sidebar (seletores “prováveis”)
+    // 1) esconder sidebar (seletores â€œprovÃ¡veisâ€)
     const sidebar =
       document.querySelector('[data-app-sidebar]') ||
       document.querySelector('#app-sidebar') ||
@@ -364,7 +364,7 @@ const GlobalScreen = () => {
     if (presentationMode) {
       if (sidebar) sidebar.style.display = 'none';
 
-      // remove qualquer “reserva” pro menu lateral
+      // remove qualquer â€œreservaâ€ pro menu lateral
       chain.forEach((e) => {
         e.style.marginLeft = '0px';
         e.style.paddingLeft = '0px';
@@ -372,7 +372,7 @@ const GlobalScreen = () => {
         e.style.maxWidth = 'none';
       });
 
-      // evita scroll duplo do layout (você já tem scroll no container do GlobalScreen)
+      // evita scroll duplo do layout (vocÃª jÃ¡ tem scroll no container do GlobalScreen)
       document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
     } else {
@@ -451,7 +451,7 @@ const GlobalScreen = () => {
     localStorage.setItem('local_lancamentos', JSON.stringify(merged));
   }, [lancamentos, mesRef]);
 
-  // ====== Firestore subscriptions (Apenas Produção) ======
+  // ====== Firestore subscriptions (Apenas ProduÃ§Ã£o) ======
   useEffect(() => {
     if (IS_LOCALHOST) return;
 
@@ -616,7 +616,7 @@ const GlobalScreen = () => {
     if (!hasUnidade2 && unitMode !== 'primaria') setUnitMode('primaria');
   }, [hasUnidade2, unitMode]);
 
-  // ====== Agregações por máquina (para ranking) ======
+  // ====== AgregaÃ§Ãµes por mÃ¡quina (para ranking) ======
   const perMachineAgg = useMemo(() => {
     if (!maquinas.length) return [];
 
@@ -681,7 +681,7 @@ const GlobalScreen = () => {
     return out;
   }, [maquinas, lancamentos, config.diasUteis]);
 
-  // ====== Cálculos do gráfico ======
+  // ====== CÃ¡lculos do grÃ¡fico ======
   const dadosGrafico = useMemo(() => {
     const diasUteisVal = Number(config.diasUteis) || 22;
 
@@ -792,6 +792,7 @@ const GlobalScreen = () => {
         valorPlotado: performance,
         metaPlotada: 100,
         prevPlotada: prevPerformance,
+        prevRealOriginal: prevValorDia,
         prevDiaLabel,
         tipo: 'diario',
         performance,
@@ -808,6 +809,7 @@ const GlobalScreen = () => {
       valorPlotado: performanceProjetada,
       metaPlotada: 100,
       prevPlotada: null,
+      prevRealOriginal: null,
       tipo: 'projetado',
       performance: performanceProjetada,
       unidade: unidadeAtiva,
@@ -840,19 +842,19 @@ const GlobalScreen = () => {
     };
   }, [lancamentos, prevLancamentos, config, maquinas, filtroMaquina, effectiveUnitMode]);
 
-  // (Tendência removida a pedido) — usamos apenas os dados do mês
+  // (TendÃªncia removida a pedido) â€” usamos apenas os dados do mÃªs
   const dadosChart = useMemo(() => dadosGrafico.dados || [], [dadosGrafico.dados]);
 
   const getBarFill = (entry) => {
     if (!entry) return '#3b82f6';
-    if (entry.tipo === 'projetado') return '#fb923c'; // projeção
+    if (entry.tipo === 'projetado') return '#fb923c'; // projeÃ§Ã£o
     const perf = Number(entry.performance || 0);
     if (perf >= 100) return '#34d399'; // bateu meta
     if (perf >= 95) return '#fbbf24';  // perto
     return '#f87171';                 // abaixo
   };
 
-  // ===== Rótulos (valor + %) =====
+  // ===== RÃ³tulos (valor + %) =====
   const renderBarLabel = (props) => {
     const { x, y, width, height, index } = props;
     const item = dadosChart?.[index];
@@ -922,12 +924,12 @@ const GlobalScreen = () => {
     const delta = projPct - 100;
 
     if (!dadosGrafico.diasTrabalhados) {
-      return `Sem lançamentos no mês. Comece a registrar para gerar projeção e ritmo.`;
+      return `Sem lanÃ§amentos no mÃªs. Comece a registrar para gerar projeÃ§Ã£o e ritmo.`;
     }
 
     return `No ritmo atual fechamos em ${projPct.toFixed(0)}% (${delta >= 0 ? '+' : ''}${delta.toFixed(
       0
-    )} p.p.) — ${delta >= 0 ? 'tendência de bater a meta.' : `faltando ${Math.abs(delta).toFixed(0)} p.p.`}`;
+    )} p.p.) â€” ${delta >= 0 ? 'tendÃªncia de bater a meta.' : `faltando ${Math.abs(delta).toFixed(0)} p.p.`}`;
   }, [dadosGrafico]);
 
   const insights = useMemo(() => {
@@ -953,7 +955,7 @@ const GlobalScreen = () => {
     return { best, worst, streakBelow };
   }, [dadosGrafico.dados]);
 
-  // ===== Rank Top/Bottom máquinas =====
+  // ===== Rank Top/Bottom mÃ¡quinas =====
   const ranking = useMemo(() => {
     const arr = [...perMachineAgg];
     arr.sort((a, b) => (b.pace || 0) - (a.pace || 0));
@@ -1035,7 +1037,7 @@ const GlobalScreen = () => {
 
   const handleUploadBackupGlobal = (e) => {
     if (!IS_LOCALHOST) {
-      alert('Carregar backup JSON é permitido apenas no localhost (modo offline).');
+      alert('Carregar backup JSON Ã© permitido apenas no localhost (modo offline).');
       e.target.value = null;
       return;
     }
@@ -1076,7 +1078,7 @@ const GlobalScreen = () => {
         toast('Backup carregado! (modo offline)', 2500);
       } catch (err) {
         console.error('Erro ao carregar backup JSON (GlobalScreen):', err);
-        alert('Arquivo inválido. Não consegui ler esse JSON.');
+        alert('Arquivo invÃ¡lido. NÃ£o consegui ler esse JSON.');
       } finally {
         e.target.value = null;
       }
@@ -1090,7 +1092,7 @@ const GlobalScreen = () => {
 
     if (IS_LOCALHOST) {
       setConfig((prev) => ({ ...prev, diasUteis: d }));
-      toast('Dias úteis salvos (Local) ✅');
+      toast('Dias Ãºteis salvos (Local) âœ…');
       return;
     }
 
@@ -1101,10 +1103,10 @@ const GlobalScreen = () => {
         { diasUteis: d, updatedAt: serverTimestamp() },
         { merge: true }
       );
-      toast('Dias úteis salvos ✅');
+      toast('Dias Ãºteis salvos âœ…');
     } catch (error) {
       console.error('Erro dias uteis', error);
-      toast('Erro ao salvar dias úteis ❌');
+      toast('Erro ao salvar dias Ãºteis âŒ');
     } finally {
       setBusy(false);
     }
@@ -1115,14 +1117,14 @@ const GlobalScreen = () => {
     if (!novoDiaISO || !novoValor) return;
 
     if (maquinas.length === 0) {
-      toast('Cadastre uma máquina antes de lançar.', 3000);
+      toast('Cadastre uma mÃ¡quina antes de lanÃ§ar.', 3000);
       return;
     }
 
     const min = firstDayISO(mesRef);
     const max = lastDayISO(mesRef);
     if (novoDiaISO < min || novoDiaISO > max) {
-      toast(`Data fora do mês selecionado (${monthLabel(mesRef)}).`, 4000);
+      toast(`Data fora do mÃªs selecionado (${monthLabel(mesRef)}).`, 4000);
       return;
     }
 
@@ -1147,7 +1149,7 @@ const GlobalScreen = () => {
       ]);
       setNovoValor('');
       setNovoValor2('');
-      toast('Salvo localmente ✅');
+      toast('Salvo localmente âœ…');
       return;
     }
 
@@ -1164,10 +1166,10 @@ const GlobalScreen = () => {
       });
       setNovoValor('');
       setNovoValor2('');
-      toast('Lançamento salvo ✅');
+      toast('LanÃ§amento salvo âœ…');
     } catch (error) {
       console.error(error);
-      toast('Erro ao salvar no Firebase ❌');
+      toast('Erro ao salvar no Firebase âŒ');
     } finally {
       setBusy(false);
     }
@@ -1183,10 +1185,10 @@ const GlobalScreen = () => {
     try {
       setBusy(true);
       await deleteDoc(doc(db, 'global_lancamentos', id));
-      toast('Lançamento removido ✅');
+      toast('LanÃ§amento removido âœ…');
     } catch (error) {
       console.error(error);
-      toast('Erro ao deletar ❌');
+      toast('Erro ao deletar âŒ');
     } finally {
       setBusy(false);
     }
@@ -1196,7 +1198,7 @@ const GlobalScreen = () => {
     const nome = String(inputNomeMaquina || '').trim();
     if (!nome) return;
     if (maquinas.some((m) => m.nome === nome)) {
-      toast('Máquina já existe!');
+      toast('MÃ¡quina jÃ¡ existe!');
       return;
     }
 
@@ -1216,8 +1218,8 @@ const GlobalScreen = () => {
       setInputMetaMaquina(100);
       setInputMetaMaquina2('');
       setInputUnidadeMaquina2('');
-      setInputUnidadeMaquina('pç');
-      toast('Máquina add (Local) ✅');
+      setInputUnidadeMaquina('pÃ§');
+      toast('MÃ¡quina add (Local) âœ…');
       return;
     }
 
@@ -1228,11 +1230,11 @@ const GlobalScreen = () => {
       setInputMetaMaquina(100);
       setInputMetaMaquina2('');
       setInputUnidadeMaquina2('');
-      setInputUnidadeMaquina('pç');
-      toast('Máquina adicionada ✅');
+      setInputUnidadeMaquina('pÃ§');
+      toast('MÃ¡quina adicionada âœ…');
     } catch (error) {
       console.error(error);
-      toast('Erro ao adicionar máquina ❌');
+      toast('Erro ao adicionar mÃ¡quina âŒ');
     } finally {
       setBusy(false);
     }
@@ -1244,17 +1246,17 @@ const GlobalScreen = () => {
 
     if (IS_LOCALHOST) {
       setMaquinas((prev) => prev.filter((m) => m.nome !== nomeParaRemover));
-      toast('Máquina removida (Local)');
+      toast('MÃ¡quina removida (Local)');
       return;
     }
 
     try {
       setBusy(true);
       await deleteDoc(doc(db, 'global_maquinas', maq.id));
-      toast('Máquina removida ✅');
+      toast('MÃ¡quina removida âœ…');
     } catch (error) {
       console.error(error);
-      toast('Erro ao remover máquina ❌');
+      toast('Erro ao remover mÃ¡quina âŒ');
     } finally {
       setBusy(false);
     }
@@ -1278,7 +1280,7 @@ const GlobalScreen = () => {
       await updateDoc(doc(db, 'global_maquinas', maq.id), { meta: valor });
     } catch (error) {
       console.error('Erro meta', error);
-      toast('Erro ao atualizar meta ❌');
+      toast('Erro ao atualizar meta âŒ');
     }
   };
 
@@ -1302,7 +1304,7 @@ const GlobalScreen = () => {
       await updateDoc(doc(db, 'global_maquinas', maq.id), { meta2: valor });
     } catch (error) {
       console.error('Erro meta2', error);
-      toast('Erro ao atualizar meta2 ❌');
+      toast('Erro ao atualizar meta2 âŒ');
     }
   };
 
@@ -1327,7 +1329,7 @@ const GlobalScreen = () => {
       await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade: novaUnidade });
     } catch (error) {
       console.error('Erro unidade', error);
-      toast('Erro ao atualizar unidade ❌');
+      toast('Erro ao atualizar unidade âŒ');
     }
   };
 
@@ -1352,14 +1354,14 @@ const GlobalScreen = () => {
       await updateDoc(doc(db, 'global_maquinas', maq.id), { unidade2: novaUnidade });
     } catch (error) {
       console.error('Erro unidade2', error);
-      toast('Erro ao atualizar unidade2 ❌');
+      toast('Erro ao atualizar unidade2 âŒ');
     }
   };
 
   // ===== EXPORT (captura) =====
   const captureChartPNG = async () => {
     const el = chartCaptureRef.current;
-    if (!el) throw new Error('chartCaptureRef está null (não achou o container do gráfico).');
+    if (!el) throw new Error('chartCaptureRef estÃ¡ null (nÃ£o achou o container do grÃ¡fico).');
 
     const canvas = await html2canvas(el, {
       scale: 2,
@@ -1372,7 +1374,7 @@ const GlobalScreen = () => {
   };
 
   const exportPDFGraficos = async () => {
-    if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+    if (maquinas.length === 0) return toast('Sem mÃ¡quinas para exportar.');
     if (exportando) return;
 
     setExportando(true);
@@ -1408,18 +1410,18 @@ const GlobalScreen = () => {
 
         pdf.setTextColor(255, 255, 255);
         pdf.setFontSize(18);
-        pdf.text(`Gráfico de Performance: ${m.nome}`, margin, 36);
+        pdf.text(`GrÃ¡fico de Performance: ${m.nome}`, margin, 36);
 
         pdf.setTextColor(156, 163, 175);
         pdf.setFontSize(10);
-        pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 50);
+        pdf.text(`MÃªs: ${monthLabel(mesRef)}`, margin, 50);
       }
 
       pdf.save(`Graficos_${mesRef}.pdf`);
-      toast('PDF baixado ✅');
+      toast('PDF baixado âœ…');
     } catch (error) {
       console.error('Erro PDF', error);
-      toast('Erro ao gerar PDF ❌');
+      toast('Erro ao gerar PDF âŒ');
     } finally {
       setFiltroMaquina(filtroOriginal);
       setExportando(false);
@@ -1428,7 +1430,7 @@ const GlobalScreen = () => {
   };
 
   const exportPPTX = async () => {
-  if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+  if (maquinas.length === 0) return toast('Sem mÃ¡quinas para exportar.');
   if (exportando) return;
 
   setExportando(true);
@@ -1438,7 +1440,7 @@ const GlobalScreen = () => {
   const formatPct0 = (n) => `${Number(n || 0).toFixed(0)}%`;
   const unitOrBlank = (k) => (k.unidadeMix ? '' : ` ${k.unidade}`);
 
-  // KPI box mais compatível (TEXT BOX com fill/line)
+  // KPI box mais compatÃ­vel (TEXT BOX com fill/line)
   const addKpiBox = (slide, x, y, title, value) => {
     slide.addText(
       [
@@ -1483,7 +1485,7 @@ const GlobalScreen = () => {
 const kAll = calcKPIsFor('TODAS', maquinas, lancamentos, config?.diasUteis);
 
     const s0 = pptx.addSlide('MASTER_DARK');
-    s0.addText(`Resumo Global – ${monthLabel(mesRef)}`, {
+    s0.addText(`Resumo Global â€“ ${monthLabel(mesRef)}`, {
       x: 0.3,
       y: 0.25,
       w: 12.9,
@@ -1495,13 +1497,13 @@ const kAll = calcKPIsFor('TODAS', maquinas, lancamentos, config?.diasUteis);
 
     // KPIs linha 1
     addKpiBox(s0, 0.3, 0.85, 'Pace', formatPct0(kAll.pace));
-    addKpiBox(s0, 3.45, 0.85, 'Média/dia', `${formatCompact(kAll.mediaDia)}${unitOrBlank(kAll)}`);
+    addKpiBox(s0, 3.45, 0.85, 'MÃ©dia/dia', `${formatCompact(kAll.mediaDia)}${unitOrBlank(kAll)}`);
     addKpiBox(s0, 6.60, 0.85, 'Meta/dia', `${formatCompact(kAll.metaDia)}${unitOrBlank(kAll)}`);
-    addKpiBox(s0, 9.75, 0.85, 'Projeção', `${formatCompact(kAll.projetado)}${unitOrBlank(kAll)}`);
+    addKpiBox(s0, 9.75, 0.85, 'ProjeÃ§Ã£o', `${formatCompact(kAll.projetado)}${unitOrBlank(kAll)}`);
 
     // KPIs linha 2
     addKpiBox(s0, 0.3, 1.82, 'Realizado', `${formatCompact(kAll.total)}${unitOrBlank(kAll)}`);
-    addKpiBox(s0, 3.45, 1.82, 'Meta mês', `${formatCompact(kAll.metaMes)}${unitOrBlank(kAll)}`);
+    addKpiBox(s0, 3.45, 1.82, 'Meta mÃªs', `${formatCompact(kAll.metaMes)}${unitOrBlank(kAll)}`);
     addKpiBox(s0, 6.60, 1.82, 'Ating.', formatPct0(kAll.ating));
     addKpiBox(s0, 9.75, 1.82, 'Nec/dia', `${formatCompact(kAll.necessarioDia)}${unitOrBlank(kAll)}`);
 
@@ -1517,11 +1519,11 @@ const kAll = calcKPIsFor('TODAS', maquinas, lancamentos, config?.diasUteis);
       fontFace: 'Calibri',
     });
 
-    // Gráfico
+    // GrÃ¡fico
     s0.addImage({ data: imgResumo, x: 0.3, y: 3.05, w: 12.95, h: 4.15 });
 
     // =========================
-    // SLIDES: POR MÁQUINA
+    // SLIDES: POR MÃQUINA
     // =========================
     for (const m of maquinas) {
       setFiltroMaquina(m.nome);
@@ -1532,7 +1534,7 @@ const kAll = calcKPIsFor('TODAS', maquinas, lancamentos, config?.diasUteis);
 const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
 
       const s = pptx.addSlide('MASTER_DARK');
-      s.addText(`Performance – ${m.nome}`, {
+      s.addText(`Performance â€“ ${m.nome}`, {
         x: 0.3,
         y: 0.25,
         w: 12.9,
@@ -1543,12 +1545,12 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
       });
 
       addKpiBox(s, 0.3, 0.85, 'Pace', formatPct0(k.pace));
-      addKpiBox(s, 3.45, 0.85, 'Média/dia', `${formatCompact(k.mediaDia)}${unitOrBlank(k)}`);
+      addKpiBox(s, 3.45, 0.85, 'MÃ©dia/dia', `${formatCompact(k.mediaDia)}${unitOrBlank(k)}`);
       addKpiBox(s, 6.60, 0.85, 'Meta/dia', `${formatCompact(k.metaDia)}${unitOrBlank(k)}`);
-      addKpiBox(s, 9.75, 0.85, 'Projeção', `${formatCompact(k.projetado)}${unitOrBlank(k)}`);
+      addKpiBox(s, 9.75, 0.85, 'ProjeÃ§Ã£o', `${formatCompact(k.projetado)}${unitOrBlank(k)}`);
 
       addKpiBox(s, 0.3, 1.82, 'Realizado', `${formatCompact(k.total)}${unitOrBlank(k)}`);
-      addKpiBox(s, 3.45, 1.82, 'Meta mês', `${formatCompact(k.metaMes)}${unitOrBlank(k)}`);
+      addKpiBox(s, 3.45, 1.82, 'Meta mÃªs', `${formatCompact(k.metaMes)}${unitOrBlank(k)}`);
       addKpiBox(s, 6.60, 1.82, 'Ating.', formatPct0(k.ating));
       addKpiBox(s, 9.75, 1.82, 'Nec/dia', `${formatCompact(k.necessarioDia)}${unitOrBlank(k)}`);
 
@@ -1558,10 +1560,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
     setFiltroMaquina(filtroOriginal);
     await pptx.writeFile({ fileName: `Relatorio_Global_${mesRef}.pptx` });
 
-    toast('PPTX baixado ✅');
+    toast('PPTX baixado âœ…');
   } catch (e) {
     console.error('Erro PPTX:', e);
-    toast(`Erro ao gerar PPTX ❌ ${(e && e.message) ? e.message : ''}`, 5000);
+    toast(`Erro ao gerar PPTX âŒ ${(e && e.message) ? e.message : ''}`, 5000);
   } finally {
     setExportando(false);
     setBusy(false);
@@ -1571,7 +1573,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
 
 
 
-  // ===== PAGINAÇÃO / HISTÓRICO =====
+  // ===== PAGINAÃ‡ÃƒO / HISTÃ“RICO =====
   const lancamentosVisiveis =
     filtroMaquina === 'TODAS'
       ? lancamentos
@@ -1650,7 +1652,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
 
     return [
       {
-        title: 'Pace (aderência)',
+        title: 'Pace (aderÃªncia)',
         value: pct(pace),
         subtitle: `Status: ${ps.label}`,
         tone: tonePace,
@@ -1659,7 +1661,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
         icon: ps.icon,
       },
       {
-        title: 'Projeção',
+        title: 'ProjeÃ§Ã£o',
         value: `${formatCompact(proj)}${showUnit ? ` ${unidade}` : ''}`,
         subtitle: `Fechamento estimado`,
         tone: toneProj,
@@ -1668,25 +1670,25 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
       {
         title: 'Atingimento',
         value: pct(ating),
-        subtitle: `Real / Meta do mês`,
+        subtitle: `Real / Meta do mÃªs`,
         tone: toneAting,
       },
       {
-        title: 'Necessário por dia',
+        title: 'NecessÃ¡rio por dia',
         value: `${formatCompact(necDia)}${showUnit ? ` ${unidade}/dia` : ''}`,
-        subtitle: diasRest > 0 ? `Restam ${diasRest} dias úteis` : `Sem dias restantes`,
+        subtitle: diasRest > 0 ? `Restam ${diasRest} dias Ãºteis` : `Sem dias restantes`,
         tone: needTone,
       },
       {
         title: 'Realizado',
         value: `${formatCompact(real)}${showUnit ? ` ${unidade}` : ''}`,
-        subtitle: `Dias lançados: ${dadosGrafico.diasTrabalhados || 0}`,
+        subtitle: `Dias lanÃ§ados: ${dadosGrafico.diasTrabalhados || 0}`,
         tone: 'neutral',
       },
       {
         title: 'Meta mensal',
         value: `${formatCompact(meta)}${showUnit ? ` ${unidade}` : ''}`,
-        subtitle: `Dias úteis: ${dadosGrafico.diasUteis || 0}`,
+        subtitle: `Dias Ãºteis: ${dadosGrafico.diasUteis || 0}`,
         tone: 'info',
       },
     ];
@@ -1729,7 +1731,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                 Acompanhamento Global
               </h1>
               <p className="text-zinc-500 text-[11px] font-medium mt-1">
-                {presentationMode ? 'Modo apresentação (executivo)' : 'Modo operação (lançamentos + histórico)'}
+                {presentationMode ? 'Modo apresentaÃ§Ã£o (executivo)' : 'Modo operaÃ§Ã£o (lanÃ§amentos + histÃ³rico)'}
               </p>
             </div>
           </div>
@@ -1745,10 +1747,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                   : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:bg-zinc-800'
               }`}
-              title="Alternar modo apresentação"
+              title="Alternar modo apresentaÃ§Ã£o"
             >
                 {presentationMode ? <Projector size={14} /> : <LayoutDashboard size={14} />}
-                <span className="hidden sm:inline">{presentationMode ? 'Apresentação' : 'Operação'}</span>
+                <span className="hidden sm:inline">{presentationMode ? 'ApresentaÃ§Ã£o' : 'OperaÃ§Ã£o'}</span>
               </button>
 
               <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
@@ -1773,7 +1775,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                 className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase max-w-[220px] truncate"
               >
                 <option value="TODAS" className="bg-zinc-900">
-                  Todas as Máquinas
+                  Todas as MÃ¡quinas
                 </option>
                 {maquinas.map((m) => (
                   <option key={m.id || m.nome} value={m.nome} className="bg-zinc-900">
@@ -1816,20 +1818,20 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   onClick={exportPDFGraficos}
                   disabled={busy || exportando || maquinas.length === 0}
                   className="flex items-center gap-2 px-3 h-9 rounded-md text-xs font-bold uppercase transition-all bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
-                  title="Baixar Gráficos em PDF"
+                  title="Baixar GrÃ¡ficos em PDF"
                 >
                   <FileText size={14} />
-                  <span className="hidden sm:inline">Gráficos PDF</span>
+                  <span className="hidden sm:inline">GrÃ¡ficos PDF</span>
                 </button>
 
                 <button
                   onClick={exportPPTX}
                   disabled={busy || exportando || maquinas.length === 0}
                   className="flex items-center gap-2 px-3 h-9 rounded-md text-xs font-bold uppercase transition-all bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50"
-                  title="Baixar Relatório Completo em PPTX"
+                  title="Baixar RelatÃ³rio Completo em PPTX"
                 >
                   <Projector size={14} />
-                  <span className="hidden sm:inline">Relatório PPTX</span>
+                  <span className="hidden sm:inline">RelatÃ³rio PPTX</span>
                 </button>
 
                 <button
@@ -1853,7 +1855,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   onClick={() => inputBackupRef.current?.click()}
                   disabled={!IS_LOCALHOST || busy}
                   className="flex items-center gap-2 px-3 h-9 rounded-md text-xs font-bold bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
-                  title={IS_LOCALHOST ? 'Carregar Backup JSON (somente localhost)' : 'Disponível apenas no localhost'}
+                  title={IS_LOCALHOST ? 'Carregar Backup JSON (somente localhost)' : 'DisponÃ­vel apenas no localhost'}
                 >
                   <FileText size={14} />
                   <span className="hidden sm:inline">Carregar</span>
@@ -1866,7 +1868,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                       ? 'bg-blue-600/20 text-blue-400 border-blue-500/50'
                       : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-zinc-200'
                   }`}
-                  title="Configurações"
+                  title="ConfiguraÃ§Ãµes"
                 >
                   <Settings size={18} />
                 </button>
@@ -1876,7 +1878,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
         </div>
       </div>
 
-      {/* CONFIG (só operação) */}
+      {/* CONFIG (sÃ³ operaÃ§Ã£o) */}
       {!presentationMode && (
         <div
           className={`overflow-hidden transition-all duration-500 bg-[#0c0c0e] border-b border-zinc-800 ${
@@ -1887,22 +1889,22 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
             <div className="flex items-center gap-2 mb-6 border-b border-zinc-800 pb-2">
               <Settings className="text-blue-500" size={18} />
               <h2 className="text-sm font-bold text-zinc-300 uppercase tracking-wide">
-                Parâmetros do Processo
+                ParÃ¢metros do Processo
               </h2>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-3 bg-zinc-900/50 p-5 border border-zinc-800 rounded-xl">
                 <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4">
-                  Configuração de Período
+                  ConfiguraÃ§Ã£o de PerÃ­odo
                 </h3>
                 <div className="space-y-3">
                   <div className="flex justify-between text-xs text-zinc-400">
-                    <span>Mês Ativo</span>
+                    <span>MÃªs Ativo</span>
                     <span className="text-white font-bold uppercase">{monthLabel(mesRef)}</span>
                   </div>
                   <div className="flex gap-2 items-center">
-                    <span className="text-xs font-bold text-zinc-300 w-20">Dias Úteis:</span>
+                    <span className="text-xs font-bold text-zinc-300 w-20">Dias Ãšteis:</span>
                     <input
                       type="number"
                       value={config.diasUteis}
@@ -1925,10 +1927,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   <table className="w-full text-sm text-left">
                     <thead className="bg-black/40 text-zinc-500 uppercase text-[10px] font-bold tracking-wider sticky top-0 backdrop-blur-sm">
                       <tr>
-                        <th className="px-6 py-3">Máquina</th>
+                        <th className="px-6 py-3">MÃ¡quina</th>
                         <th className="px-6 py-3 text-center">Unidade</th>
                         <th className="px-6 py-3 text-center">Unidade 2</th>
-                        <th className="px-6 py-3 text-right">Meta Diária</th>
+                        <th className="px-6 py-3 text-right">Meta DiÃ¡ria</th>
                         <th className="px-6 py-3 text-right">Meta 2</th>
                         <th className="px-6 py-3 w-10"></th>
                       </tr>
@@ -1943,7 +1945,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                               onChange={(e) => handleUpdateUnidade(m.nome, e.target.value)}
                               className="bg-black border border-zinc-700 text-zinc-300 text-xs rounded py-1 px-2 focus:border-blue-500 outline-none"
                             >
-                              <option value="pç">Peças (pç)</option>
+                              <option value="pÃ§">PeÃ§as (pÃ§)</option>
                               <option value="kg">Quilos (kg)</option>
                               <option value="m">Metros (m)</option>
                               <option value="cx">Caixas (cx)</option>
@@ -1995,7 +1997,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                 <div className="p-3 bg-black/20 border-t border-zinc-800 flex flex-wrap gap-3 items-center mt-auto">
                   <input
                     type="text"
-                    placeholder="Nome da Nova Máquina"
+                    placeholder="Nome da Nova MÃ¡quina"
                     className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500 min-w-[150px]"
                     value={inputNomeMaquina}
                     onChange={(e) => setInputNomeMaquina(e.target.value)}
@@ -2005,7 +2007,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     value={inputUnidadeMaquina}
                     onChange={(e) => setInputUnidadeMaquina(e.target.value)}
                   >
-                    <option value="pç">Pç</option>
+                    <option value="pÃ§">PÃ§</option>
                     <option value="kg">Kg</option>
                     <option value="m">m</option>
                     <option value="cx">Cx</option>
@@ -2054,10 +2056,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
         className={`w-full mx-auto mt-5 grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12
           ${presentationMode ? 'px-3 md:px-5' : 'max-w-[1920px] px-4 md:px-6'}`}
       >
-        {/* COLUNA ESQUERDA: some TOTAL no modo apresentação */}
+        {/* COLUNA ESQUERDA: some TOTAL no modo apresentaÃ§Ã£o */}
         {leftColVisible && (
           <div className="lg:col-span-3 flex flex-col gap-6">
-            {/* ... (mantém igual ao que está acima, sem mudanças funcionais) */}
+            {/* ... (mantÃ©m igual ao que estÃ¡ acima, sem mudanÃ§as funcionais) */}
             <div className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl overflow-hidden">
               <div className="p-4 border-b border-zinc-800 bg-zinc-800/30 flex items-center gap-2">
                 <PlusCircle className="text-emerald-400" size={16} />
@@ -2069,7 +2071,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               <form onSubmit={handleAddLancamento} className="p-5 space-y-5">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
-                    Máquina
+                    MÃ¡quina
                   </label>
                   <select
                     className="w-full p-2.5 bg-black border border-zinc-700 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 outline-none text-white text-sm transition-all"
@@ -2077,7 +2079,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     onChange={(e) => setNovaMaquinaForm(e.target.value)}
                     disabled={maquinas.length === 0}
                   >
-                    {maquinas.length === 0 && <option value="">Cadastre máquinas primeiro</option>}
+                    {maquinas.length === 0 && <option value="">Cadastre mÃ¡quinas primeiro</option>}
                     {maquinas.map((m) => (
                       <option key={m.id || m.nome} value={m.nome}>
                         {m.nome}
@@ -2136,7 +2138,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   disabled={maquinas.length === 0 || !novoDiaISO || !novoValor}
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 uppercase text-xs rounded-lg transition-all flex justify-center gap-2 items-center disabled:opacity-50 shadow-lg shadow-blue-900/20"
                 >
-                  <Save size={14} /> Salvar Produção
+                  <Save size={14} /> Salvar ProduÃ§Ã£o
                 </button>
               </form>
             </div>
@@ -2144,7 +2146,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
             <div className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl flex flex-col flex-1 min-h-[400px] overflow-hidden">
               <div className="p-3 bg-zinc-800/30 border-b border-zinc-800 flex justify-between items-center">
                 <span className="font-bold text-zinc-400 text-[10px] uppercase tracking-wider flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-zinc-500"></div> Histórico
+                  <div className="w-2 h-2 rounded-full bg-zinc-500"></div> HistÃ³rico
                 </span>
                 <span className="text-[10px] font-mono bg-black border border-zinc-700 px-2 py-0.5 text-zinc-300 rounded-md">
                   {lancamentosVisiveis.length} regs
@@ -2188,7 +2190,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     {itensDaPagina.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-4 py-12 text-center">
-                          <span className="text-xs text-zinc-600">Sem lançamentos</span>
+                          <span className="text-xs text-zinc-600">Sem lanÃ§amentos</span>
                         </td>
                       </tr>
                     )}
@@ -2199,7 +2201,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               {lancamentosVisiveis.length > 0 && (
                 <div className="p-2 border-t border-zinc-800 bg-zinc-800/30 flex justify-between items-center text-xs">
                   <span className="text-zinc-500 ml-2">
-                    Página <span className="text-zinc-300 font-medium">{paginaAtual}</span> de{' '}
+                    PÃ¡gina <span className="text-zinc-300 font-medium">{paginaAtual}</span> de{' '}
                     <span className="text-zinc-300 font-medium">{totalPaginas}</span>
                   </span>
 
@@ -2244,7 +2246,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
 
 
 
-          {/* Gráfico */}
+          {/* GrÃ¡fico */}
           <div
             ref={chartCaptureRef}
             className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl flex-1 flex flex-col relative overflow-hidden"
@@ -2257,16 +2259,16 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                   <TrendingUp className="text-blue-500" size={18} />
                   <h3 className="text-base md:text-lg font-bold text-white tracking-tight">Performance</h3>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700 uppercase">
-                    {filtroMaquina === 'TODAS' ? 'Visão geral' : filtroMaquina}
+                    {filtroMaquina === 'TODAS' ? 'VisÃ£o geral' : filtroMaquina}
                   </span>
                 </div>
                 <div className="text-[11px] text-zinc-500">
-                  Mês: <span className="text-zinc-300 font-semibold">{monthLabel(mesRef)}</span>
+                  MÃªs: <span className="text-zinc-300 font-semibold">{monthLabel(mesRef)}</span>
                 </div>
               </div>
 
               <div className="text-right bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50">
-                <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Projeção de fechamento</p>
+                <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">ProjeÃ§Ã£o de fechamento</p>
                 <div className="flex items-baseline justify-end gap-2">
                   <span
                     className={`text-3xl font-black tracking-tighter ${
@@ -2313,7 +2315,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               {maquinas.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-zinc-600 gap-4">
                   <BarChart3 size={48} className="opacity-20" />
-                  <p className="text-sm font-medium">Cadastre máquinas e registre produção para visualizar os dados.</p>
+                  <p className="text-sm font-medium">Cadastre mÃ¡quinas e registre produÃ§Ã£o para visualizar os dados.</p>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
@@ -2344,7 +2346,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                           return (
                             <div className="bg-zinc-950 border border-zinc-700 p-3 shadow-2xl rounded-lg min-w-[220px]">
                               <div className="font-bold uppercase text-[10px] text-zinc-500 mb-2 border-b border-zinc-800 pb-1 tracking-wider">
-                                {isProj ? 'Previsão final' : `Dia ${d.name}`}
+                                {isProj ? 'PrevisÃ£o final' : `Dia ${d.name}`}
                               </div>
                               <div className="space-y-1">
                                 <div className="flex justify-between items-center text-xs">
@@ -2356,17 +2358,17 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                                   <span className="text-zinc-300 font-mono">{formatInt(d.metaOriginal)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                  <span className="text-zinc-400">Dia mês anterior</span>
+                                  <span className="text-zinc-400">Dia mÃªs anterior</span>
                                   <span className="text-zinc-300 font-mono">
                                     {d.prevDiaLabel || '-'}
                                   </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-zinc-400">
-                                    Média mês anterior ({monthLabel(prevMesRef)})
+                                    Resultado mes anterior ({monthLabel(prevMesRef)})
                                   </span>
                                   <span className="text-zinc-300 font-mono">
-                                    {formatInt(prevStats.mediaDia)}
+                                    {d.prevRealOriginal != null ? formatInt(d.prevRealOriginal) : '-'}
                                     {!dadosGrafico.unidadeMix && dadosGrafico.unidadeAtiva
                                       ? ` ${dadosGrafico.unidadeAtiva}`
                                       : ''}
@@ -2376,7 +2378,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                                   <span>Atingimento</span>
                                   <span>{Number(d.performance || 0).toFixed(1)}%</span>
                                 </div>
-                                {/* tendência removida */}
+                                {/* tendÃªncia removida */}
                               </div>
                             </div>
                           );
@@ -2454,7 +2456,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
           {/* Insights + Ranking */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-4">
-              <MiniPanel title="Insights do mês">
+              <MiniPanel title="Insights do mÃªs">
                 {!insights.best ? (
                   <div className="text-sm text-zinc-500">Sem dados ainda.</div>
                 ) : (
@@ -2462,13 +2464,13 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-zinc-400">Melhor dia</div>
                       <div className="text-xs font-extrabold text-emerald-400">
-                        {insights.best.name} • {insights.best.performance.toFixed(0)}%
+                        {insights.best.name} â€¢ {insights.best.performance.toFixed(0)}%
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-zinc-400">Pior dia</div>
                       <div className="text-xs font-extrabold text-red-400">
-                        {insights.worst.name} • {insights.worst.performance.toFixed(0)}%
+                        {insights.worst.name} â€¢ {insights.worst.performance.toFixed(0)}%
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2491,10 +2493,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
             </div>
 
             <div className="lg:col-span-8">
-              <MiniPanel title="Ranking por Pace (mês)">
+              <MiniPanel title="Ranking por Pace (mÃªs)">
                 {filtroMaquina !== 'TODAS' && (
                   <div className="text-[11px] text-zinc-500 mb-3">
-                    Ranking permanece fixo mesmo no modo máquina (base: <b className="text-zinc-300">pace</b> do mês selecionado).
+                    Ranking permanece fixo mesmo no modo mÃ¡quina (base: <b className="text-zinc-300">pace</b> do mÃªs selecionado).
                   </div>
                 )}
 
@@ -2551,3 +2553,4 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
 };
 
 export default GlobalScreen;
+
