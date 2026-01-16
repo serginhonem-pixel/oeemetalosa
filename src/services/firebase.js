@@ -31,10 +31,29 @@ const isLocalhost =
 
 const firebaseConfig = isLocalhost ? firebaseConfigDev : firebaseConfigProd;
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const defaultApp =
+  getApps().find((item) => item.name === '[DEFAULT]') || null;
+const app = defaultApp || initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
 export const IS_PRODUCTION = !isLocalhost;
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+const firebaseConfigSlitter = {
+  apiKey: 'AIzaSyBO4P9ycGOkaJf6HqPf0kQJetbQfHASHXg',
+  authDomain: 'slitter-app.firebaseapp.com',
+  projectId: 'slitter-app',
+  storageBucket: 'slitter-app.firebasestorage.app',
+  messagingSenderId: '997319292404',
+  appId: '1:997319292404:web:a98408731c254314ccb5a1',
+  measurementId: 'G-33PGY02BYY',
+};
+
+const slitterApp =
+  getApps().find((item) => item.name === 'slitter-app') ||
+  initializeApp(firebaseConfigSlitter, 'slitter-app');
+
+// Slitter: somente leitura (saldo de perfis).
+export const dbSlitterReadOnly = getFirestore(slitterApp);
     

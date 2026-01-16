@@ -5,13 +5,14 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   setDoc
 } from 'firebase/firestore';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import * as XLSX from 'xlsx';
 
-import { db, auth, storage } from "./services/firebase";
+import { db, dbSlitterReadOnly, auth, storage } from "./services/firebase";
 import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
 import {
@@ -66,7 +67,7 @@ import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 import logoMetalosa from './data/logo metalosa.bmp';
-import estoqueEstudoXlsx from './data/Estudo Estoque Telha.xlsx';
+import estoqueConsolidado from './data/perfil-consolidado.json';
 import capacidadesMaquinas from './data/capacidades-maquinas.json';
 
 
@@ -1084,6 +1085,8 @@ export default function App() {
   const [historicoParadas, setHistoricoParadas] = useState([]);
   const [dicionarioLocal, setDicionarioLocal] = useState(DICIONARIO_PARADAS || []);
   const [eventosParada, setEventosParada] = useState([]);
+  const [productionLogsExt, setProductionLogsExt] = useState([]);
+  const [shippingLogsExt, setShippingLogsExt] = useState([]);
 
   
   // Apontamento Prod
@@ -1163,6 +1166,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [comercialEstoqueBusca, setComercialEstoqueBusca] = useState('');
   const [comercialVisao, setComercialVisao] = useState('estoque');
   const [filtroEstoque, setFiltroEstoque] = useState('todos');
+  const [estoqueSugestaoCod, setEstoqueSugestaoCod] = useState(null);
   const [mostrarSolicitarProducao, setMostrarSolicitarProducao] = useState(false);
   const [mostrarTransferenciaEstoque, setMostrarTransferenciaEstoque] = useState(false);
   const [comercialItensAbertos, setComercialItensAbertos] = useState({});
@@ -1249,7 +1253,7 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
 
 // ... seus useStates estão aqui em cima ...
 
-  // --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
+// --- EFEITO PARA CARREGAR DADOS DO FIREBASE AO INICIAR ---
 
   const salvarCacheLocal = (override = {}) => {
   if (!IS_LOCALHOST) return;
@@ -1265,6 +1269,37 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
     console.error("Erro ao salvar cache local:", err);
   }
 };
+
+  useEffect(() => {
+    const unsubProd = onSnapshot(
+      collection(dbSlitterReadOnly, 'productionLogs'),
+      (snap) => {
+        const logs = snap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+        setProductionLogsExt(logs);
+      },
+      (err) => console.error('Erro ao ler productionLogs (slitter):', err)
+    );
+
+    const unsubShip = onSnapshot(
+      collection(dbSlitterReadOnly, 'shippingLogs'),
+      (snap) => {
+        const logs = snap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+        setShippingLogsExt(logs);
+      },
+      (err) => console.error('Erro ao ler shippingLogs (slitter):', err)
+    );
+
+    return () => {
+      unsubProd();
+      unsubShip();
+    };
+  }, []);
 
   
     const CustomTooltip = ({ active, payload, label }) => {
@@ -1476,84 +1511,19 @@ try {
 }, []);
 
   useEffect(() => {
-    const carregarEstoqueEstudo = async () => {
-      try {
-        const resp = await fetch(estoqueEstudoXlsx);
-        const data = await resp.arrayBuffer();
-        const wb = XLSX.read(data, { type: 'array' });
-
-        const sheetDados = wb.Sheets['Dados'];
-        const sheetConsolidacao =
-          wb.Sheets['Consolidação'] ||
-          wb.Sheets['Consolidacao'] ||
-          wb.Sheets['Consolidaçao'];
-
-        const normalizeHeader = (v) =>
-          String(v || '')
-            .trim()
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '');
-
-        const parseSheet = (sheet) => {
-          if (!sheet) return { header: [], rows: [] };
-          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
-          const header = rows[3] || [];
-          const dataRows = rows.slice(4).filter((row) =>
-            row.some((cell) => cell !== null && cell !== '')
-          );
-          return { header, rows: dataRows };
-        };
-
-        const dados = parseSheet(sheetDados);
-        const cons = parseSheet(sheetConsolidacao);
-
-        const idxProdutoDados = dados.header.findIndex(
-          (h) => normalizeHeader(h) === 'produto'
-        );
-        const idxDemanda = dados.header.findIndex(
-          (h) => normalizeHeader(h) === 'saida / demanda'
-        );
-
-        const idxProdutoCons = cons.header.findIndex(
-          (h) => normalizeHeader(h) === 'produto'
-        );
-        const idxEstoqueMax = cons.header.findIndex(
-          (h) => normalizeHeader(h) === 'estoque maximo'
-        );
-
-        const map = {};
-
-        if (idxProdutoDados >= 0) {
-          dados.rows.forEach((row) => {
-            const cod = row[idxProdutoDados];
-            if (!cod) return;
-            const key = String(cod).trim();
-            const demanda = idxDemanda >= 0 ? Number(row[idxDemanda] || 0) : 0;
-            if (!map[key]) map[key] = {};
-            if (demanda) map[key].demandaDiaria = demanda;
-          });
-        }
-
-        if (idxProdutoCons >= 0) {
-          cons.rows.forEach((row) => {
-            const cod = row[idxProdutoCons];
-            if (!cod) return;
-            const key = String(cod).trim();
-            const estoqueMax =
-              idxEstoqueMax >= 0 ? Number(row[idxEstoqueMax] || 0) : 0;
-            if (!map[key]) map[key] = {};
-            if (estoqueMax) map[key].estoqueMaximo = estoqueMax;
-          });
-        }
-
-        setEstoqueEstudo(map);
-      } catch (err) {
-        console.error('Erro ao ler estudo de estoque:', err);
-      }
-    };
-
-    carregarEstoqueEstudo();
+    const map = {};
+    (estoqueConsolidado || []).forEach((item) => {
+      const cod = String(item?.cod || '').trim();
+      if (!cod) return;
+      map[cod] = {
+        demandaDiaria: Number(item?.demandaDiaria || 0),
+        estoqueMaximo: Number(item?.estoqueMaximo || 0),
+        unidade: String(item?.unidade || 'kg').toLowerCase(),
+        maquina: item?.maquina || '',
+        grupo: item?.grupo || '',
+      };
+    });
+    setEstoqueEstudo(map);
   }, []);
 
 
@@ -2703,10 +2673,10 @@ const handleDownloadModeloParadas = () => {
     const idPedido = requisicao || `REQ-${Date.now()}`;
     const normalizeTexto = (v) => String(v || '').trim().toLowerCase();
     const estoquePorCod = new Map(
-      estoqueTelhas.map((item) => [String(item.cod), Number(item.saldoQtd || 0)])
+      estoqueComercialBase.map((item) => [String(item.cod), Number(item.saldoQtd || 0)])
     );
     const estoquePorDesc = new Map(
-      estoqueTelhas.map((item) => [normalizeTexto(item.desc), Number(item.saldoQtd || 0)])
+      estoqueComercialBase.map((item) => [normalizeTexto(item.desc), Number(item.saldoQtd || 0)])
     );
     const temEstoqueSuficiente = (itens) => {
       const qtdPorItem = new Map();
@@ -2993,7 +2963,7 @@ const handleDownloadModeloParadas = () => {
       return;
     }
 
-    const saldoItem = estoqueTelhas.find((p) => p.cod === formTransfCod);
+    const saldoItem = estoqueComercialBase.find((p) => p.cod === formTransfCod);
     const saldoDisponivel = Number(saldoItem?.saldoQtd || 0);
     const qtdDisponivel = Math.max(0, Math.min(saldoDisponivel, qtd));
     const qtdFaltante = Math.max(0, qtd - saldoDisponivel);
@@ -4111,6 +4081,13 @@ const parseNumberBR = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+  const getEstoqueGrupoLabel = (item) => {
+    const grupo = String(item?.grupo || "");
+    if (grupo === "GRUPO_TELHAS") return "Telhas";
+    if (grupo === "GRUPO_PERFIS") return "Perfis";
+    return "Outros";
+  };
+
   const estoqueTelhas = useMemo(() => {
     const telhas = (CATALOGO_PRODUTOS || []).filter(
       (p) => p.grupo === "GRUPO_TELHAS"
@@ -4141,6 +4118,80 @@ const parseNumberBR = (v) => {
       .filter((p) => (p.saldoQtd || 0) !== 0 || (p.saldoKg || 0) !== 0)
       .sort((a, b) => String(a.cod).localeCompare(String(b.cod)));
   }, [historicoProducaoReal]);
+
+  const estoquePerfis = useMemo(() => {
+    const prodMap = new Map();
+    const shipMap = new Map();
+    const nameMap = new Map();
+
+    productionLogsExt.forEach((item) => {
+      const code = String(item?.productCode || '').trim();
+      if (!code) return;
+      const qtd = Number(item?.pieces || 0);
+      prodMap.set(code, (prodMap.get(code) || 0) + (Number.isFinite(qtd) ? qtd : 0));
+      const nome = item?.productName || '';
+      if (nome) nameMap.set(code, nome);
+    });
+
+    shippingLogsExt.forEach((item) => {
+      const code = String(item?.productCode || '').trim();
+      if (!code) return;
+      const qtd = Number(item?.quantity || 0);
+      shipMap.set(code, (shipMap.get(code) || 0) + (Number.isFinite(qtd) ? qtd : 0));
+      const nome = item?.productName || '';
+      if (nome && !nameMap.has(code)) nameMap.set(code, nome);
+    });
+
+    const codigos = new Set([...prodMap.keys(), ...shipMap.keys()]);
+    const itens = [];
+    codigos.forEach((code) => {
+      const prod = prodMap.get(code) || 0;
+      const ship = shipMap.get(code) || 0;
+      const saldoQtd = prod - ship;
+      if (!saldoQtd) return;
+
+      const catalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === code);
+      const desc = catalogo?.desc || nameMap.get(code) || 'Item sem descricao';
+      const pesoUnit = Number(catalogo?.pesoUnit || 0);
+      const saldoKg = pesoUnit ? saldoQtd * pesoUnit : 0;
+
+      itens.push({
+        cod: code,
+        desc,
+        saldoQtd,
+        saldoKg,
+        pesoUnit,
+        grupo: 'GRUPO_PERFIS',
+        origem: 'SLITTER',
+      });
+    });
+
+    return itens.sort((a, b) => String(a.cod).localeCompare(String(b.cod)));
+  }, [productionLogsExt, shippingLogsExt, CATALOGO_PRODUTOS]);
+
+  const estoqueComercialBase = useMemo(
+    () => [...estoqueTelhas, ...estoquePerfis],
+    [estoqueTelhas, estoquePerfis]
+  );
+
+  const estoqueComercialHasTelhas = useMemo(
+    () => estoqueComercialBase.some((item) => item.grupo === 'GRUPO_TELHAS'),
+    [estoqueComercialBase]
+  );
+  const estoqueComercialHasPerfis = useMemo(
+    () => estoqueComercialBase.some((item) => item.grupo === 'GRUPO_PERFIS'),
+    [estoqueComercialBase]
+  );
+
+  useEffect(() => {
+    if (filtroEstoque === 'telhas' && !estoqueComercialHasTelhas) {
+      setFiltroEstoque('todos');
+      return;
+    }
+    if (filtroEstoque === 'perfis' && !estoqueComercialHasPerfis) {
+      setFiltroEstoque('todos');
+    }
+  }, [filtroEstoque, estoqueComercialHasTelhas, estoqueComercialHasPerfis]);
 
   const pedidosComercial = useMemo(
     () =>
@@ -4219,21 +4270,24 @@ const parseNumberBR = (v) => {
   );
   const estoqueTelhasFiltrado = useMemo(() => {
     const termo = comercialEstoqueBusca.trim().toLowerCase();
-    if (!termo) return estoqueTelhas;
-    return estoqueTelhas.filter((item) => {
+    if (!termo) return estoqueComercialBase;
+    return estoqueComercialBase.filter((item) => {
       const cod = String(item.cod || '').toLowerCase();
       const desc = String(item.desc || '').toLowerCase();
       return cod.includes(termo) || desc.includes(termo);
     });
-  }, [estoqueTelhas, comercialEstoqueBusca]);
+  }, [estoqueComercialBase, comercialEstoqueBusca]);
 
   const estoqueFiltradoComercial = useMemo(() => {
-    let lista = [...estoqueTelhas];
+    let lista = [...estoqueComercialBase];
     if (filtroEstoque === 'critico') {
       lista = lista.filter((item) => Number(item.saldoQtd || 0) <= 500);
     }
     if (filtroEstoque === 'telhas') {
       lista = lista.filter((item) => item.grupo === 'GRUPO_TELHAS');
+    }
+    if (filtroEstoque === 'perfis') {
+      lista = lista.filter((item) => item.grupo === 'GRUPO_PERFIS');
     }
     if (comercialVisao === 'estoque' && comercialBusca.trim()) {
       const termo = comercialBusca.trim().toLowerCase();
@@ -4244,27 +4298,93 @@ const parseNumberBR = (v) => {
       });
     }
     return lista;
-  }, [estoqueTelhas, filtroEstoque, comercialVisao, comercialBusca]);
+  }, [estoqueComercialBase, filtroEstoque, comercialVisao, comercialBusca]);
 
   const estoqueCriticoComercial = useMemo(
-    () => estoqueTelhas.filter((item) => Number(item.saldoQtd || 0) <= 500).slice(0, 4),
-    [estoqueTelhas]
+    () => estoqueComercialBase.filter((item) => Number(item.saldoQtd || 0) <= 500).slice(0, 4),
+    [estoqueComercialBase]
   );
   const saldoPedidoComercialSelecionado = useMemo(() => {
     const cod = String(formPedidoCod || '').trim();
     const desc = String(formPedidoDesc || '').trim().toLowerCase();
     if (!cod && !desc) return null;
     if (cod) {
-      const item = estoqueTelhas.find((p) => String(p.cod) === cod);
+      const item = estoqueComercialBase.find((p) => String(p.cod) === cod);
       return item ? Number(item.saldoQtd || 0) : 0;
     }
-    const item = estoqueTelhas.find((p) => String(p.desc || '').trim().toLowerCase() === desc);
+    const item = estoqueComercialBase.find((p) => String(p.desc || '').trim().toLowerCase() === desc);
     return item ? Number(item.saldoQtd || 0) : 0;
-  }, [estoqueTelhas, formPedidoCod, formPedidoDesc]);
+  }, [estoqueComercialBase, formPedidoCod, formPedidoDesc]);
 
-  const getStockStatusComercial = (item) => {
-    const saldo = Number(item.saldoQtd || 0);
-    if (saldo <= 500) {
+  const getStockStatusComercial = (item, estudo = {}) => {
+    const saldoKg = Number(item.saldoKg || 0);
+    const saldoQtd = Number(item.saldoQtd || 0);
+    const unidade = String(estudo.unidade || 'kg').toLowerCase();
+    const demandaBase = Number(estudo.demandaDiaria || 0);
+    const estoqueMaxBase = Number(estudo.estoqueMaximo || 0);
+    const pesoUnit = Number(item.pesoUnit || 0);
+    const usaConversaoKg = unidade === 'pc' && pesoUnit;
+    const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
+
+    if (estoqueMaxKg > 0) {
+      const ratio = saldoKg / estoqueMaxKg;
+      if (ratio <= 0.25) {
+        return {
+          label: 'Critico',
+          text: 'text-red-400',
+          bg: 'bg-red-500',
+          border: 'border-red-500/20',
+          bgSoft: 'bg-red-500/10',
+        };
+      }
+      if (ratio <= 0.6) {
+        return {
+          label: 'Baixo',
+          text: 'text-amber-400',
+          bg: 'bg-amber-500',
+          border: 'border-amber-500/20',
+          bgSoft: 'bg-amber-500/10',
+        };
+      }
+      return {
+        label: 'Bom',
+        text: 'text-emerald-400',
+        bg: 'bg-emerald-500',
+        border: 'border-emerald-500/20',
+        bgSoft: 'bg-emerald-500/10',
+      };
+    }
+
+    if (demandaBase > 0) {
+      const diasCobertura = saldoKg / demandaBase;
+      if (diasCobertura <= 3) {
+        return {
+          label: 'Critico',
+          text: 'text-red-400',
+          bg: 'bg-red-500',
+          border: 'border-red-500/20',
+          bgSoft: 'bg-red-500/10',
+        };
+      }
+      if (diasCobertura <= 7) {
+        return {
+          label: 'Baixo',
+          text: 'text-amber-400',
+          bg: 'bg-amber-500',
+          border: 'border-amber-500/20',
+          bgSoft: 'bg-amber-500/10',
+        };
+      }
+      return {
+        label: 'Bom',
+        text: 'text-emerald-400',
+        bg: 'bg-emerald-500',
+        border: 'border-emerald-500/20',
+        bgSoft: 'bg-emerald-500/10',
+      };
+    }
+
+    if (saldoQtd <= 500) {
       return {
         label: 'Critico',
         text: 'text-red-400',
@@ -4273,7 +4393,7 @@ const parseNumberBR = (v) => {
         bgSoft: 'bg-red-500/10',
       };
     }
-    if (saldo <= 1500) {
+    if (saldoQtd <= 1500) {
       return {
         label: 'Baixo',
         text: 'text-amber-400',
@@ -6251,7 +6371,7 @@ const handleImportBackup = (json) => {
                           </div>
                           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Estoque</span>
                         </div>
-                        <div className="text-2xl font-bold text-white tracking-tight">{estoqueTelhas.length}</div>
+                        <div className="text-2xl font-bold text-white tracking-tight">{estoqueComercialBase.length}</div>
                       </div>
                       <div className="text-xs text-zinc-500 mt-2 font-medium">Itens cadastrados</div>
                     </div>
@@ -6593,8 +6713,8 @@ const handleImportBackup = (json) => {
                             onChange={handleSelectTransfProduto}
                             className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-xs"
                           >
-                            <option value="">Selecionar telha...</option>
-                            {estoqueTelhas.map((p) => (
+                            <option value="">Selecionar produto...</option>
+                            {estoqueComercialBase.map((p) => (
                               <option key={p.cod} value={p.cod}>
                                 {p.cod} - {p.desc}
                               </option>
@@ -6746,13 +6866,24 @@ const handleImportBackup = (json) => {
                             <AlertCircle size={12} />
                             Criticos
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setFiltroEstoque('telhas')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'telhas' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
-                          >
-                            Telhas
-                          </button>
+                          {estoqueComercialHasTelhas && (
+                            <button
+                              type="button"
+                              onClick={() => setFiltroEstoque('telhas')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'telhas' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                            >
+                              Telhas
+                            </button>
+                          )}
+                          {estoqueComercialHasPerfis && (
+                            <button
+                              type="button"
+                              onClick={() => setFiltroEstoque('perfis')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroEstoque === 'perfis' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                            >
+                              Perfis
+                            </button>
+                          )}
                         </div>
                         {canManageEstoque && (
                           <button
@@ -6786,23 +6917,37 @@ const handleImportBackup = (json) => {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                           {estoqueFiltradoComercial.map((item) => {
-                            const status = getStockStatusComercial(item);
                             const estudo = estoqueEstudo[item.cod] || {};
-                            const demandaDiaria = estudo.demandaDiaria;
-                            const estoqueMaximo = estudo.estoqueMaximo;
-                            const maxBase = estoqueMaximo && estoqueMaximo > 0 ? estoqueMaximo : 5000;
+                            const status = getStockStatusComercial(item, estudo);
+                            const demandaBase = Number(estudo.demandaDiaria || 0);
+                            const estoqueMaxBase = Number(estudo.estoqueMaximo || 0);
+                            const saldoQtd = Number(item.saldoQtd || 0);
+                            const saldoKg = Number(item.saldoKg || 0);
+                            const pesoUnit = Number(item.pesoUnit || 0);
+                            const unidade = String(estudo.unidade || 'kg').toLowerCase();
+                            const usaConversaoKg = unidade === 'pc' && pesoUnit;
+                            const demandaKg = usaConversaoKg ? demandaBase * pesoUnit : demandaBase;
+                            const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
+                            const maxBase = estoqueMaxKg && estoqueMaxKg > 0 ? estoqueMaxKg : 5000;
                             const percent = Math.min(
                               100,
-                              Math.max(0, (Number(item.saldoQtd || 0) / maxBase) * 100)
+                              Math.max(0, (saldoKg / maxBase) * 100)
                             );
-                            const saldoQtd = Number(item.saldoQtd || 0);
                             const faltaReposicao =
-                              estoqueMaximo && estoqueMaximo > 0
-                                ? Math.max(0, estoqueMaximo - saldoQtd)
+                              estoqueMaxKg && estoqueMaxKg > 0
+                                ? Math.max(0, estoqueMaxKg - saldoKg)
                                 : 0;
+                            const coberturaDias = demandaKg ? saldoKg / demandaKg : null;
+                            const sugestaoAberta = estoqueSugestaoCod === item.cod;
+                            const colSpan = canManageEstoque ? 8 : 7;
+                            const toggleSugestao = () => {
+                              setEstoqueSugestaoCod((prev) =>
+                                prev === item.cod ? null : item.cod
+                              );
+                            };
                             const capacidadeDia = Number(capacidadeDiaria || 0);
                             const aviso =
-                              estoqueMaximo && capacidadeDia
+                              estoqueMaxKg && capacidadeDia
                                 ? faltaReposicao <= 0
                                   ? { label: 'OK', tone: 'text-emerald-300' }
                                   : (() => {
@@ -6814,49 +6959,66 @@ const handleImportBackup = (json) => {
                                           ? 'text-amber-300'
                                           : 'text-emerald-300';
                                       return {
-                                        label: `Repor ${faltaReposicao} un (~${dias}d)`,
+                                        label: `Repor ${Math.round(faltaReposicao)} kg (~${dias}d)`,
                                         tone,
                                       };
                                     })()
                                 : { label: '--', tone: 'text-zinc-500' };
                             return (
-                              <tr key={item.cod} className="group hover:bg-white/[0.02] transition-colors border-b border-white/5 last:border-0">
-                                <td className="px-5 py-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-lg bg-zinc-800 border border-white/5 flex items-center justify-center text-zinc-400 group-hover:border-white/20 transition-colors">
-                                      <Box size={16} />
-                                    </div>
-                                    <div>
-                                      <div className="text-sm font-medium text-white">{item.desc}</div>
-                                      <div className="text-[11px] text-zinc-500 font-mono flex items-center gap-2">
-                                        <span>COD: {item.cod}</span>
-                                        <span className="w-1 h-1 rounded-full bg-zinc-700" />
-                                        <span>Telhas</span>
+                              <>
+                                <tr className="group hover:bg-white/[0.02] transition-colors border-b border-white/5">
+                                  <td className="px-5 py-4">
+                                    <div className="flex items-start gap-3">
+                                      <div>
+                                        <div className="text-sm font-semibold text-white">
+                                          {item.cod} - {item.desc}
+                                        </div>
+                                        <div className="text-[11px] text-zinc-500 font-mono flex items-center gap-2">
+                                          <span>{getEstoqueGrupoLabel(item)}</span>
+                                          {estudo.maquina && (
+                                            <>
+                                              <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                                              <span>{estudo.maquina}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={toggleSugestao}
+                                          className="mt-2 text-[11px] text-emerald-300 hover:text-emerald-200 font-medium"
+                                        >
+                                          {sugestaoAberta ? 'Ocultar sugestoes' : 'Ver sugestoes'}
+                                        </button>
                                       </div>
                                     </div>
+                                  </td>
+                                <td className="px-5 py-4 w-52">
+                                  <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-2">
+                                    <span className="uppercase tracking-wide">Nivel</span>
+                                    <span className="font-mono text-white">{percent.toFixed(0)}%</span>
                                   </div>
-                                </td>
-                                <td className="px-5 py-4 w-48">
-                                  <div className="flex justify-between text-xs mb-1.5">
-                                    <span className="text-zinc-400">Nivel</span>
-                                    <span className="text-white font-mono">{percent.toFixed(0)}%</span>
+                                  <div className="relative h-3 w-full rounded-full bg-zinc-900 border border-white/10 overflow-hidden shadow-inner">
+                                    <div className={`absolute inset-y-0 left-0 ${status.bg} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+                                    <div className="absolute inset-y-0 right-0 w-px bg-white/15" />
                                   </div>
-                                  <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden">
-                                    <div className={`h-full ${status.bg} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
-                                  </div>
+                                  <div className="mt-1 text-[10px] text-zinc-500">Base kg</div>
                                 </td>
                                 <td className="px-5 py-4">
-                                  <div className="text-sm font-bold text-white tabular-nums">{Number(item.saldoQtd || 0).toLocaleString()}</div>
-                                  <div className="text-[10px] text-zinc-500">Kg: {Number(item.saldoKg || 0).toFixed(1)}</div>
+                                  <div className="text-sm font-bold text-white tabular-nums">
+                                    {Number(item.saldoKg || 0).toFixed(1)} kg
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500">
+                                    {Number(item.saldoQtd || 0).toLocaleString()} un
+                                  </div>
                                 </td>
                                 <td className="px-5 py-4">
                                   <div className="text-sm font-medium text-zinc-100 tabular-nums">
-                                    {demandaDiaria ? Number(demandaDiaria).toLocaleString() : '--'}
+                                    {demandaKg ? Math.round(demandaKg).toLocaleString() : '--'}
                                   </div>
                                 </td>
                                 <td className="px-5 py-4">
                                   <div className="text-sm font-medium text-zinc-100 tabular-nums">
-                                    {estoqueMaximo ? Number(estoqueMaximo).toLocaleString() : '--'}
+                                    {estoqueMaxKg ? Math.round(estoqueMaxKg).toLocaleString() : '--'}
                                   </div>
                                 </td>
                                 {canManageEstoque && (
@@ -6904,7 +7066,49 @@ const handleImportBackup = (json) => {
                                     </button>
                                   )}
                                 </td>
-                              </tr>
+                                </tr>
+                                {sugestaoAberta && (
+                                  <tr className="bg-zinc-950/40 border-b border-white/5">
+                                    <td colSpan={colSpan} className="px-5 py-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-zinc-300">
+                                        <div className="p-3 rounded-xl bg-zinc-900/70 border border-white/5">
+                                          <div className="text-xs uppercase text-zinc-500">Sugestao</div>
+                                          <div className="mt-1 text-white font-semibold">
+                                            {faltaReposicao > 0
+                                              ? `Repor ${Math.round(faltaReposicao)} kg`
+                                              : 'Estoque dentro do limite'}
+                                          </div>
+                                          {pesoUnit && faltaReposicao > 0 && (
+                                            <div className="text-[11px] text-zinc-500">
+                                              ~{Math.round(faltaReposicao / pesoUnit)} un
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="p-3 rounded-xl bg-zinc-900/70 border border-white/5">
+                                          <div className="text-xs uppercase text-zinc-500">Cobertura</div>
+                                          <div className="mt-1 text-white font-semibold">
+                                            {coberturaDias != null
+                                              ? `${coberturaDias.toFixed(1)} dias`
+                                              : 'Sem demanda'}
+                                          </div>
+                                          <div className="text-[11px] text-zinc-500">
+                                            Demanda: {demandaKg ? Math.round(demandaKg) : '--'} kg/dia
+                                          </div>
+                                        </div>
+                                        <div className="p-3 rounded-xl bg-zinc-900/70 border border-white/5">
+                                          <div className="text-xs uppercase text-zinc-500">Limites</div>
+                                          <div className="mt-1 text-white font-semibold">
+                                            Max: {estoqueMaxKg ? Math.round(estoqueMaxKg) : '--'} kg
+                                          </div>
+                                          <div className="text-[11px] text-zinc-500">
+                                            Saldo: {saldoKg.toFixed(1)} kg
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
                             );
                           })}
                           {estoqueFiltradoComercial.length === 0 && (
@@ -7395,8 +7599,8 @@ const handleImportBackup = (json) => {
                           onChange={handleSelectTransfProduto}
                           className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
                         >
-                          <option value="">Selecionar telha...</option>
-                          {estoqueTelhas.map((p) => (
+                          <option value="">Selecionar produto...</option>
+                          {estoqueComercialBase.map((p) => (
                             <option key={p.cod} value={p.cod}>
                               {p.cod} - {p.desc}
                             </option>
