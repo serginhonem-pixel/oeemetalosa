@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local spreadsheets
+src/data/Perfil Consolidado.xlsx
