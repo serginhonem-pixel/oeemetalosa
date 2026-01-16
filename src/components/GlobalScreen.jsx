@@ -1131,18 +1131,24 @@ const GlobalScreen = () => {
     const maqFinal = novaMaquinaForm || maquinas[0].nome;
     const maqObj = maquinas.find((m) => m.nome === maqFinal);
     const hasSecondUnit = !!maqObj?.unidade2;
-    const real2Val = hasSecondUnit && String(novoValor2 || '').trim() !== '' ? Number(novoValor2) : 0;
+    const real2Val =
+      hasSecondUnit && String(novoValor2 || '').trim() !== ''
+        ? Number(novoValor2)
+        : 0;
+    const basePayload = {
+      dia: isoToDiaLabel(novoDiaISO),
+      diaISO: novoDiaISO,
+      real: Number(novoValor),
+      maquina: maqFinal,
+      mesRef,
+    };
 
     if (IS_LOCALHOST) {
       setLancamentos((prev) => [
         {
           id: `local-${Date.now()}`,
-          dia: isoToDiaLabel(novoDiaISO),
-          diaISO: novoDiaISO,
-          real: Number(novoValor),
-          real2: hasSecondUnit ? real2Val : undefined,
-          maquina: maqFinal,
-          mesRef,
+          ...basePayload,
+          ...(hasSecondUnit ? { real2: real2Val } : {}),
           createdAt: { seconds: Date.now() / 1000 },
         },
         ...prev,
@@ -1156,12 +1162,8 @@ const GlobalScreen = () => {
     try {
       setBusy(true);
       await addDoc(collection(db, 'global_lancamentos'), {
-        dia: isoToDiaLabel(novoDiaISO),
-        diaISO: novoDiaISO,
-        real: Number(novoValor),
-        real2: hasSecondUnit ? real2Val : undefined,
-        maquina: maqFinal,
-        mesRef,
+        ...basePayload,
+        ...(hasSecondUnit ? { real2: real2Val } : {}),
         createdAt: serverTimestamp(),
       });
       setNovoValor('');

@@ -1,27 +1,31 @@
 // src/services/firebase.js
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
-// 🔴 Config de PRODUÇÃO (site oficial)
+const env = import.meta.env || {};
+
+// Config de PRODUCAO (site oficial)
 const firebaseConfigProd = {
-  apiKey: 'AIzaSyDwK4oB4tkKhckcGmxnbT6kfWvN5gvtYpc',
-  authDomain: 'oeemetalosa.firebaseapp.com',
-  projectId: 'oeemetalosa',
-  storageBucket: 'oeemetalosa.firebasestorage.app',
-  messagingSenderId: '794264676568',
-  appId: '1:794264676568:web:24bad76eace9c8adbb8fad',
+  apiKey: env.VITE_FIREBASE_API_KEY_PROD,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN_PROD,
+  projectId: env.VITE_FIREBASE_PROJECT_ID_PROD,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET_PROD,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID_PROD,
+  appId: env.VITE_FIREBASE_APP_ID_PROD,
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID_PROD,
 };
 
-// 🟡 Config de DESENVOLVIMENTO (localhost)
+// Config de DESENVOLVIMENTO (localhost)
 const firebaseConfigDev = {
-  apiKey: 'AIzaSyBHjj9mxW2qLoAcfaMHmg52GZKmech5cEE',
-  authDomain: 'oeemetalosa-dev.firebaseapp.com',
-  projectId: 'oeemetalosa-dev',
-  storageBucket: 'oeemetalosa-dev.firebasestorage.app',
-  messagingSenderId: '1009402896154',
-  appId: '1:1009402896154:web:47d2511e55c807833fd6a3',
+  apiKey: env.VITE_FIREBASE_API_KEY_DEV,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN_DEV,
+  projectId: env.VITE_FIREBASE_PROJECT_ID_DEV,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET_DEV,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV,
+  appId: env.VITE_FIREBASE_APP_ID_DEV,
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID_DEV,
 };
 
 const isLocalhost =
@@ -41,13 +45,13 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 
 const firebaseConfigSlitter = {
-  apiKey: 'AIzaSyBO4P9ycGOkaJf6HqPf0kQJetbQfHASHXg',
-  authDomain: 'slitter-app.firebaseapp.com',
-  projectId: 'slitter-app',
-  storageBucket: 'slitter-app.firebasestorage.app',
-  messagingSenderId: '997319292404',
-  appId: '1:997319292404:web:a98408731c254314ccb5a1',
-  measurementId: 'G-33PGY02BYY',
+  apiKey: env.VITE_SLITTER_API_KEY,
+  authDomain: env.VITE_SLITTER_AUTH_DOMAIN,
+  projectId: env.VITE_SLITTER_PROJECT_ID,
+  storageBucket: env.VITE_SLITTER_STORAGE_BUCKET,
+  messagingSenderId: env.VITE_SLITTER_MESSAGING_SENDER_ID,
+  appId: env.VITE_SLITTER_APP_ID,
+  measurementId: env.VITE_SLITTER_MEASUREMENT_ID,
 };
 
 const slitterApp =
@@ -56,4 +60,3 @@ const slitterApp =
 
 // Slitter: somente leitura (saldo de perfis).
 export const dbSlitterReadOnly = getFirestore(slitterApp);
-    
