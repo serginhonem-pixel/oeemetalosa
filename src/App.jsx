@@ -67,6 +67,7 @@ import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 import logoMetalosa from './data/logo metalosa.bmp';
 import estoqueEstudoXlsx from './data/Estudo Estoque Telha.xlsx';
+import capacidadesMaquinas from './data/capacidades-maquinas.json';
 
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -1022,6 +1023,22 @@ export default function App() {
   );
 
   const [abaAtiva, setAbaAtiva] = useState('agenda');
+  const [pcpAbaAtiva, setPcpAbaAtiva] = useState('ordens');
+  const [pcpCrpData, setPcpCrpData] = useState(hoje);
+  const [pcpFiltroData, setPcpFiltroData] = useState('');
+  const [pcpFiltroMaquina, setPcpFiltroMaquina] = useState('');
+  const [crpSetoresAbertos, setCrpSetoresAbertos] = useState({});
+  const [crpDetalheAberto, setCrpDetalheAberto] = useState(false);
+  const [crpDetalheData, setCrpDetalheData] = useState('');
+  const [crpDetalheMaquinaId, setCrpDetalheMaquinaId] = useState('');
+  const [crpDetalheMaquinaLabel, setCrpDetalheMaquinaLabel] = useState('');
+  const [reprogramarAberto, setReprogramarAberto] = useState(false);
+  const [reprogramarRomaneio, setReprogramarRomaneio] = useState(null);
+  const [reprogramarData, setReprogramarData] = useState('');
+  const [crpMesAberto, setCrpMesAberto] = useState({});
+  const [sandboxAtivo, setSandboxAtivo] = useState(false);
+  const [sandboxSnapshot, setSandboxSnapshot] = useState([]);
+  const [sandboxApplyPending, setSandboxApplyPending] = useState(false);
 
   useEffect(() => {
     if (effectiveViewMode === 'comercial' && abaAtiva !== 'comercial') {
@@ -1951,6 +1968,10 @@ const handleDownloadModeloParadas = () => {
   };
 
   const salvarApontamentoEstoqueTelha = async () => {
+    if (sandboxAtivo) {
+      alert('Modo simulacao ativo: ajuste de estoque desativado.');
+      return;
+    }
     if (!formEstoqueTelhaCod || !formEstoqueTelhaQtd) {
       alert("Informe o codigo e a quantidade.");
       return;
@@ -1993,12 +2014,12 @@ const handleDownloadModeloParadas = () => {
     };
 
     try {
-      if (IS_LOCALHOST) {
-        setHistoricoProducaoReal((prev) => [{ id: `local-${Date.now()}`, ...obj }, ...prev]);
-        resetFormEstoqueTelha();
-        alert("Estoque apontado (modo local).");
-        return;
-      }
+    if (isSandboxed) {
+      setHistoricoProducaoReal((prev) => [{ id: `local-${Date.now()}`, ...obj }, ...prev]);
+      resetFormEstoqueTelha();
+      alert(sandboxAtivo ? "Estoque apontado (modo simulacao)." : "Estoque apontado (modo local).");
+      return;
+    }
 
       const docRef = await safeAddDoc("producao", obj);
       const newId = docRef?.id || `local-${Date.now()}`;
@@ -2211,11 +2232,14 @@ const handleDownloadModeloParadas = () => {
     });
 
     // Modo localhost: apenas atualiza estado/localStorage, sem Firebase
-    if (IS_LOCALHOST) {
+    if (isSandboxed) {
+      const localPrefix = sandboxAtivo ? 'SANDBOX' : 'LOCAL';
       const editKey = romaneioEmEdicaoKey || romaneioEmEdicaoId;
       const sysIdAtual =
         romaneioEmEdicaoId ||
-        (editKey && String(editKey).startsWith('LOCAL-') ? editKey : `LOCAL-${Date.now()}`);
+        (editKey && (String(editKey).startsWith('LOCAL-') || String(editKey).startsWith('SANDBOX-'))
+          ? editKey
+          : `${localPrefix}-${Date.now()}`);
       const atualizada = editKey
         ? filaProducao.map((r) =>
             (r.sysId || r.id) === editKey
@@ -2234,7 +2258,7 @@ const handleDownloadModeloParadas = () => {
           origemReprogramacao: sysIdAtual,
           createdFromReprogramacao: true,
           createdAt: agoraISO,
-          sysId: `LOCAL-${Date.now()}-R`,
+          sysId: `${localPrefix}-${Date.now()}-R`,
         };
         comReprogramado = [...atualizada, objReprogramado];
       }
@@ -2243,7 +2267,7 @@ const handleDownloadModeloParadas = () => {
       setItensReprogramados([]);
       setSelectedItemIds([]);
       setNovaDataReprogramacao("");
-      alert("Romaneio salvo (modo local).");
+      alert(sandboxAtivo ? "Romaneio salvo (modo simulacao)." : "Romaneio salvo (modo local).");
       setShowModalNovaOrdem(false);
       return;
     }
@@ -2310,6 +2334,10 @@ const handleDownloadModeloParadas = () => {
 };
 
   const finalizarOrdemProgramada = async () => {
+    if (sandboxAtivo) {
+      alert('Modo simulacao ativo: finalize desativado.');
+      return;
+    }
     const maquinaInferida = !maquinaSelecionada
       ? inferirMaquinaPorItens(itensNoPedido)
       : '';
@@ -2415,6 +2443,9 @@ const handleDownloadModeloParadas = () => {
   };
 
   const finalizarRomaneioRapido = async (romaneio) => {
+    if (sandboxAtivo) {
+      return { ok: false, motivo: 'sandbox' };
+    }
     if (!romaneio) return { ok: false, motivo: 'invalido' };
     if (romaneio.status === 'PRONTO' || romaneio.status === 'FINALIZADO') {
       return { ok: false, motivo: 'ja_finalizado' };
@@ -2502,6 +2533,10 @@ const handleDownloadModeloParadas = () => {
   };
 
   const finalizarSelecionadosPCP = async () => {
+    if (sandboxAtivo) {
+      alert('Modo simulacao ativo: finalize desativado.');
+      return;
+    }
     if (pcpSelecionados.length === 0) {
       alert('Selecione ao menos uma ordem.');
       return;
@@ -3106,7 +3141,7 @@ const handleDownloadModeloParadas = () => {
       )
     );
 
-    if (IS_LOCALHOST) return;
+    if (isSandboxed) return;
     if (!alvo.sysId) return;
 
     try {
@@ -3125,7 +3160,7 @@ const handleDownloadModeloParadas = () => {
 
 
 
-const abrirModalNovo = () => { limparFormularioGeral(); setShowModalSelecaoMaquina(true); };
+const abrirModalNovo = () => { limparFormularioGeral(); setShowModalNovaOrdem(true); };
 const abrirModalEdicao = (r) => {
     setPdfItensEncontrados([]);
     setPdfItensSelecionados([]);
@@ -3231,14 +3266,17 @@ const abrirModalEdicao = (r) => {
       };
     });
 
-    if (IS_LOCALHOST) {
+    if (isSandboxed) {
+      const localPrefix = sandboxAtivo ? 'SANDBOX' : 'LOCAL';
       const baseNow = Date.now();
       const novos = ordens.map((o, idx) => ({
         ...o,
-        sysId: `LOCAL-${baseNow}-${idx}`,
+        sysId: `${localPrefix}-${baseNow}-${idx}`,
       }));
       setFilaProducao((prev) => [...prev, ...novos]);
-      alert(`${ordens.length} ordem(ns) criada(s) (modo local).`);
+      alert(
+        `${ordens.length} ordem(ns) criada(s) (${sandboxAtivo ? 'modo simulacao' : 'modo local'}).`
+      );
     } else {
       for (const ordem of ordens) {
         await addDoc(collection(db, "romaneios"), ordem);
@@ -3271,7 +3309,7 @@ const deletarRomaneio = async (romaneioId) => {
     prev.filter((r) => String(r.sysId || r.id) !== alvoId)
   );
 
-  if (IS_LOCALHOST || !alvoId) return;
+  if (isSandboxed || !alvoId) return;
 
   // tenta apagar no Firestore
   try {
@@ -3324,6 +3362,10 @@ const iniciarEdicaoProducao = (registro) => {
 
 const salvarApontamentoProducao = async (e) => {
   e.preventDefault();
+  if (sandboxAtivo) {
+    alert('Modo simulacao ativo: apontamento de producao desativado.');
+    return;
+  }
 
   if (!formApontProdCod || !formApontProdQtd) {
     alert("Preencha código e quantidade.");
@@ -3688,6 +3730,352 @@ const getMaquinaNomeComercial = (maquinaId) => {
   );
   return found?.nomeExibicao || maquinaId;
 };
+  const getMaquinaIdRomaneio = (r) =>
+    r.maquinaId || r.maquina || inferirMaquinaPorItens(r.itens) || 'SEM_MAQUINA';
+
+  const getPesoRomaneio = (r) =>
+    (r.itens || []).reduce((acc, item) => acc + Number(item.pesoTotal || 0), 0);
+
+  const isSandboxed = sandboxAtivo || IS_LOCALHOST;
+
+  const sandboxOriginalMap = useMemo(() => {
+    const map = new Map();
+    (sandboxSnapshot || []).forEach((r) => {
+      const key = r.sysId || r.id;
+      if (key) map.set(String(key), r);
+    });
+    return map;
+  }, [sandboxSnapshot]);
+
+  const getSetorMaquina = (maquinaId, fallback) => {
+    const meta = CATALOGO_MAQUINAS.find(
+      (m) => m.maquinaId === maquinaId || m.id === maquinaId
+    );
+    const grupo = meta?.grupo || '';
+    const mapa = {
+      GRUPO_PERFIS: 'Perfiladeiras',
+      GRUPO_TELHAS: 'Telhas',
+    };
+    if (mapa[grupo]) return mapa[grupo];
+    const label = String(fallback || '').toUpperCase();
+    if (label.includes('SLITTER')) return 'Slitter';
+    if (label.includes('DOBRA')) return 'Dobra';
+    return 'Outros';
+  };
+
+  const toggleCrpSetor = (setor) => {
+    setCrpSetoresAbertos((prev) => ({
+      ...prev,
+      [setor]: prev[setor] === false ? true : false,
+    }));
+  };
+
+  const getInicioSemana = (dataISO) => {
+    const d = new Date(`${dataISO}T00:00:00`);
+    const dia = d.getDay(); // 0 dom, 1 seg...
+    d.setDate(d.getDate() - dia);
+    return getLocalISODate(d);
+  };
+
+  const addDaysISO = (dataISO, deltaDias) => {
+    const d = new Date(`${dataISO}T00:00:00`);
+    d.setDate(d.getDate() + deltaDias);
+    return getLocalISODate(d);
+  };
+
+  const getDiaSemanaLabel = (dataISO) => {
+    const d = new Date(`${dataISO}T00:00:00`);
+    const nome = d.toLocaleDateString('pt-BR', { weekday: 'short' });
+    return String(nome || '').replace('.', '');
+  };
+
+  const getDiasDoMes = (dataISO) => {
+    const d = new Date(`${dataISO}T00:00:00`);
+    const ano = d.getFullYear();
+    const mes = d.getMonth();
+    const primeiroDia = new Date(ano, mes, 1);
+    const ultimoDia = new Date(ano, mes + 1, 0);
+    const dias = [];
+    for (let i = 1; i <= ultimoDia.getDate(); i++) {
+      dias.push(getLocalISODate(new Date(ano, mes, i)));
+    }
+    return { dias, primeiroDia };
+  };
+
+  const getMesLabel = (dataISO) => {
+    const d = new Date(`${dataISO}T00:00:00`);
+    const mes = String(d.getMonth() + 1).padStart(2, '0');
+    return `${mes}/${d.getFullYear()}`;
+  };
+
+  const toggleCrpMes = (maquinaId) => {
+    setCrpMesAberto((prev) => ({ ...prev, [maquinaId]: !prev[maquinaId] }));
+  };
+
+  const getProximoDiaUtil = (dataISO) => {
+    const d = new Date(`${dataISO}T00:00:00`);
+    let tentativas = 0;
+    do {
+      d.setDate(d.getDate() + 1);
+      tentativas += 1;
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) break;
+    } while (tentativas < 7);
+    return getLocalISODate(d);
+  };
+
+  const abrirModalReprogramar = (romaneio) => {
+    if (!romaneio) return;
+    const dataAtual = getDataRomaneio(romaneio) || hoje;
+    setReprogramarRomaneio(romaneio);
+    setReprogramarData(dataAtual);
+    setReprogramarAberto(true);
+  };
+
+  const iniciarSandbox = () => {
+    const snapshot = (filaProducao || []).map((r) => ({
+      ...r,
+      itens: Array.isArray(r.itens) ? r.itens.map((i) => ({ ...i })) : [],
+    }));
+    setSandboxSnapshot(snapshot);
+    setSandboxAtivo(true);
+  };
+
+  const descartarSandbox = () => {
+    setFilaProducao(sandboxSnapshot || []);
+    setSandboxAtivo(false);
+  };
+
+  const aplicarSandbox = async () => {
+    if (IS_LOCALHOST) {
+      setSandboxAtivo(false);
+      return;
+    }
+
+    setSandboxApplyPending(true);
+    const original = sandboxSnapshot || [];
+    const atual = filaProducao || [];
+    const originalMap = new Map(original.map((r) => [String(r.sysId || r.id || ''), r]));
+    const atualMap = new Map(atual.map((r) => [String(r.sysId || r.id || ''), r]));
+
+    const isTempId = (id) => String(id || '').startsWith('LOCAL-') || String(id || '').startsWith('SANDBOX-');
+
+    try {
+      for (const [id, r] of originalMap.entries()) {
+        if (!id) continue;
+        if (!atualMap.has(id) && !isTempId(id)) {
+          await safeDeleteDoc('romaneios', id);
+        }
+      }
+
+      for (const r of atual) {
+        const sysId = r.sysId || r.id || '';
+        const payload = { ...r };
+        delete payload.sysId;
+        delete payload.id;
+
+        if (!sysId || isTempId(sysId)) {
+          await safeAddDoc('romaneios', payload);
+        } else {
+          await safeUpdateDoc('romaneios', String(sysId), payload);
+        }
+      }
+
+      const romaneiosSnapshot = await getDocs(collection(db, 'romaneios'));
+      const listaRomaneios = romaneiosSnapshot.docs.map((docSnap) => ({
+        sysId: docSnap.id,
+        ...docSnap.data(),
+      }));
+      setFilaProducao(listaRomaneios);
+      setSandboxAtivo(false);
+    } catch (err) {
+      console.error('Erro ao aplicar sandbox:', err);
+      alert('Erro ao aplicar o cenário. Veja o console (F12).');
+    } finally {
+      setSandboxApplyPending(false);
+    }
+  };
+
+  const crpOcupacaoSemana = useMemo(() => {
+    const dataBase = normalizeISODateInput(pcpCrpData || getLocalISODate());
+    const inicioSemana = getInicioSemana(dataBase);
+    const diasBase = Array.from({ length: 7 }, (_, idx) => {
+      const d = new Date(`${inicioSemana}T00:00:00`);
+      d.setDate(d.getDate() + idx);
+      return getLocalISODate(d);
+    });
+
+    const pesoPorMaquinaDia = {};
+    const ordensPorMaquinaDia = {};
+    const diasComOrdem = new Set();
+
+    filaProducao.forEach((r) => {
+      const dataRomaneio = getDataRomaneio(r);
+      if (!diasBase.includes(dataRomaneio)) return;
+      diasComOrdem.add(dataRomaneio);
+      const maquinaId = getMaquinaIdRomaneio(r);
+      const pesoRomaneio = (r.itens || []).reduce(
+        (acc, item) => acc + Number(item.pesoTotal || 0),
+        0
+      );
+      const key = `${maquinaId}::${dataRomaneio}`;
+      pesoPorMaquinaDia[key] = (pesoPorMaquinaDia[key] || 0) + pesoRomaneio;
+      ordensPorMaquinaDia[key] = (ordensPorMaquinaDia[key] || 0) + 1;
+    });
+
+    const dias = diasBase;
+
+    const itens = capacidadesMaquinas.map((maquina) => {
+      const capacidade = Number(maquina.capacidade_kg_dia || 0);
+      const maquinaId = maquina.maquinaId || '';
+      const diasDetalhe = dias.map((dia) => {
+        const key = `${maquinaId}::${dia}`;
+        const peso = Number(pesoPorMaquinaDia[key] || 0);
+        const ordens = Number(ordensPorMaquinaDia[key] || 0);
+        const percent = capacidade > 0 ? (peso / capacidade) * 100 : 0;
+        return { dia, peso, ordens, percent };
+      });
+
+      return {
+        ...maquina,
+        capacidade,
+        label: getMaquinaNomeComercial(maquinaId) || maquina.maquina,
+        diasDetalhe,
+      };
+    });
+
+    const setores = itens.reduce((acc, item) => {
+      const setor = getSetorMaquina(item.maquinaId, item.label);
+      if (!acc[setor]) acc[setor] = [];
+      acc[setor].push(item);
+      return acc;
+    }, {});
+
+    return { inicioSemana, dias, itens, setores };
+  }, [filaProducao, pcpCrpData, CATALOGO_MAQUINAS]);
+
+  const pcpListaFiltrada = useMemo(() => {
+    let lista = filaProducao || [];
+    if (pcpFiltroData) {
+      lista = lista.filter((r) => getDataRomaneio(r) === pcpFiltroData);
+    }
+    if (pcpFiltroMaquina) {
+      lista = lista.filter((r) => r.maquinaId === pcpFiltroMaquina);
+    }
+    return lista;
+  }, [filaProducao, pcpFiltroData, pcpFiltroMaquina]);
+
+  const crpMesInfo = useMemo(() => {
+    const base = pcpCrpData || hoje;
+    const { dias, primeiroDia } = getDiasDoMes(base);
+    const inicio = dias[0];
+    const fim = dias[dias.length - 1];
+    const pesoMap = {};
+
+    (filaProducao || []).forEach((r) => {
+      const data = getDataRomaneio(r);
+      if (!data || data < inicio || data > fim) return;
+      const maquinaId = getMaquinaIdRomaneio(r);
+      if (!maquinaId) return;
+      if (!pesoMap[maquinaId]) pesoMap[maquinaId] = {};
+      pesoMap[maquinaId][data] = (pesoMap[maquinaId][data] || 0) + getPesoRomaneio(r);
+    });
+
+    return { dias, primeiroDia, pesoMap, mesLabel: getMesLabel(base) };
+  }, [filaProducao, pcpCrpData, hoje]);
+
+  const crpDetalheOrdens = useMemo(() => {
+    if (!crpDetalheData || !crpDetalheMaquinaId) return [];
+    return (filaProducao || [])
+      .filter((r) => getDataRomaneio(r) === crpDetalheData)
+      .filter((r) => r.maquinaId === crpDetalheMaquinaId)
+      .sort((a, b) => String(a.id || a.romaneioId || '').localeCompare(String(b.id || b.romaneioId || '')));
+  }, [filaProducao, crpDetalheData, crpDetalheMaquinaId]);
+
+  const criarMockOcupacaoSemana = () => {
+    if (!IS_LOCALHOST) return;
+    const dias = crpOcupacaoSemana.dias;
+    if (!dias.length) return;
+
+    const baseAgora = Date.now();
+    let idx = 0;
+    const mocks = [];
+
+    capacidadesMaquinas.forEach((maquina) => {
+      const capacidade = Number(maquina.capacidade_kg_dia || 0);
+      dias.forEach((dia) => {
+        const dow = new Date(`${dia}T00:00:00`).getDay();
+        if (dow === 0 || dow === 6) return;
+        const peso = Math.round(capacidade * (0.3 + Math.random() * 0.9));
+        mocks.push({
+          sysId: `MOCK-${baseAgora}-${idx++}`,
+          id: `MOCK-${dia}-${maquina.maquinaId || maquina.maquina}-${idx}`,
+          romaneioId: `MOCK-${dia}`,
+          data: dia,
+          dataProducao: dia,
+          cliente: 'MOCK',
+          totvs: '',
+          tipo: 'PED',
+          maquinaId: maquina.maquinaId || '',
+          itens: [
+            {
+              tempId: Math.random(),
+              cod: 'MOCK',
+              desc: `Carga mock ${maquina.maquina}`,
+              comp: 0,
+              qtd: 1,
+              pesoTotal: peso,
+            },
+          ],
+          origem: 'MOCK_CRP',
+          updatedAt: new Date().toISOString(),
+        });
+      });
+    });
+
+    const mesInfo = getDiasDoMes(pcpCrpData || hoje);
+    const diasMes = mesInfo.dias;
+    let idxMes = mocks.length;
+    const mocksMes = [];
+    capacidadesMaquinas.forEach((maquina) => {
+      const capacidade = Number(maquina.capacidade_kg_dia || 0);
+      diasMes.forEach((dia) => {
+        const dow = new Date(`${dia}T00:00:00`).getDay();
+        if (dow === 0 || dow === 6) return;
+        if (dias.includes(dia)) return;
+        const peso = Math.round(capacidade * (0.2 + Math.random() * 0.95));
+        mocksMes.push({
+          sysId: `MOCK-${baseAgora}-${idxMes++}`,
+          id: `MOCK-${dia}-${maquina.maquinaId || maquina.maquina}-${idxMes}`,
+          romaneioId: `MOCK-${dia}`,
+          data: dia,
+          dataProducao: dia,
+          cliente: 'MOCK',
+          totvs: '',
+          tipo: 'PED',
+          maquinaId: maquina.maquinaId || '',
+          itens: [
+            {
+              tempId: Math.random(),
+              cod: 'MOCK',
+              desc: `Carga mock ${maquina.maquina}`,
+              comp: 0,
+              qtd: 1,
+              pesoTotal: peso,
+            },
+          ],
+          origem: 'MOCK_CRP',
+          updatedAt: new Date().toISOString(),
+        });
+      });
+    });
+
+    setFilaProducao((prev) => [
+      ...prev.filter((r) => r.origem !== 'MOCK_CRP'),
+      ...mocks,
+      ...mocksMes,
+    ]);
+  };
 
   const isSemProgramar = (r) => {
     const dataRomaneio = getDataRomaneio(r);
@@ -4483,9 +4871,6 @@ const handleImportBackup = (json) => {
     return idLabel;
   };
 
-  const getMaquinaIdRomaneio = (r) =>
-    r.maquinaId || r.maquina || inferirMaquinaPorItens(r.itens) || 'SEM_MAQUINA';
-
   const romaneiosPorMaquina = romaneiosParaImpressao.reduce((acc, r) => {
     const maquinaId = getMaquinaIdRomaneio(r);
     if (!acc[maquinaId]) acc[maquinaId] = [];
@@ -4834,8 +5219,68 @@ const handleImportBackup = (json) => {
           {abaAtiva === 'planejamento' && (
     <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
+            <div className="flex flex-col gap-3">
+              <h1 className="text-2xl md:text-3xl font-bold flex gap-3"><ClipboardList className="text-blue-500" size={32} /> PCP Geral</h1>
+              <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden self-start">
+                <button
+                  onClick={() => setPcpAbaAtiva('ordens')}
+                  className={`px-4 py-1.5 ${pcpAbaAtiva === 'ordens' ? 'bg-emerald-500 text-black font-semibold' : 'text-zinc-400 hover:bg-white/5'}`}
+                >
+                  Ordens
+                </button>
+                <button
+                  onClick={() => setPcpAbaAtiva('crp')}
+                  className={`px-4 py-1.5 ${pcpAbaAtiva === 'crp' ? 'bg-emerald-500 text-black font-semibold' : 'text-zinc-400 hover:bg-white/5'}`}
+                >
+                  CRP
+                </button>
+              </div>
+            </div>
             <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-full px-3 py-1.5 text-xs text-zinc-300">
+                  <span>Modo simulacao</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sandboxAtivo) {
+                        descartarSandbox();
+                      } else {
+                        iniciarSandbox();
+                      }
+                    }}
+                    className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${
+                      sandboxAtivo ? 'bg-emerald-500' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <span
+                      className={`h-4 w-4 rounded-full bg-black/80 transition-transform ${
+                        sandboxAtivo ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  {sandboxAtivo && (
+                    <span className="text-[10px] text-emerald-300">ativo</span>
+                  )}
+                </div>
+                {sandboxAtivo && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={aplicarSandbox}
+                      disabled={sandboxApplyPending}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap disabled:opacity-50"
+                    >
+                      Aplicar cenario
+                    </button>
+                    <button
+                      type="button"
+                      onClick={descartarSandbox}
+                      className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"
+                    >
+                      Descartar
+                    </button>
+                  </>
+                )}
                 <button onClick={handleDownloadModelo} className="bg-zinc-800 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Download size={16} /> Modelo</button>
                 <label className="bg-emerald-600 text-white px-3 py-2 rounded text-sm flex gap-2 cursor-pointer whitespace-nowrap"><Upload size={16} /> Importar <input type="file" onChange={handleFileUpload} accept=".xlsx,.xls,.csv" className="hidden" /></label>
                 <button
@@ -4854,135 +5299,627 @@ const handleImportBackup = (json) => {
                 <button onClick={abrirModalNovo} className="bg-blue-600 text-white px-3 py-2 rounded text-sm flex gap-2 whitespace-nowrap"><Plus size={16} /> Novo</button>
             </div>
         </header>
-        <div className="bg-zinc-900 rounded-xl border border-white/10 p-4 mb-6">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                <h2 className="text-lg font-bold text-white">Apontar estoque de telha</h2>
-                <span className="text-[11px] text-zinc-500">Lanca saldo no estoque (destino: Estoque)</span>
+        {pcpAbaAtiva === 'ordens' && (
+          <>
+            <div className="bg-zinc-900 rounded-xl border border-white/10 p-4 mb-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                    <h2 className="text-lg font-bold text-white">Apontar estoque de telha</h2>
+                    <span className="text-[11px] text-zinc-500">Lanca saldo no estoque (destino: Estoque)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <div className="md:col-span-2">
+                        <label className="text-[11px] text-zinc-400">Data</label>
+                        <input
+                          type="date"
+                          value={formEstoqueTelhaData}
+                          onChange={(e) => setFormEstoqueTelhaData(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                        />
+                    </div>
+                    <div className="md:col-span-4">
+                        <label className="text-[11px] text-zinc-400">Produto</label>
+                        <select
+                          value={formEstoqueTelhaCod}
+                          onChange={handleSelectEstoqueTelhaProduto}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                        >
+                          <option value="">Selecionar telha...</option>
+                          {CATALOGO_PRODUTOS
+                            .filter((p) => p.grupo === 'GRUPO_TELHAS')
+                            .map((p) => (
+                              <option key={p.cod} value={p.cod}>
+                                {p.cod} - {p.desc}
+                              </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="md:col-span-3">
+                        <label className="text-[11px] text-zinc-400">Descricao</label>
+                        <input
+                          value={formEstoqueTelhaDesc}
+                          onChange={(e) => setFormEstoqueTelhaDesc(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="Descricao"
+                        />
+                    </div>
+                    <div className="md:col-span-1">
+                        <label className="text-[11px] text-zinc-400">Comp (m)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={formEstoqueTelhaComp}
+                          onChange={(e) => setFormEstoqueTelhaComp(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="0"
+                        />
+                    </div>
+                    <div className="md:col-span-1">
+                        <label className="text-[11px] text-zinc-400">Qtd</label>
+                        <input
+                          type="number"
+                          value={formEstoqueTelhaQtd}
+                          onChange={(e) => setFormEstoqueTelhaQtd(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                          placeholder="0"
+                        />
+                    </div>
+                    <div className="md:col-span-1 flex items-end">
+                        <button
+                          type="button"
+                          onClick={salvarApontamentoEstoqueTelha}
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded p-2 text-sm font-bold"
+                        >
+                          Salvar
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                <div className="md:col-span-2">
-                    <label className="text-[11px] text-zinc-400">Data</label>
-                    <input
-                      type="date"
-                      value={formEstoqueTelhaData}
-                      onChange={(e) => setFormEstoqueTelhaData(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
-                    />
+            {(pcpFiltroData || pcpFiltroMaquina) && (
+              <div className="bg-zinc-900/60 border border-white/10 rounded-xl p-3 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                <div className="text-xs text-zinc-400">
+                  Filtro ativo:
+                  {pcpFiltroData ? (
+                    <span className="ml-2 text-zinc-200">Data {formatarDataBR(pcpFiltroData)}</span>
+                  ) : null}
+                  {pcpFiltroMaquina ? (
+                    <span className="ml-2 text-zinc-200">
+                      Maquina {getMaquinaNomeComercial(pcpFiltroMaquina)}
+                    </span>
+                  ) : null}
                 </div>
-                <div className="md:col-span-4">
-                    <label className="text-[11px] text-zinc-400">Produto</label>
-                    <select
-                      value={formEstoqueTelhaCod}
-                      onChange={handleSelectEstoqueTelhaProduto}
-                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
-                    >
-                      <option value="">Selecionar telha...</option>
-                      {CATALOGO_PRODUTOS.filter((p) => p.grupo === 'GRUPO_TELHAS').map((p) => (
-                        <option key={p.cod} value={p.cod}>
-                          {p.cod} - {p.desc}
-                        </option>
-                      ))}
-                    </select>
-                </div>
-                <div className="md:col-span-3">
-                    <label className="text-[11px] text-zinc-400">Descricao</label>
-                    <input
-                      value={formEstoqueTelhaDesc}
-                      onChange={(e) => setFormEstoqueTelhaDesc(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
-                      placeholder="Descricao"
-                    />
-                </div>
-                <div className="md:col-span-1">
-                    <label className="text-[11px] text-zinc-400">Comp (m)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formEstoqueTelhaComp}
-                      onChange={(e) => setFormEstoqueTelhaComp(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
-                      placeholder="0"
-                    />
-                </div>
-                <div className="md:col-span-1">
-                    <label className="text-[11px] text-zinc-400">Qtd</label>
-                    <input
-                      type="number"
-                      value={formEstoqueTelhaQtd}
-                      onChange={(e) => setFormEstoqueTelhaQtd(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
-                      placeholder="0"
-                    />
-                </div>
-                <div className="md:col-span-1 flex items-end">
-                    <button
-                      type="button"
-                      onClick={salvarApontamentoEstoqueTelha}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded p-2 text-sm font-bold"
-                    >
-                      Salvar
-                    </button>
-                </div>
-            </div>
-        </div>
-        <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
-            <table className="w-full text-left text-sm min-w-[600px]">
-                <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
-                    <th className="p-4 w-10 text-center">Sel</th>
-                    <th className="p-4">ID FIREBASE</th> {/* T?tulo da coluna atualizado */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPcpFiltroData('');
+                    setPcpFiltroMaquina('');
+                  }}
+                  className="px-3 py-1.5 bg-zinc-800 text-white text-xs rounded"
+                >
+                  Limpar filtro
+                </button>
+              </div>
+            )}
+            <div className="bg-zinc-900 rounded-xl border border-white/10 overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[600px]">
+                    <thead><tr className="bg-black/40 text-zinc-400 text-xs border-b border-white/10">
+                        <th className="p-4 w-10 text-center">Sel</th>
+                        <th className="p-4">ID FIREBASE</th> {/* T?tulo da coluna atualizado */}
                     <th className="p-4">Data</th>
+                    <th className="p-4 text-center">Reprogramar</th>
                     <th className="p-4">Cliente</th>
                     <th className="p-4 text-center">Peso</th>
                     <th className="p-4 text-right">#</th>
                 </tr></thead>
-                <tbody className="divide-y divide-white/5">
-                    {filaProducao
-                        // 1. Cria uma c?pia e ordena: mais recente (b) - mais antigo (a)
-                        .slice()
-                        .sort((a, b) => {
-                          const dataA = getDataRomaneio(a);
-                          const dataB = getDataRomaneio(b);
-                          const timeA = dataA ? new Date(dataA).getTime() : 0;
-                          const timeB = dataB ? new Date(dataB).getTime() : 0;
-                          return timeB - timeA;
-                        })
-                        // 2. Limita a 50 itens para exibi??o
-                        .slice(0, 300) 
-                        .map((r) => {
-                           const rowId = r.sysId || r.id;
-                           const dataRomaneio = getDataRomaneio(r);
-                           const programado = Boolean(dataRomaneio) && Boolean(r.maquinaId);
+                    <tbody className="divide-y divide-white/5">
+                        {pcpListaFiltrada
+                            // 1. Cria uma c?pia e ordena: mais recente (b) - mais antigo (a)
+                            .slice()
+                            .sort((a, b) => {
+                              const dataA = getDataRomaneio(a);
+                              const dataB = getDataRomaneio(b);
+                              const timeA = dataA ? new Date(dataA).getTime() : 0;
+                              const timeB = dataB ? new Date(dataB).getTime() : 0;
+                              return timeB - timeA;
+                            })
+                            // 2. Limita a 50 itens para exibi??o
+                            .slice(0, 300) 
+                            .map((r) => {
+                               const rowId = r.sysId || r.id;
+                               const dataRomaneio = getDataRomaneio(r);
+                               const programado = Boolean(dataRomaneio) && Boolean(r.maquinaId);
+                           const original = sandboxAtivo ? sandboxOriginalMap.get(String(rowId)) : null;
+                           const originalData = original ? getDataRomaneio(original) : '';
                            return (
                            <tr key={rowId} className="hover:bg-white/5">
-                                <td className="p-4 text-center">
-                                  <input
-                                    type="checkbox"
-                                    className="h-4 w-4 accent-amber-500"
-                                    disabled={!programado}
-                                    checked={pcpSelecionados.includes(rowId)}
-                                    onChange={() => togglePcpSelecionado(rowId)}
-                                  />
-                                </td>
-                                 {/* Exibindo o ID do Firebase (assumindo que est? em r.sysId) */}
-                                <td className="p-4 text-blue-400 font-mono text-xs">#{r.sysId}</td> 
-<td className="p-4 text-zinc-300">
-  {formatarDataBR(getDataRomaneio(r))}
-</td>                                <td className="p-4">{r.cliente}</td>
-                                <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
-                                <td className="p-4 text-right">
-                                    {(IS_LOCALHOST || r.sysId) ? (
-                                        <button onClick={() => deletarRomaneio(rowId)} className="text-zinc-400 hover:text-red-500">
-                                            <Trash2 size={16} />
-                                        </button>
-                                    ) : (
-                                        <span className="text-zinc-600 cursor-not-allowed">--</span>
-                                    )}
-                                </td>                           </tr>
-                        );
-                        })}
-                </tbody>
-            </table>
+                                    <td className="p-4 text-center">
+                                      <input
+                                        type="checkbox"
+                                        className="h-4 w-4 accent-amber-500"
+                                        disabled={!programado}
+                                        checked={pcpSelecionados.includes(rowId)}
+                                        onChange={() => togglePcpSelecionado(rowId)}
+                                      />
+                                    </td>
+                                     {/* Exibindo o ID do Firebase (assumindo que est? em r.sysId) */}
+                                    <td className="p-4 text-blue-400 font-mono text-xs">#{r.sysId}</td> 
+    <td className="p-4 text-zinc-300">
+      {formatarDataBR(getDataRomaneio(r))}
+      {sandboxAtivo && originalData && originalData !== getDataRomaneio(r) ? (
+        <div className="text-[10px] text-zinc-500">
+          antes: {formatarDataBR(originalData)}
         </div>
+      ) : null}
+    </td>
+                                <td className="p-4 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirModalReprogramar(r)}
+                                    className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] rounded"
+                                  >
+                                    Reagendar
+                                  </button>
+                                </td>
+                                <td className="p-4">{r.cliente}</td>
+                                    <td className="p-4 text-center">{r.itens.reduce((a, b) => a + parseFloat(b.pesoTotal || 0), 0).toFixed(1)}</td>
+                                    <td className="p-4 text-right">
+                                        {(IS_LOCALHOST || r.sysId) ? (
+                                            <button onClick={() => deletarRomaneio(rowId)} className="text-zinc-400 hover:text-red-500">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        ) : (
+                                            <span className="text-zinc-600 cursor-not-allowed">--</span>
+                                        )}
+                                    </td>                           </tr>
+                            );
+                            })}
+                    </tbody>
+                </table>
+            </div>
+          </>
+        )}
+        {pcpAbaAtiva === 'crp' && (
+          <div className="space-y-6">
+            <div className="bg-zinc-900 rounded-xl border border-white/10 p-4">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Ocupacao de maquina</h2>
+                  <p className="text-sm text-zinc-400">
+                    Carga planejada por dia da semana vs. capacidade diaria.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-zinc-500">Semana de</span>
+                  <input
+                    type="date"
+                    value={pcpCrpData}
+                    onChange={(e) => setPcpCrpData(e.target.value)}
+                    className="bg-black/50 border border-white/10 rounded px-3 py-1.5 text-white text-xs"
+                  />
+                  {IS_LOCALHOST ? (
+                    <button
+                      type="button"
+                      onClick={criarMockOcupacaoSemana}
+                      className="ml-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded"
+                    >
+                      Mock ocupacao
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="px-4 md:px-8 mb-4">
+                <div
+                  className="grid gap-3 text-[11px] text-zinc-500"
+                  style={{
+                    gridTemplateColumns: `repeat(${crpOcupacaoSemana.dias.length}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {crpOcupacaoSemana.dias.map((dia) => (
+                    <div
+                      key={dia}
+                      className={`text-center rounded-lg border px-2 py-2 ${
+                        dia === hoje ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-white/5 bg-zinc-950/30'
+                      }`}
+                    >
+                      <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        {getDiaSemanaLabel(dia)}
+                      </div>
+                      <div className={`text-sm font-semibold ${dia === hoje ? 'text-emerald-200' : 'text-zinc-200'}`}>
+                        {formatarDataBR(dia)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {Object.entries(crpOcupacaoSemana.setores).map(([setor, maquinas]) => {
+                  const aberto = crpSetoresAbertos[setor] !== false;
+                  return (
+                    <div key={setor} className="rounded-2xl border border-white/10 bg-zinc-950/40">
+                      <button
+                        type="button"
+                        onClick={() => toggleCrpSetor(setor)}
+                        className="w-full flex items-center justify-between px-4 py-3 border-b border-white/10 text-left"
+                      >
+                        <div className="text-sm font-semibold text-white">{setor}</div>
+                        <div className="text-xs text-zinc-500">
+                          {maquinas.length} maquina{maquinas.length === 1 ? '' : 's'} {aberto ? 'ocultar' : 'mostrar'}
+                        </div>
+                      </button>
+                      {aberto ? (
+                        <div className="p-4 space-y-4">
+                          {maquinas.map((maquina) => {
+                            const totalPesoSemana = maquina.diasDetalhe.reduce(
+                              (acc, d) => acc + Number(d.peso || 0),
+                              0
+                            );
+                            const diasSemana = maquina.diasDetalhe.length || 1;
+                            const mediaOcupSemana =
+                              maquina.capacidade > 0
+                                ? (totalPesoSemana / (maquina.capacidade * diasSemana)) * 100
+                                : 0;
+                            const totalTonSemana = totalPesoSemana / 1000;
+                            const status =
+                              mediaOcupSemana >= 100
+                                ? { label: 'Sobrecarregada', className: 'bg-red-500/10 text-red-300 border-red-500/30' }
+                                : mediaOcupSemana <= 60
+                                  ? { label: 'Ociosa', className: 'bg-sky-500/10 text-sky-300 border-sky-500/30' }
+                                  : { label: 'Equilibrada', className: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
+
+                            const maquinaKey = maquina.maquinaId || maquina.maquina;
+                            const mesAberto = Boolean(crpMesAberto[maquinaKey]);
+                            const diasMes = crpMesInfo.dias;
+                            const offset = crpMesInfo.primeiroDia.getDay();
+                            const diasMesGrid = [
+                              ...Array.from({ length: offset }).map(() => null),
+                              ...diasMes,
+                            ];
+
+                            return (
+                              <div
+                                key={maquinaKey}
+                                className="rounded-2xl border border-white/10 bg-black/60 p-4"
+                              >
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                                  <div>
+                                    <div className="text-xs text-zinc-500 uppercase">Maquina</div>
+                                    <div className="text-lg font-bold text-white">{maquina.label}</div>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                                    <div className="text-zinc-400">Media {Math.round(mediaOcupSemana)}%</div>
+                                    <div className="text-zinc-400">Semana {totalTonSemana.toFixed(1)}t</div>
+                                    <div className={`px-2 py-1 rounded-full border ${status.className}`}>
+                                      {status.label}
+                                    </div>
+                                    <div className="text-zinc-500">
+                                      Cap {Math.round(maquina.capacidade).toLocaleString('pt-BR')} kg/dia
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCrpMes(maquinaKey)}
+                                      className="px-2 py-1 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+                                    >
+                                      {mesAberto ? 'Fechar mes' : 'Ver mes'}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div
+                                  className="grid gap-3"
+                                  style={{
+                                    gridTemplateColumns: `repeat(${crpOcupacaoSemana.dias.length}, minmax(0, 1fr))`,
+                                  }}
+                                >
+                                  {maquina.diasDetalhe.map((dia) => {
+                                    const percent = Number.isFinite(dia.percent) ? dia.percent : 0;
+                                    const percentFill = Math.min(percent, 100);
+                                    const acima = percent > 100;
+                                    const excedenteKg = Math.max(0, Math.round(dia.peso - maquina.capacidade));
+                                    const overflowPercent = percent > 100 ? Math.min(percent - 100, 100) : 0;
+                                    const barBaseClass =
+                                      acima ? 'bg-red-800' : percent >= 85 ? 'bg-amber-500' : 'bg-emerald-500';
+                                    const barOverflowClass = 'bg-red-500';
+                                    return (
+                                      <div
+                                        key={dia.dia}
+                                        className={`flex flex-col gap-2 rounded-xl border p-3 cursor-pointer ${
+                                          dia.dia === hoje
+                                            ? 'border-emerald-500/60 bg-emerald-500/10'
+                                            : 'border-white/5 bg-zinc-950/60'
+                                        }`}
+                                        onClick={() => {
+                                          setCrpDetalheData(dia.dia);
+                                          setCrpDetalheMaquinaId(maquina.maquinaId || '');
+                                          setCrpDetalheMaquinaLabel(maquina.label || '');
+                                          setCrpDetalheAberto(true);
+                                        }}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <div className="text-[10px] uppercase text-zinc-500">Ocupacao</div>
+                                          {acima ? (
+                                            <div className="text-[11px] font-semibold text-red-300">
+                                              +{excedenteKg.toLocaleString('pt-BR')}kg ({Math.round(percent)}%)
+                                            </div>
+                                          ) : (
+                                            <div className="text-[11px] font-semibold text-zinc-200">
+                                              {Math.round(percent)}%
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <div className="relative h-20 w-5 rounded-full bg-black/60 border border-white/10 overflow-hidden">
+                                            <div
+                                              className={`absolute left-0 right-0 bottom-0 ${barBaseClass}`}
+                                              style={{ height: `${percentFill}%` }}
+                                            />
+                                            {overflowPercent > 0 ? (
+                                              <>
+                                                <div className="absolute left-0 right-0 top-0 h-1 border-t border-dashed border-red-300/80" />
+                                                <div
+                                                  className={`absolute left-0 right-0 bottom-0 ${barOverflowClass}`}
+                                                  style={{ height: `${overflowPercent}%`, opacity: 0.85 }}
+                                                />
+                                              </>
+                                            ) : null}
+                                          </div>
+                                          <div className="flex-1">
+                                            <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                                              <span>Kg</span>
+                                              <span
+                                                className={`font-semibold ${acima ? 'text-red-300' : 'text-zinc-100'}`}
+                                              >
+                                                {Math.round(dia.peso).toLocaleString('pt-BR')}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                                              <span>Ordens</span>
+                                              <span className="text-zinc-300">{dia.ordens}</span>
+                                            </div>
+                                            {overflowPercent > 0 ? (
+                                              <div className="mt-1 text-[10px] text-red-300 font-semibold">
+                                                +{excedenteKg.toLocaleString('pt-BR')}kg acima
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {mesAberto ? (
+                                  <div className="mt-4 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="text-xs text-zinc-400">
+                                        Calendario - {crpMesInfo.mesLabel}
+                                      </div>
+                                      <div className="text-[10px] text-zinc-500">
+                                        Ocupacao mensal
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-7 gap-2 text-[10px] text-zinc-500 mb-2">
+                                      {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'].map((label) => (
+                                        <div key={label} className="text-center">{label}</div>
+                                      ))}
+                                    </div>
+                                    <div className="grid grid-cols-7 gap-2">
+                                      {diasMesGrid.map((dia, idx) => {
+                                        if (!dia) {
+                                          return <div key={`empty-${idx}`} className="h-12 rounded bg-black/20 border border-white/5" />;
+                                        }
+                                        const pesoDia = crpMesInfo.pesoMap[maquinaKey]?.[dia] || 0;
+                                        const percent = maquina.capacidade > 0 ? (pesoDia / maquina.capacidade) * 100 : 0;
+                                        const percentFill = Math.min(percent, 100);
+                                        const acima = percent > 100;
+                                        const barClass = acima
+                                          ? 'bg-red-600'
+                                          : percent >= 85
+                                            ? 'bg-amber-500'
+                                            : 'bg-emerald-500';
+                                        return (
+                                          <div key={dia} className="h-12 rounded border border-white/10 bg-black/40 p-1 flex flex-col justify-between">
+                                            <div className="text-[10px] text-zinc-400">{dia.slice(-2)}</div>
+                                            <div className="text-[10px] text-zinc-200 text-right">
+                                              {Math.round(percent)}%
+                                            </div>
+                                            <div className="h-1 bg-white/10 rounded overflow-hidden">
+                                              <div className={`${barClass} h-full`} style={{ width: `${percentFill}%` }} />
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {crpDetalheAberto && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[75] flex items-center justify-center p-4">
+            <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-3xl overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                <div>
+                  <div className="text-sm font-semibold text-white">Ordens do dia</div>
+                  <div className="text-xs text-zinc-400">
+                    {crpDetalheMaquinaLabel || 'Maquina'} - {formatarDataBR(crpDetalheData)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCrpDetalheAberto(false)}
+                  className="text-zinc-400 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-4 max-h-[70vh] overflow-y-auto">
+                {crpDetalheOrdens.length === 0 ? (
+                  <div className="text-sm text-zinc-500">Nenhuma ordem para este dia.</div>
+                ) : (
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 text-xs text-zinc-500">
+                      <tr>
+                        <th className="p-3">OP</th>
+                        <th className="p-3">Cliente</th>
+                        <th className="p-3">Produto</th>
+                        <th className="p-3 text-center">Peso</th>
+                        <th className="p-3 text-center">Entrega</th>
+                        <th className="p-3 text-right">Acoes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {crpDetalheOrdens.map((r) => {
+                        const rowId = r.sysId || r.id;
+                        const itens = r.itens || [];
+                        const produtoBase = itens[0]?.desc || '-';
+                        const produtoExtra = itens.length > 1 ? ` (+${itens.length - 1})` : '';
+                        const peso = getPesoRomaneio(r);
+                        const entrega = getDataRomaneio(r);
+                        const rowKey =
+                          rowId ||
+                          r.romaneioId ||
+                          r.id ||
+                          `${r.cliente || 'cliente'}-${entrega}`;
+                        return (
+                          <tr key={rowKey}>
+                            <td className="p-3 text-zinc-300">{r.id || r.romaneioId || rowId}</td>
+                            <td className="p-3">{r.cliente || '-'}</td>
+                            <td className="p-3 text-zinc-300">
+                              {produtoBase}{produtoExtra}
+                            </td>
+                            <td className="p-3 text-center text-zinc-200">{peso.toFixed(1)}</td>
+                            <td className="p-3 text-center text-zinc-200">{formatarDataBR(entrega)}</td>
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  disabled={!rowId}
+                                  onClick={() => abrirModalReprogramar(r)}
+                                  className="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white text-[10px] font-semibold rounded disabled:opacity-40"
+                                >
+                                  Reagendar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!rowId}
+                                  onClick={() => {
+                                    setCrpDetalheAberto(false);
+                                    abrirModalEdicao(r);
+                                  }}
+                                  className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-semibold rounded disabled:opacity-40"
+                                >
+                                  Dividir lote
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {reprogramarAberto && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+            <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-md overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                <div>
+                  <div className="text-sm font-semibold text-white">Reagendar ordem</div>
+                  <div className="text-xs text-zinc-400">
+                    {(reprogramarRomaneio?.id || reprogramarRomaneio?.romaneioId || reprogramarRomaneio?.sysId || '')}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReprogramarAberto(false)}
+                  className="text-zinc-400 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className="text-xs text-zinc-500">
+                  Atual: {formatarDataBR(getDataRomaneio(reprogramarRomaneio || {}))}
+                </div>
+                <div>
+                  <label className="text-[11px] text-zinc-400">Nova data</label>
+                  <input
+                    type="date"
+                    value={reprogramarData}
+                    onChange={(e) => setReprogramarData(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReprogramarData(hoje)}
+                    className="px-3 py-1 bg-zinc-800 text-white text-xs rounded"
+                  >
+                    Hoje
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReprogramarData(amanha)}
+                    className="px-3 py-1 bg-zinc-800 text-white text-xs rounded"
+                  >
+                    Amanhã
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReprogramarData(getProximoDiaUtil(reprogramarData || hoje))}
+                    className="px-3 py-1 bg-zinc-800 text-white text-xs rounded"
+                  >
+                    Prox. util
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReprogramarData(addDaysISO(reprogramarData || hoje, 7))}
+                    className="px-3 py-1 bg-zinc-800 text-white text-xs rounded"
+                  >
+                    +7 dias
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReprogramarAberto(false)}
+                  className="px-3 py-2 bg-zinc-800 text-white text-sm rounded"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rowId = reprogramarRomaneio?.sysId || reprogramarRomaneio?.id;
+                    if (rowId && reprogramarData) {
+                      moverRomaneioParaData(rowId, reprogramarData);
+                    }
+                    setReprogramarAberto(false);
+                  }}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded"
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
 )}
 

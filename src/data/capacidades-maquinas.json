@@ -1,0 +1,22 @@
+[
+  {
+    "maquinaId": "PERFIL_U_MARAFON",
+    "maquina": "Marafon",
+    "capacidade_kg_dia": 8500
+  },
+  {
+    "maquinaId": "PERFIL_U_ZL",
+    "maquina": "ZL",
+    "capacidade_kg_dia": 8500
+  },
+  {
+    "maquinaId": "PERFIL_U_BR200_REGIANE",
+    "maquina": "Regiane",
+    "capacidade_kg_dia": 3500
+  },
+  {
+    "maquinaId": "CONFORMADORA_TELHAS",
+    "maquina": "Conformadora de Telhas",
+    "capacidade_kg_dia": 15000
+  }
+]
