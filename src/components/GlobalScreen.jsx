@@ -176,6 +176,7 @@ const formatCompact = (n) =>
 
 const formatInt = (n) => Number(n || 0).toLocaleString('pt-BR');
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`;
+const normalizeSupervisor = (value) => String(value || '').trim();
 
 const getPaceStatus = (pace) => {
   const p = Number(pace || 0);
@@ -296,6 +297,7 @@ const GlobalScreen = () => {
 
   // Filtros e Forms
   const [filtroMaquina, setFiltroMaquina] = useState('TODAS');
+  const [filtroSupervisor, setFiltroSupervisor] = useState('TODOS');
   const [novoDiaISO, setNovoDiaISO] = useState(() => {
     const today = new Date();
     return `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
@@ -308,6 +310,7 @@ const GlobalScreen = () => {
   const [inputNomeMaquina, setInputNomeMaquina] = useState('');
   const [inputMetaMaquina, setInputMetaMaquina] = useState(100);
   const [inputMetaMaquina2, setInputMetaMaquina2] = useState('');
+  const [inputSupervisorMaquina, setInputSupervisorMaquina] = useState('');
   const [inputUnidadeMaquina, setInputUnidadeMaquina] = useState('pç');
   const [inputUnidadeMaquina2, setInputUnidadeMaquina2] = useState('');
 
@@ -564,9 +567,6 @@ const GlobalScreen = () => {
   useEffect(() => {
     if (maquinas.length > 0) {
       if (!novaMaquinaForm) setNovaMaquinaForm(maquinas[0].nome);
-      if (filtroMaquina !== 'TODAS' && !maquinas.some((m) => m.nome === filtroMaquina)) {
-        setFiltroMaquina('TODAS');
-      }
     } else {
       setNovaMaquinaForm('');
       setFiltroMaquina('TODAS');
@@ -605,9 +605,56 @@ const GlobalScreen = () => {
     return maq?.unidade || '';
   };
 
+  const maquinasFiltradas = useMemo(() => {
+    if (!presentationMode || filtroSupervisor === 'TODOS') return maquinas;
+    const alvo = normalizeSupervisor(filtroSupervisor).toLowerCase();
+    return maquinas.filter((m) => normalizeSupervisor(m.supervisor).toLowerCase() === alvo);
+  }, [maquinas, presentationMode, filtroSupervisor]);
+
+  const supervisoresDisponiveis = useMemo(() => {
+    const mapa = new Map();
+    for (const m of maquinas) {
+      const sup = normalizeSupervisor(m.supervisor);
+      if (sup) mapa.set(sup.toLowerCase(), sup);
+    }
+    return Array.from(mapa.values()).sort((a, b) => a.localeCompare(b));
+  }, [maquinas]);
+
+  const lancamentosFiltradosSupervisor = useMemo(() => {
+    if (!presentationMode || filtroSupervisor === 'TODOS') return lancamentos;
+    if (maquinasFiltradas.length === 0) return [];
+    const set = new Set(maquinasFiltradas.map((m) => m.nome));
+    return lancamentos.filter((l) => set.has(l.maquina));
+  }, [lancamentos, maquinasFiltradas, presentationMode, filtroSupervisor]);
+
+  const prevLancamentosFiltradosSupervisor = useMemo(() => {
+    if (!presentationMode || filtroSupervisor === 'TODOS') return prevLancamentos;
+    if (maquinasFiltradas.length === 0) return [];
+    const set = new Set(maquinasFiltradas.map((m) => m.nome));
+    return prevLancamentos.filter((l) => set.has(l.maquina));
+  }, [prevLancamentos, maquinasFiltradas, presentationMode, filtroSupervisor]);
+
+  useEffect(() => {
+    if (filtroMaquina === 'TODAS') return;
+    if (!maquinasFiltradas.some((m) => m.nome === filtroMaquina)) {
+      setFiltroMaquina('TODAS');
+    }
+  }, [maquinasFiltradas, filtroMaquina]);
+
+  useEffect(() => {
+    if (!presentationMode) return;
+    if (filtroSupervisor === 'TODOS') return;
+    if (!supervisoresDisponiveis.includes(filtroSupervisor)) {
+      setFiltroSupervisor('TODOS');
+    }
+  }, [presentationMode, filtroSupervisor, supervisoresDisponiveis]);
+
   const activeMaquina = useMemo(
-    () => (filtroMaquina === 'TODAS' ? null : maquinas.find((m) => m.nome === filtroMaquina)),
-    [maquinas, filtroMaquina]
+    () =>
+      filtroMaquina === 'TODAS'
+        ? null
+        : maquinasFiltradas.find((m) => m.nome === filtroMaquina),
+    [maquinasFiltradas, filtroMaquina]
   );
   const hasUnidade2 = !!activeMaquina?.unidade2;
   const effectiveUnitMode = hasUnidade2 && unitMode === 'secundaria' ? 'secundaria' : 'primaria';
@@ -618,14 +665,14 @@ const GlobalScreen = () => {
 
   // ====== Agregações por máquina (para ranking) ======
   const perMachineAgg = useMemo(() => {
-    if (!maquinas.length) return [];
+    if (!maquinasFiltradas.length) return [];
 
     const diasUteisVal = Number(config.diasUteis) || 22;
 
-    const mMap = new Map(maquinas.map((m) => [m.nome, m]));
+    const mMap = new Map(maquinasFiltradas.map((m) => [m.nome, m]));
     const byM = new Map();
 
-    for (const l of lancamentos) {
+    for (const l of lancamentosFiltradosSupervisor) {
       const nome = l.maquina;
       if (!mMap.has(nome)) continue;
       const day = l.dia || '';
@@ -659,7 +706,7 @@ const GlobalScreen = () => {
       });
     }
 
-    for (const m of maquinas) {
+    for (const m of maquinasFiltradas) {
       if (!out.some((x) => x.nome === m.nome)) {
         const metaDia = Number(m.meta) || 0;
         const metaMes = metaDia * diasUteisVal;
@@ -679,13 +726,13 @@ const GlobalScreen = () => {
     }
 
     return out;
-  }, [maquinas, lancamentos, config.diasUteis]);
+  }, [maquinasFiltradas, lancamentosFiltradosSupervisor, config.diasUteis]);
 
   // ====== Cálculos do gráfico ======
   const dadosGrafico = useMemo(() => {
     const diasUteisVal = Number(config.diasUteis) || 22;
 
-    if (maquinas.length === 0) {
+    if (maquinasFiltradas.length === 0) {
       return {
         dados: [],
         totalProduzido: 0,
@@ -710,15 +757,18 @@ const GlobalScreen = () => {
     let unidadeMix = false;
 
     if (filtroMaquina === 'TODAS') {
-      metaDiariaAtiva = maquinas.reduce((acc, m) => acc + (Number(m.meta) || 0), 0);
-      const todasMesmaUnidade = maquinas.every((m) => m.unidade === maquinas[0]?.unidade);
-      if (maquinas.length > 0 && todasMesmaUnidade) unidadeAtiva = maquinas[0].unidade;
-      else {
+      metaDiariaAtiva = maquinasFiltradas.reduce((acc, m) => acc + (Number(m.meta) || 0), 0);
+      const todasMesmaUnidade = maquinasFiltradas.every(
+        (m) => m.unidade === maquinasFiltradas[0]?.unidade
+      );
+      if (maquinasFiltradas.length > 0 && todasMesmaUnidade) {
+        unidadeAtiva = maquinasFiltradas[0].unidade;
+      } else {
         unidadeAtiva = '%';
         unidadeMix = true;
       }
     } else {
-      const maq = maquinas.find((m) => m.nome === filtroMaquina);
+      const maq = maquinasFiltradas.find((m) => m.nome === filtroMaquina);
       if (maq && effectiveUnitMode === 'secundaria' && maq.unidade2) {
         metaDiariaAtiva = Number(maq.meta2) || 0;
         unidadeAtiva = maq.unidade2 || 'un';
@@ -735,8 +785,8 @@ const GlobalScreen = () => {
 
     const lancamentosFiltrados =
       filtroMaquina === 'TODAS'
-        ? lancamentos
-        : lancamentos.filter((l) => l.maquina === filtroMaquina);
+        ? lancamentosFiltradosSupervisor
+        : lancamentosFiltradosSupervisor.filter((l) => l.maquina === filtroMaquina);
 
     const agrupadoPorDia = lancamentosFiltrados.reduce((acc, curr) => {
       if (!acc[curr.dia]) acc[curr.dia] = 0;
@@ -746,8 +796,8 @@ const GlobalScreen = () => {
 
     const prevLancamentosFiltrados =
       filtroMaquina === 'TODAS'
-        ? prevLancamentos
-        : prevLancamentos.filter((l) => l.maquina === filtroMaquina);
+        ? prevLancamentosFiltradosSupervisor
+        : prevLancamentosFiltradosSupervisor.filter((l) => l.maquina === filtroMaquina);
 
     const prevAgrupadoPorDia = prevLancamentosFiltrados.reduce((acc, curr) => {
       if (!acc[curr.dia]) acc[curr.dia] = 0;
@@ -840,7 +890,14 @@ const GlobalScreen = () => {
       necessarioDia,
       unidadeMix,
     };
-  }, [lancamentos, prevLancamentos, config, maquinas, filtroMaquina, effectiveUnitMode]);
+  }, [
+    lancamentosFiltradosSupervisor,
+    prevLancamentosFiltradosSupervisor,
+    config,
+    maquinasFiltradas,
+    filtroMaquina,
+    effectiveUnitMode,
+  ]);
 
   // (Tendência removida a pedido) — usamos apenas os dados do mês
   const dadosChart = useMemo(() => dadosGrafico.dados || [], [dadosGrafico.dados]);
@@ -1204,9 +1261,11 @@ const GlobalScreen = () => {
       return;
     }
 
+    const supervisor = normalizeSupervisor(inputSupervisorMaquina);
     const novaMaq = {
       nome,
       meta: Number(inputMetaMaquina),
+      ...(supervisor ? { supervisor } : {}),
       unidade: inputUnidadeMaquina,
       ...(inputUnidadeMaquina2 ? {
         unidade2: inputUnidadeMaquina2,
@@ -1219,6 +1278,7 @@ const GlobalScreen = () => {
       setInputNomeMaquina('');
       setInputMetaMaquina(100);
       setInputMetaMaquina2('');
+      setInputSupervisorMaquina('');
       setInputUnidadeMaquina2('');
       setInputUnidadeMaquina('pç');
       toast('Máquina add (Local) ✅');
@@ -1231,6 +1291,7 @@ const GlobalScreen = () => {
       setInputNomeMaquina('');
       setInputMetaMaquina(100);
       setInputMetaMaquina2('');
+      setInputSupervisorMaquina('');
       setInputUnidadeMaquina2('');
       setInputUnidadeMaquina('pç');
       toast('Máquina adicionada ✅');
@@ -1360,6 +1421,31 @@ const GlobalScreen = () => {
     }
   };
 
+  const handleUpdateSupervisor = async (nomeMaquina, novoSupervisor) => {
+    const supervisor = normalizeSupervisor(novoSupervisor);
+
+    if (IS_LOCALHOST) {
+      setMaquinas((prev) =>
+        prev.map((m) => (m.nome === nomeMaquina ? { ...m, supervisor } : m))
+      );
+      return;
+    }
+
+    const maq = maquinas.find((m) => m.nome === nomeMaquina);
+    if (!maq?.id) return;
+
+    setMaquinas((prev) =>
+      prev.map((m) => (m.nome === nomeMaquina ? { ...m, supervisor } : m))
+    );
+
+    try {
+      await updateDoc(doc(db, 'global_maquinas', maq.id), { supervisor });
+    } catch (error) {
+      console.error('Erro supervisor', error);
+      toast('Erro ao atualizar supervisor ?');
+    }
+  };
+
   // ===== EXPORT (captura) =====
   const captureChartPNG = async () => {
     const el = chartCaptureRef.current;
@@ -1376,7 +1462,7 @@ const GlobalScreen = () => {
   };
 
   const exportPDFGraficos = async () => {
-    if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+  if (maquinasFiltradas.length === 0) return toast('Sem máquinas para exportar.');
     if (exportando) return;
 
     setExportando(true);
@@ -1432,7 +1518,7 @@ const GlobalScreen = () => {
   };
 
   const exportPPTX = async () => {
-  if (maquinas.length === 0) return toast('Sem máquinas para exportar.');
+  if (maquinasFiltradas.length === 0) return toast('Sem máquinas para exportar.');
   if (exportando) return;
 
   setExportando(true);
@@ -1441,6 +1527,8 @@ const GlobalScreen = () => {
 
   const formatPct0 = (n) => `${Number(n || 0).toFixed(0)}%`;
   const unitOrBlank = (k) => (k.unidadeMix ? '' : ` ${k.unidade}`);
+  const maquinasPptx = maquinasFiltradas;
+  const lancamentosPptx = lancamentosFiltradosSupervisor;
 
   // KPI box mais compatível (TEXT BOX com fill/line)
   const addKpiBox = (slide, x, y, title, value) => {
@@ -1484,7 +1572,7 @@ const GlobalScreen = () => {
     await new Promise((r) => requestAnimationFrame(r));
 
     const imgResumo = await captureChartPNG();
-const kAll = calcKPIsFor('TODAS', maquinas, lancamentos, config?.diasUteis);
+const kAll = calcKPIsFor('TODAS', maquinasPptx, lancamentosPptx, config?.diasUteis);
 
     const s0 = pptx.addSlide('MASTER_DARK');
     s0.addText(`Resumo Global – ${monthLabel(mesRef)}`, {
@@ -1533,7 +1621,7 @@ const kAll = calcKPIsFor('TODAS', maquinas, lancamentos, config?.diasUteis);
       await new Promise((r) => requestAnimationFrame(r));
 
       const img = await captureChartPNG();
-const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
+const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
 
       const s = pptx.addSlide('MASTER_DARK');
       s.addText(`Performance – ${m.nome}`, {
@@ -1578,8 +1666,8 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
   // ===== PAGINAÇÃO / HISTÓRICO =====
   const lancamentosVisiveis =
     filtroMaquina === 'TODAS'
-      ? lancamentos
-      : lancamentos.filter((l) => l.maquina === filtroMaquina);
+      ? lancamentosFiltradosSupervisor
+      : lancamentosFiltradosSupervisor.filter((l) => l.maquina === filtroMaquina);
 
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 10;
@@ -1633,11 +1721,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
     const meta = Number(dadosGrafico.metaTotalMes || 0);
     const real = Number(dadosGrafico.totalProduzido || 0);
     const proj = Number(dadosGrafico.projetadoValor || 0);
-    const ating = Number(dadosGrafico.atingimentoMes || 0);
+    const mediaDia = Number(dadosGrafico.mediaDiaria || 0);
     const pace = Number(dadosGrafico.aderenciaMeta || 0);
     const unidade = dadosGrafico.unidadeMix ? '' : (dadosGrafico.unidadeAtiva || '');
 
-    const toneAting = ating >= 100 ? 'good' : ating >= 92 ? 'warn' : 'bad';
     const toneProj = proj >= meta ? 'good' : 'warn';
 
     const ps = getPaceStatus(pace);
@@ -1670,10 +1757,10 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
         icon: proj >= meta ? ArrowUpRight : ArrowDownRight,
       },
       {
-        title: 'Atingimento',
-        value: pct(ating),
-        subtitle: `Real / Meta do mês`,
-        tone: toneAting,
+        title: 'Média/dia',
+        value: `${formatCompact(mediaDia)}${showUnit ? ` ${unidade}/dia` : ''}`,
+        subtitle: `Média de produção`,
+        tone: 'info',
       },
       {
         title: 'Necessário por dia',
@@ -1769,6 +1856,26 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               </select>
             </div>
 
+            {presentationMode && (
+              <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
+                <Filter className="text-zinc-500 mr-2" size={14} />
+                <select
+                  value={filtroSupervisor}
+                  onChange={(e) => setFiltroSupervisor(e.target.value)}
+                  className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase max-w-[220px] truncate"
+                >
+                  <option value="TODOS" className="bg-zinc-900">
+                    Todos os Supervisores
+                  </option>
+                  {supervisoresDisponiveis.map((sup) => (
+                    <option key={sup} value={sup} className="bg-zinc-900">
+                      {sup}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
               <Filter className="text-zinc-500 mr-2" size={14} />
               <select
@@ -1779,7 +1886,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                 <option value="TODAS" className="bg-zinc-900">
                   Todas as Máquinas
                 </option>
-                {maquinas.map((m) => (
+                {maquinasFiltradas.map((m) => (
                   <option key={m.id || m.nome} value={m.nome} className="bg-zinc-900">
                     {m.nome}
                   </option>
@@ -1818,7 +1925,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
               <>
                 <button
                   onClick={exportPDFGraficos}
-                  disabled={busy || exportando || maquinas.length === 0}
+                  disabled={busy || exportando || maquinasFiltradas.length === 0}
                   className="flex items-center gap-2 px-3 h-9 rounded-md text-xs font-bold uppercase transition-all bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
                   title="Baixar Gráficos em PDF"
                 >
@@ -1828,7 +1935,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
 
                 <button
                   onClick={exportPPTX}
-                  disabled={busy || exportando || maquinas.length === 0}
+                  disabled={busy || exportando || maquinasFiltradas.length === 0}
                   className="flex items-center gap-2 px-3 h-9 rounded-md text-xs font-bold uppercase transition-all bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50"
                   title="Baixar Relatório Completo em PPTX"
                 >
@@ -1930,6 +2037,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     <thead className="bg-black/40 text-zinc-500 uppercase text-[10px] font-bold tracking-wider sticky top-0 backdrop-blur-sm">
                       <tr>
                         <th className="px-6 py-3">Máquina</th>
+                        <th className="px-6 py-3">Supervisor</th>
                         <th className="px-6 py-3 text-center">Unidade</th>
                         <th className="px-6 py-3 text-center">Unidade 2</th>
                         <th className="px-6 py-3 text-right">Meta Diária</th>
@@ -1941,6 +2049,14 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                       {maquinas.map((m) => (
                         <tr key={m.id || m.nome} className="group hover:bg-white/[0.02] transition-colors">
                           <td className="px-6 py-2 font-medium text-zinc-200">{m.nome}</td>
+                          <td className="px-6 py-2">
+                            <input
+                              type="text"
+                              value={m.supervisor || ''}
+                              onChange={(e) => handleUpdateSupervisor(m.nome, e.target.value)}
+                              className="w-full bg-transparent text-zinc-300 text-xs outline-none border-b border-transparent focus:border-blue-500"
+                            />
+                          </td>
                           <td className="px-6 py-2 text-center">
                             <select
                               value={m.unidade}
@@ -2003,6 +2119,13 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
                     className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500 min-w-[150px]"
                     value={inputNomeMaquina}
                     onChange={(e) => setInputNomeMaquina(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Supervisor"
+                    className="w-40 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm outline-none text-white focus:border-blue-500"
+                    value={inputSupervisorMaquina}
+                    onChange={(e) => setInputSupervisorMaquina(e.target.value)}
                   />
                   <select
                     className="w-24 bg-zinc-900 border border-zinc-700 rounded px-2 py-2 text-sm outline-none text-zinc-300 focus:border-blue-500"
@@ -2314,7 +2437,7 @@ const k = calcKPIsFor(m.nome, maquinas, lancamentos, config?.diasUteis);
             </div>
 
             <div className="flex-1 w-full relative min-h-[520px] p-4 bg-[#09090b]">
-              {maquinas.length === 0 ? (
+              {maquinasFiltradas.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-zinc-600 gap-4">
                   <BarChart3 size={48} className="opacity-20" />
                   <p className="text-sm font-medium">Cadastre máquinas e registre produção para visualizar os dados.</p>
