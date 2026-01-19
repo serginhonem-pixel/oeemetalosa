@@ -191,6 +191,7 @@ const KpiCard = ({
   subtitle,
   tone = 'neutral',
   emphasize = false,
+  compact = false,
   rightBadge,
   icon: Icon,
 }) => {
@@ -218,7 +219,7 @@ const KpiCard = ({
 
   return (
     <div
-      className={`rounded-xl border ${toneMap[tone]} p-4 shadow-sm ${
+      className={`rounded-xl border ${toneMap[tone]} ${compact ? 'p-3' : 'p-4'} shadow-sm ${
         emphasize ? 'ring-1 ring-white/5' : ''
       }`}
     >
@@ -235,21 +236,31 @@ const KpiCard = ({
 
       <div className="flex items-center gap-2">
         {Icon ? (
-          <div className="p-1.5 rounded-lg border border-white/10 bg-black/15">
-            <Icon size={16} className="text-zinc-300" />
+          <div className={`${compact ? 'p-1' : 'p-1.5'} rounded-lg border border-white/10 bg-black/15`}>
+            <Icon size={compact ? 14 : 16} className="text-zinc-300" />
           </div>
         ) : null}
 
         <div
           className={`font-black tracking-tight ${valueColor} ${
-            emphasize ? 'text-3xl md:text-4xl' : 'text-2xl md:text-3xl'
+            emphasize
+              ? compact
+                ? 'text-2xl md:text-3xl'
+                : 'text-3xl md:text-4xl'
+              : compact
+              ? 'text-xl md:text-2xl'
+              : 'text-2xl md:text-3xl'
           }`}
         >
           {value}
         </div>
       </div>
 
-      {subtitle ? <div className="mt-1 text-[11px] text-zinc-500">{subtitle}</div> : null}
+      {subtitle ? (
+        <div className={`mt-1 ${compact ? 'text-[10px]' : 'text-[11px]'} text-zinc-500`}>
+          {subtitle}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -1761,6 +1772,67 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
     return { total, mediaDia, diasTrabalhados };
   }, [prevLancamentos, filtroMaquina, effectiveUnitMode]);
 
+  const resumoDiarioSupervisor = useMemo(() => {
+    if (!presentationMode || filtroSupervisor === 'TODOS') {
+      return {
+        dias: [],
+        maquinas: [],
+        porDia: new Map(),
+        totalPorDia: new Map(),
+        totalPorMaquina: new Map(),
+        metaPorMaquina: new Map(),
+      };
+    }
+
+    const maquinasResumo = maquinasFiltradas.map((m) => m.nome);
+    const metaPorMaquina = new Map(
+      maquinasFiltradas.map((m) => [m.nome, Number(m.meta) || 0])
+    );
+    const porDia = new Map();
+    const totalPorDia = new Map();
+
+    for (const l of lancamentosFiltradosSupervisor) {
+      const dia = l.dia || '';
+      if (!dia) continue;
+      if (!porDia.has(dia)) porDia.set(dia, new Map());
+      const mapaDia = porDia.get(dia);
+      const atual = mapaDia.get(l.maquina) || 0;
+      const soma = atual + (Number(l.real) || 0);
+      mapaDia.set(l.maquina, soma);
+    }
+
+    for (const [dia, mapaDia] of porDia.entries()) {
+      let totalDia = 0;
+      for (const nome of maquinasResumo) {
+        totalDia += Number(mapaDia.get(nome) || 0);
+      }
+      totalPorDia.set(dia, totalDia);
+    }
+
+    const totalPorMaquina = new Map();
+    for (const nome of maquinasResumo) {
+      let total = 0;
+      for (const dia of porDia.keys()) {
+        const mapaDia = porDia.get(dia);
+        total += Number(mapaDia?.get(nome) || 0);
+      }
+      totalPorMaquina.set(nome, total);
+    }
+
+    const dias = Array.from(porDia.keys()).sort((a, b) => {
+      const da = Number(a?.split('/')?.[0] || 0);
+      const db = Number(b?.split('/')?.[0] || 0);
+      return da - db;
+    });
+
+    return { dias, maquinas: maquinasResumo, porDia, totalPorDia, totalPorMaquina, metaPorMaquina };
+  }, [
+    presentationMode,
+    filtroSupervisor,
+    maquinasFiltradas,
+    lancamentosFiltradosSupervisor,
+  ]);
+
   // ===== KPIs (Resumo Executivo) =====
   const kpis = useMemo(() => {
     const meta = Number(dadosGrafico.metaTotalMes || 0);
@@ -1795,13 +1867,6 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
         icon: ps.icon,
       },
       {
-        title: 'Projeção',
-        value: `${formatCompact(proj)}${showUnit ? ` ${unidade}` : ''}`,
-        subtitle: `Fechamento estimado`,
-        tone: toneProj,
-        icon: proj >= meta ? ArrowUpRight : ArrowDownRight,
-      },
-      {
         title: 'Média/dia',
         value: `${formatCompact(mediaDia)}${showUnit ? ` ${unidade}/dia` : ''}`,
         subtitle: `Média de produção`,
@@ -1814,13 +1879,26 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
         tone: needTone,
       },
       {
+        title: 'Meta/dia',
+        value: `${formatCompact(metaDia)}${showUnit ? ` ${unidade}/dia` : ''}`,
+        subtitle: `Meta diária`,
+        tone: 'neutral',
+      },
+      {
         title: 'Realizado',
         value: `${formatCompact(real)}${showUnit ? ` ${unidade}` : ''}`,
         subtitle: `Dias lançados: ${dadosGrafico.diasTrabalhados || 0}`,
         tone: 'neutral',
       },
       {
-        title: 'Meta mensal',
+        title: 'Projeção',
+        value: `${formatCompact(proj)}${showUnit ? ` ${unidade}` : ''}`,
+        subtitle: `Fechamento estimado`,
+        tone: toneProj,
+        icon: proj >= meta ? ArrowUpRight : ArrowDownRight,
+      },
+      {
+        title: 'Meta mês',
         value: `${formatCompact(meta)}${showUnit ? ` ${unidade}` : ''}`,
         subtitle: `Dias úteis: ${dadosGrafico.diasUteis || 0}`,
         tone: 'info',
@@ -2431,7 +2509,13 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
 
         {/* DIREITA */}
         <div className={`${presentationMode ? 'lg:col-span-12' : 'lg:col-span-9'} flex flex-col min-w-0 gap-4`}>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div
+            className={`grid gap-3 ${
+              presentationMode
+                ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-7'
+                : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-6'
+            }`}
+          >
             {kpis.map((k) => (
               <KpiCard
                 key={k.title}
@@ -2440,6 +2524,7 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                 subtitle={k.subtitle}
                 tone={k.tone}
                 emphasize={!!k.emphasize}
+                compact={presentationMode}
                 rightBadge={k.rightBadge}
                 icon={k.icon}
               />
@@ -2459,13 +2544,26 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <TrendingUp className="text-blue-500" size={18} />
-                  <h3 className="text-base md:text-lg font-bold text-white tracking-tight">Performance</h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700 uppercase">
-                    {filtroMaquina === 'TODAS' ? 'Visão geral' : filtroMaquina}
-                  </span>
+                  <h3 className="text-2xl md:text-4xl font-black text-white tracking-tight uppercase">
+                    {filtroMaquina === 'TODAS' ? 'Todas as Máquinas' : filtroMaquina}
+                  </h3>
                 </div>
-                <div className="text-[11px] text-zinc-500">
-                  Mês: <span className="text-zinc-300 font-semibold">{monthLabel(mesRef)}</span>
+                <div className="text-[11px] text-zinc-500 flex flex-wrap gap-x-3 gap-y-1">
+                  <span>
+                    Mês: <span className="text-zinc-300 font-semibold">{monthLabel(mesRef)}</span>
+                  </span>
+                  {presentationMode && filtroSupervisor !== 'TODOS' ? (
+                    <span>
+                      Supervisor:{' '}
+                      <span className="text-zinc-300 font-semibold">{filtroSupervisor}</span>
+                    </span>
+                  ) : null}
+                  {activeMaquina?.supervisor ? (
+                    <span>
+                      Resp.:{' '}
+                      <span className="text-zinc-300 font-semibold">{activeMaquina.supervisor}</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -2654,6 +2752,101 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
               )}
             </div>
           </div>
+
+          {presentationMode && filtroSupervisor !== 'TODOS' && (
+            <div className="bg-zinc-900 border border-zinc-800 shadow-xl rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-zinc-800 bg-zinc-800/30">
+                <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">
+                  Resumo diário por máquina
+                </div>
+                <div className="text-xs text-zinc-400 mt-1">
+                  Supervisor: <span className="text-zinc-200 font-semibold">{filtroSupervisor}</span>
+                </div>
+              </div>
+
+              {resumoDiarioSupervisor.dias.length === 0 ? (
+                <div className="p-6 text-sm text-zinc-500">Sem lançamentos para o período.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-black/30 text-zinc-500 uppercase text-[10px] font-bold tracking-wider sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Máquina</th>
+                        {resumoDiarioSupervisor.dias.map((dia) => (
+                          <th key={dia} className="px-3 py-2 text-right whitespace-nowrap">
+                            {dia}
+                          </th>
+                        ))}
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/50">
+                      {resumoDiarioSupervisor.maquinas.map((nome) => (
+                        <tr key={nome} className="hover:bg-white/[0.03] transition-colors">
+                          <td className="px-3 py-2 text-zinc-300 font-medium">{nome}</td>
+                          {resumoDiarioSupervisor.dias.map((dia) => {
+                            const mapaDia = resumoDiarioSupervisor.porDia.get(dia);
+                            const valor = Number(mapaDia?.get(nome) || 0);
+                            const metaDiaAtual = Number(
+                              resumoDiarioSupervisor.metaPorMaquina.get(nome) || 0
+                            );
+                            const perf = metaDiaAtual > 0 ? (valor / metaDiaAtual) * 100 : 0;
+                            const statusTone =
+                              metaDiaAtual <= 0
+                                ? 'border-zinc-800 text-zinc-400'
+                                : perf >= 100
+                                ? 'border-emerald-500/40 text-emerald-300'
+                                : perf >= 95
+                                ? 'border-amber-400/40 text-amber-300'
+                                : 'border-red-500/40 text-red-300';
+                            const IconDir = perf >= 100 ? ArrowUpRight : ArrowDownRight;
+                            const showIcon = metaDiaAtual > 0 && valor > 0;
+
+                            return (
+                              <td key={`${nome}-${dia}`} className="px-3 py-2 text-right">
+                                <div
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border bg-black/20 ${statusTone}`}
+                                  title={
+                                    metaDiaAtual > 0
+                                      ? `${perf.toFixed(0)}% da meta dia`
+                                      : 'Sem meta definida'
+                                  }
+                                >
+                                  {showIcon ? <IconDir size={12} /> : null}
+                                  <span className="font-semibold">{formatInt(valor)}</span>
+                                </div>
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-right font-bold text-zinc-100">
+                            {formatInt(resumoDiarioSupervisor.totalPorMaquina.get(nome) || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-zinc-800 bg-black/20">
+                      <tr>
+                        <td className="px-3 py-2 text-zinc-400 font-bold">Total</td>
+                        {resumoDiarioSupervisor.dias.map((dia) => (
+                          <td key={`total-${dia}`} className="px-3 py-2 text-right font-bold text-zinc-100">
+                            {formatInt(resumoDiarioSupervisor.totalPorDia.get(dia) || 0)}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-right font-black text-zinc-100">
+                          {formatInt(
+                            resumoDiarioSupervisor.dias.reduce(
+                              (acc, dia) => acc + Number(resumoDiarioSupervisor.totalPorDia.get(dia) || 0),
+                              0
+                            )
+                          )}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Insights + Ranking */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
