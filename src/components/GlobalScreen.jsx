@@ -1123,7 +1123,10 @@ const GlobalScreen = () => {
           setConfig(nextConfig);
           localStorage.setItem('local_config', JSON.stringify(nextConfig));
         }
-        if (Array.isArray(nextMaq)) setMaquinas(nextMaq);
+        if (Array.isArray(nextMaq)) {
+          setMaquinas(nextMaq);
+          localStorage.setItem('local_maquinas', JSON.stringify(nextMaq));
+        }
         if (Array.isArray(allLanc)) {
           localStorage.setItem('local_lancamentos', JSON.stringify(allLanc));
           const filtered = allLanc.filter(
@@ -1669,6 +1672,48 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
       ? lancamentosFiltradosSupervisor
       : lancamentosFiltradosSupervisor.filter((l) => l.maquina === filtroMaquina);
 
+  const maquinasVisiveis = useMemo(
+    () => maquinasFiltradas.map((m) => m.nome),
+    [maquinasFiltradas]
+  );
+
+  const moveMaquina = (delta) => {
+    if (!maquinasVisiveis.length) return;
+    const currentIndex = maquinasVisiveis.indexOf(filtroMaquina);
+    const baseIndex = currentIndex >= 0 ? currentIndex : delta > 0 ? -1 : 0;
+    const nextIndex = (baseIndex + delta + maquinasVisiveis.length) % maquinasVisiveis.length;
+    setFiltroMaquina(maquinasVisiveis[nextIndex]);
+  };
+
+  useEffect(() => {
+    if (!presentationMode) return;
+    if (filtroSupervisor === 'TODOS') return;
+    if (!maquinasVisiveis.length) return;
+
+    const handleKey = (event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        moveMaquina(1);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        moveMaquina(-1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [presentationMode, filtroSupervisor, maquinasVisiveis, filtroMaquina]);
+
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 10;
 
@@ -1862,6 +1907,16 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                 <select
                   value={filtroSupervisor}
                   onChange={(e) => setFiltroSupervisor(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === 'ArrowUp' ||
+                      e.key === 'ArrowDown' ||
+                      e.key === 'ArrowLeft' ||
+                      e.key === 'ArrowRight'
+                    ) {
+                      e.preventDefault();
+                    }
+                  }}
                   className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase max-w-[220px] truncate"
                 >
                   <option value="TODOS" className="bg-zinc-900">
@@ -1876,22 +1931,44 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
               </div>
             )}
 
-            <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
-              <Filter className="text-zinc-500 mr-2" size={14} />
-              <select
-                value={filtroMaquina}
-                onChange={(e) => setFiltroMaquina(e.target.value)}
-                className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase max-w-[220px] truncate"
-              >
-                <option value="TODAS" className="bg-zinc-900">
-                  Todas as Máquinas
-                </option>
-                {maquinasFiltradas.map((m) => (
-                  <option key={m.id || m.nome} value={m.nome} className="bg-zinc-900">
-                    {m.nome}
+            <div className="flex items-center gap-1">
+              {presentationMode && filtroSupervisor !== 'TODOS' && maquinasVisiveis.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => moveMaquina(-1)}
+                    className="h-9 w-9 grid place-items-center rounded-md bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                    title="Máquina anterior"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveMaquina(1)}
+                    className="h-9 w-9 grid place-items-center rounded-md bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                    title="Próxima máquina"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </>
+              )}
+              <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-md px-2 h-9">
+                <Filter className="text-zinc-500 mr-2" size={14} />
+                <select
+                  value={filtroMaquina}
+                  onChange={(e) => setFiltroMaquina(e.target.value)}
+                  className="bg-transparent text-zinc-200 text-xs font-semibold focus:outline-none cursor-pointer uppercase max-w-[220px] truncate"
+                >
+                  <option value="TODAS" className="bg-zinc-900">
+                    Todas as Máquinas
                   </option>
-                ))}
-              </select>
+                  {maquinasFiltradas.map((m) => (
+                    <option key={m.id || m.nome} value={m.nome} className="bg-zinc-900">
+                      {m.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {hasUnidade2 && filtroMaquina !== 'TODAS' && (
