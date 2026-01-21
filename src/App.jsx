@@ -1385,6 +1385,8 @@ const toISODate = (v) => {
 
   
 useEffect(() => {
+  let unsubProducao = null;
+
   const carregarDados = async () => {
     // ------------------------------
     // MODO DEV (localhost)
@@ -1467,6 +1469,26 @@ try {
     };
   });
   setHistoricoProducaoReal(listaProducao);
+  if (unsubProducao) unsubProducao();
+  unsubProducao = onSnapshot(
+    collection(db, "producao"),
+    (snap) => {
+      const listaProducaoRt = snap.docs.map((docSnap) => {
+        const d = docSnap.data();
+        const { id, ...rest } = d;
+        return {
+          id: docSnap.id,
+          ...rest,
+          data: toISODate(d.data),
+        };
+      });
+      setHistoricoProducaoReal(listaProducaoRt);
+    },
+    (err) => {
+      console.error("Erro ao assinar producao:", err);
+      toast?.(`Erro producao: ${err?.code || err?.message || "desconhecido"}`);
+    }
+  );
 
   // 3. Paradas
   const paradasSnapshot = await getDocs(collection(db, "paradas"));
@@ -1496,6 +1518,9 @@ try {
   };
 
   carregarDados();
+  return () => {
+    if (unsubProducao) unsubProducao();
+  };
 }, []);
 
   useEffect(() => {
@@ -4349,6 +4374,45 @@ const parseNumberBR = (v) => {
     return lista;
   }, [estoqueComercialBase, filtroEstoque, comercialVisao, comercialBusca]);
 
+  const handleDownloadEstoqueExcel = () => {
+    if (!estoqueFiltradoComercial.length) {
+      alert('Nenhum item para exportar.');
+      return;
+    }
+
+    const rows = estoqueFiltradoComercial.map((item) => {
+      const estudo = estoqueEstudo[item.cod] || {};
+      const status = getStockStatusComercial(item, estudo);
+      const demandaBase = Number(estudo.demandaDiaria || 0);
+      const estoqueMaxBase = Number(estudo.estoqueMaximo || 0);
+      const saldoQtd = Number(item.saldoQtd || 0);
+      const saldoKg = Number(item.saldoKg || 0);
+      const pesoUnit = Number(item.pesoUnit || 0);
+      const unidade = String(estudo.unidade || 'kg').toLowerCase();
+      const usaConversaoKg = unidade === 'pc' && pesoUnit;
+      const demandaKg = usaConversaoKg ? demandaBase * pesoUnit : demandaBase;
+      const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
+
+      return {
+        COD: item.cod || '',
+        PRODUTO: item.desc || '',
+        GRUPO: getEstoqueGrupoLabel(item),
+        QTD_ATUAL: saldoQtd,
+        SALDO_KG: Number(saldoKg.toFixed(2)),
+        DEMANDA_DIARIA: Number(demandaKg.toFixed(2)),
+        ESTOQUE_MAXIMO: Number(estoqueMaxKg.toFixed(2)),
+        UNIDADE_BASE: unidade,
+        PESO_UNITARIO: Number(pesoUnit.toFixed(4)),
+        STATUS: status.label,
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Estoque');
+    XLSX.writeFile(wb, `Estoque_${getLocalISODate()}.xlsx`);
+  };
+
   const estoqueCriticoComercial = useMemo(
     () => estoqueComercialBase.filter((item) => Number(item.saldoQtd || 0) <= 500).slice(0, 4),
     [estoqueComercialBase]
@@ -6934,6 +6998,14 @@ const handleImportBackup = (json) => {
                             </button>
                           )}
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleDownloadEstoqueExcel}
+                          className="px-3 py-2 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white flex items-center gap-2"
+                        >
+                          <Download size={14} />
+                          Baixar Excel
+                        </button>
                         {canManageEstoque && (
                           <>
                             <button
