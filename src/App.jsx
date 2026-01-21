@@ -1183,6 +1183,7 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [ajusteEstoqueSaldoAtual, setAjusteEstoqueSaldoAtual] = useState(0);
   const [ajusteEstoqueLockProduto, setAjusteEstoqueLockProduto] = useState(false);
   const [estoqueResetando, setEstoqueResetando] = useState(false);
+  const [mostrarZeradosEstoque, setMostrarZeradosEstoque] = useState(false);
 
   useEffect(() => {
     if (abaAtiva === 'comercial') {
@@ -4180,20 +4181,15 @@ const parseNumberBR = (v) => {
     return "Outros";
   };
 
-  const estoqueTelhas = useMemo(() => {
-    const telhas = (CATALOGO_PRODUTOS || []).filter(
-      (p) => p.grupo === "GRUPO_TELHAS"
-    );
-
+  const estoqueTelhasSaldo = useMemo(() => {
     const producaoEstoque = historicoProducaoReal.filter((item) =>
       String(item?.destino || "").toLowerCase().includes("estoque")
     );
-    const base = producaoEstoque;
 
     const saldoPorCod = {};
     const saldoKgPorCod = {};
 
-    base.forEach((item) => {
+    producaoEstoque.forEach((item) => {
       if (!item?.cod) return;
       const qtd = Number(item.qtd || 0);
       const peso = Number(item.pesoTotal || 0);
@@ -4201,15 +4197,29 @@ const parseNumberBR = (v) => {
       saldoKgPorCod[item.cod] = (saldoKgPorCod[item.cod] || 0) + peso;
     });
 
+    return { saldoPorCod, saldoKgPorCod };
+  }, [historicoProducaoReal]);
+
+  const estoqueTelhasAll = useMemo(() => {
+    const telhas = (CATALOGO_PRODUTOS || []).filter(
+      (p) => p.grupo === "GRUPO_TELHAS"
+    );
     return telhas
       .map((p) => ({
         ...p,
-        saldoQtd: saldoPorCod[p.cod] || 0,
-        saldoKg: saldoKgPorCod[p.cod] || 0,
+        saldoQtd: estoqueTelhasSaldo.saldoPorCod[p.cod] || 0,
+        saldoKg: estoqueTelhasSaldo.saldoKgPorCod[p.cod] || 0,
       }))
-      .filter((p) => (p.saldoQtd || 0) !== 0 || (p.saldoKg || 0) !== 0)
       .sort((a, b) => String(a.cod).localeCompare(String(b.cod)));
-  }, [historicoProducaoReal]);
+  }, [CATALOGO_PRODUTOS, estoqueTelhasSaldo]);
+
+  const estoqueTelhas = useMemo(
+    () =>
+      estoqueTelhasAll.filter(
+        (p) => (p.saldoQtd || 0) !== 0 || (p.saldoKg || 0) !== 0
+      ),
+    [estoqueTelhasAll]
+  );
 
   const estoquePerfis = useMemo(() => {
     const itens = [];
@@ -4246,6 +4256,11 @@ const parseNumberBR = (v) => {
   const estoqueComercialBase = useMemo(
     () => [...estoqueTelhas, ...estoquePerfis],
     [estoqueTelhas, estoquePerfis]
+  );
+
+  const estoqueComercialBaseComZeros = useMemo(
+    () => [...estoqueTelhasAll, ...estoquePerfis],
+    [estoqueTelhasAll, estoquePerfis]
   );
 
   const estoqueComercialHasTelhas = useMemo(
@@ -4353,7 +4368,9 @@ const parseNumberBR = (v) => {
   }, [estoqueComercialBase, comercialEstoqueBusca]);
 
   const estoqueFiltradoComercial = useMemo(() => {
-    let lista = [...estoqueComercialBase];
+    let lista = [
+      ...(mostrarZeradosEstoque ? estoqueComercialBaseComZeros : estoqueComercialBase),
+    ];
     if (filtroEstoque === 'critico') {
       lista = lista.filter((item) => Number(item.saldoQtd || 0) <= 500);
     }
@@ -4372,7 +4389,14 @@ const parseNumberBR = (v) => {
       });
     }
     return lista;
-  }, [estoqueComercialBase, filtroEstoque, comercialVisao, comercialBusca]);
+  }, [
+    estoqueComercialBase,
+    estoqueComercialBaseComZeros,
+    mostrarZeradosEstoque,
+    filtroEstoque,
+    comercialVisao,
+    comercialBusca,
+  ]);
 
   const handleDownloadEstoqueExcel = () => {
     if (!estoqueFiltradoComercial.length) {
@@ -4408,8 +4432,38 @@ const parseNumberBR = (v) => {
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
+    const sugestoes = estoqueFiltradoComercial
+      .map((item) => {
+        const estudo = estoqueEstudo[item.cod] || {};
+        const demandaBase = Number(estudo.demandaDiaria || 0);
+        const estoqueMaxBase = Number(estudo.estoqueMaximo || 0);
+        const saldoKg = Number(item.saldoKg || 0);
+        const pesoUnit = Number(item.pesoUnit || 0);
+        const unidade = String(estudo.unidade || 'kg').toLowerCase();
+        const usaConversaoKg = unidade === 'pc' && pesoUnit;
+        const demandaKg = usaConversaoKg ? demandaBase * pesoUnit : demandaBase;
+        const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
+        const faltaReposicao =
+          estoqueMaxKg && estoqueMaxKg > 0 ? Math.max(0, estoqueMaxKg - saldoKg) : 0;
+        const coberturaDias = demandaKg ? saldoKg / demandaKg : null;
+
+        return {
+          COD: item.cod || '',
+          PRODUTO: item.desc || '',
+          GRUPO: getEstoqueGrupoLabel(item),
+          SALDO_KG: Number(saldoKg.toFixed(2)),
+          DEMANDA_DIARIA: Number(demandaKg.toFixed(2)),
+          ESTOQUE_MAXIMO: Number(estoqueMaxKg.toFixed(2)),
+          FALTA_REPOR_KG: Number(faltaReposicao.toFixed(2)),
+          COBERTURA_DIAS: coberturaDias != null ? Number(coberturaDias.toFixed(2)) : '',
+        };
+      })
+      .filter((row) => Number(row.FALTA_REPOR_KG || 0) > 0);
+
+    const wsSugestoes = XLSX.utils.json_to_sheet(sugestoes);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Estoque');
+    XLSX.utils.book_append_sheet(wb, wsSugestoes, 'Sugestoes');
     XLSX.writeFile(wb, `Estoque_${getLocalISODate()}.xlsx`);
   };
 
@@ -7005,6 +7059,17 @@ const handleImportBackup = (json) => {
                         >
                           <Download size={14} />
                           Baixar Excel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMostrarZeradosEstoque((prev) => !prev)}
+                          className={`px-3 py-2 rounded-lg text-xs font-bold border ${
+                            mostrarZeradosEstoque
+                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-200'
+                              : 'bg-zinc-900 border-white/10 text-zinc-300 hover:text-white'
+                          }`}
+                        >
+                          {mostrarZeradosEstoque ? 'Ocultar zerados' : 'Mostrar zerados'}
                         </button>
                         {canManageEstoque && (
                           <>
