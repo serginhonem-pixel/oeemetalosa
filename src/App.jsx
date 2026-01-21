@@ -4413,9 +4413,8 @@ const parseNumberBR = (v) => {
       const saldoKg = Number(item.saldoKg || 0);
       const pesoUnit = Number(item.pesoUnit || 0);
       const unidade = String(estudo.unidade || 'kg').toLowerCase();
-      const usaConversaoKg = unidade === 'pc' && pesoUnit;
-      const demandaKg = usaConversaoKg ? demandaBase * pesoUnit : demandaBase;
-      const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
+      const demandaUn = demandaBase;
+      const estoqueMaxUn = estoqueMaxBase;
 
       return {
         COD: item.cod || '',
@@ -4423,8 +4422,8 @@ const parseNumberBR = (v) => {
         GRUPO: getEstoqueGrupoLabel(item),
         QTD_ATUAL: saldoQtd,
         SALDO_KG: Number(saldoKg.toFixed(2)),
-        DEMANDA_DIARIA: Number(demandaKg.toFixed(2)),
-        ESTOQUE_MAXIMO: Number(estoqueMaxKg.toFixed(2)),
+        DEMANDA_DIARIA: Number(demandaUn.toFixed(2)),
+        ESTOQUE_MAXIMO: Number(estoqueMaxUn.toFixed(2)),
         UNIDADE_BASE: unidade,
         PESO_UNITARIO: Number(pesoUnit.toFixed(4)),
         STATUS: status.label,
@@ -4440,25 +4439,24 @@ const parseNumberBR = (v) => {
         const saldoKg = Number(item.saldoKg || 0);
         const pesoUnit = Number(item.pesoUnit || 0);
         const unidade = String(estudo.unidade || 'kg').toLowerCase();
-        const usaConversaoKg = unidade === 'pc' && pesoUnit;
-        const demandaKg = usaConversaoKg ? demandaBase * pesoUnit : demandaBase;
-        const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
+        const demandaUn = demandaBase;
+        const estoqueMaxUn = estoqueMaxBase;
         const faltaReposicao =
-          estoqueMaxKg && estoqueMaxKg > 0 ? Math.max(0, estoqueMaxKg - saldoKg) : 0;
-        const coberturaDias = demandaKg ? saldoKg / demandaKg : null;
+          estoqueMaxUn && estoqueMaxUn > 0 ? Math.max(0, estoqueMaxUn - saldoQtd) : 0;
+        const coberturaDias = demandaUn ? saldoQtd / demandaUn : null;
 
         return {
           COD: item.cod || '',
           PRODUTO: item.desc || '',
           GRUPO: getEstoqueGrupoLabel(item),
-          SALDO_KG: Number(saldoKg.toFixed(2)),
-          DEMANDA_DIARIA: Number(demandaKg.toFixed(2)),
-          ESTOQUE_MAXIMO: Number(estoqueMaxKg.toFixed(2)),
-          FALTA_REPOR_KG: Number(faltaReposicao.toFixed(2)),
+          SALDO_UN: Number(saldoQtd.toFixed(2)),
+          DEMANDA_DIARIA: Number(demandaUn.toFixed(2)),
+          ESTOQUE_MAXIMO: Number(estoqueMaxUn.toFixed(2)),
+          FALTA_REPOR_UN: Number(faltaReposicao.toFixed(2)),
           COBERTURA_DIAS: coberturaDias != null ? Number(coberturaDias.toFixed(2)) : '',
         };
       })
-      .filter((row) => Number(row.FALTA_REPOR_KG || 0) > 0);
+      .filter((row) => Number(row.FALTA_REPOR_UN || 0) > 0);
 
     const wsSugestoes = XLSX.utils.json_to_sheet(sugestoes);
     const wb = XLSX.utils.book_new();
@@ -7129,18 +7127,18 @@ const handleImportBackup = (json) => {
                             const pesoUnit = Number(item.pesoUnit || 0);
                             const unidade = String(estudo.unidade || 'kg').toLowerCase();
                             const usaConversaoKg = unidade === 'pc' && pesoUnit;
-                            const demandaKg = usaConversaoKg ? demandaBase * pesoUnit : demandaBase;
-                            const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
-                            const maxBase = estoqueMaxKg && estoqueMaxKg > 0 ? estoqueMaxKg : 5000;
+                            const demandaUn = demandaBase;
+                            const estoqueMaxUn = estoqueMaxBase;
+                            const maxBase = estoqueMaxUn && estoqueMaxUn > 0 ? estoqueMaxUn : 5000;
                             const percent = Math.min(
                               100,
-                              Math.max(0, (saldoKg / maxBase) * 100)
+                              Math.max(0, (saldoQtd / maxBase) * 100)
                             );
                             const faltaReposicao =
-                              estoqueMaxKg && estoqueMaxKg > 0
-                                ? Math.max(0, estoqueMaxKg - saldoKg)
+                              estoqueMaxUn && estoqueMaxUn > 0
+                                ? Math.max(0, estoqueMaxUn - saldoQtd)
                                 : 0;
-                            const coberturaDias = demandaKg ? saldoKg / demandaKg : null;
+                            const coberturaDias = demandaUn ? saldoQtd / demandaUn : null;
                             const sugestaoAberta = estoqueSugestaoCod === item.cod;
                             const colSpan = canManageEstoque ? 8 : 7;
                             const toggleSugestao = () => {
@@ -7150,7 +7148,7 @@ const handleImportBackup = (json) => {
                             };
                             const capacidadeDia = Number(capacidadeDiaria || 0);
                             const aviso =
-                              estoqueMaxKg && capacidadeDia
+                              estoqueMaxUn && capacidadeDia
                                 ? faltaReposicao <= 0
                                   ? { label: 'OK', tone: 'text-emerald-300' }
                                   : (() => {
@@ -7162,7 +7160,7 @@ const handleImportBackup = (json) => {
                                           ? 'text-amber-300'
                                           : 'text-emerald-300';
                                       return {
-                                        label: `Repor ${Math.round(faltaReposicao)} kg (~${dias}d)`,
+                                        label: `Repor ${Math.round(faltaReposicao)} un (~${dias}d)`,
                                         tone,
                                       };
                                     })()
@@ -7204,7 +7202,7 @@ const handleImportBackup = (json) => {
                                     <div className={`absolute inset-y-0 left-0 ${status.bg} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
                                     <div className="absolute inset-y-0 right-0 w-px bg-white/15" />
                                   </div>
-                                  <div className="mt-1 text-[10px] text-zinc-500">Base kg</div>
+                                  <div className="mt-1 text-[10px] text-zinc-500">Base un</div>
                                 </td>
                                 <td className="px-5 py-4">
                                   <div className="text-sm font-bold text-white tabular-nums">
@@ -7216,12 +7214,12 @@ const handleImportBackup = (json) => {
                                 </td>
                                 <td className="px-5 py-4">
                                   <div className="text-sm font-medium text-zinc-100 tabular-nums">
-                                    {demandaKg ? Math.round(demandaKg).toLocaleString() : '--'}
+                                    {demandaUn ? Math.round(demandaUn).toLocaleString() : '--'}
                                   </div>
                                 </td>
                                 <td className="px-5 py-4">
                                   <div className="text-sm font-medium text-zinc-100 tabular-nums">
-                                    {estoqueMaxKg ? Math.round(estoqueMaxKg).toLocaleString() : '--'}
+                                    {estoqueMaxUn ? Math.round(estoqueMaxUn).toLocaleString() : '--'}
                                   </div>
                                 </td>
                                 {canManageEstoque && (
@@ -7278,14 +7276,9 @@ const handleImportBackup = (json) => {
                                           <div className="text-xs uppercase text-zinc-500">Sugestao</div>
                                           <div className="mt-1 text-white font-semibold">
                                             {faltaReposicao > 0
-                                              ? `Repor ${Math.round(faltaReposicao)} kg`
+                                              ? `Repor ${Math.round(faltaReposicao)} un`
                                               : 'Estoque dentro do limite'}
                                           </div>
-                                          {pesoUnit && faltaReposicao > 0 && (
-                                            <div className="text-[11px] text-zinc-500">
-                                              ~{Math.round(faltaReposicao / pesoUnit)} un
-                                            </div>
-                                          )}
                                         </div>
                                         <div className="p-3 rounded-xl bg-zinc-900/70 border border-white/5">
                                           <div className="text-xs uppercase text-zinc-500">Cobertura</div>
@@ -7295,16 +7288,16 @@ const handleImportBackup = (json) => {
                                               : 'Sem demanda'}
                                           </div>
                                           <div className="text-[11px] text-zinc-500">
-                                            Demanda: {demandaKg ? Math.round(demandaKg) : '--'} kg/dia
+                                            Demanda: {demandaUn ? Math.round(demandaUn) : '--'} un/dia
                                           </div>
                                         </div>
                                         <div className="p-3 rounded-xl bg-zinc-900/70 border border-white/5">
                                           <div className="text-xs uppercase text-zinc-500">Limites</div>
                                           <div className="mt-1 text-white font-semibold">
-                                            Max: {estoqueMaxKg ? Math.round(estoqueMaxKg) : '--'} kg
+                                            Max: {estoqueMaxUn ? Math.round(estoqueMaxUn) : '--'} un
                                           </div>
                                           <div className="text-[11px] text-zinc-500">
-                                            Saldo: {saldoKg.toFixed(1)} kg
+                                            Saldo: {saldoQtd.toLocaleString()} un
                                           </div>
                                         </div>
                                       </div>
