@@ -12,7 +12,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import * as XLSX from 'xlsx';
 
-import { db, dbSlitterReadOnly, auth, storage } from "./services/firebase";
+import { db, auth, storage } from "./services/firebase";
 import dadosLocais from './backup-painelpcp.json'; // Nome do seu arquivo
 import { IS_LOCALHOST, getDevCacheKey } from './utils/env';
 import {
@@ -1085,8 +1085,7 @@ export default function App() {
   const [historicoParadas, setHistoricoParadas] = useState([]);
   const [dicionarioLocal, setDicionarioLocal] = useState(DICIONARIO_PARADAS || []);
   const [eventosParada, setEventosParada] = useState([]);
-  const [productionLogsExt, setProductionLogsExt] = useState([]);
-  const [shippingLogsExt, setShippingLogsExt] = useState([]);
+  const [slitterStockExt, setSlitterStockExt] = useState([]);
 
   
   // Apontamento Prod
@@ -1271,33 +1270,20 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
 };
 
   useEffect(() => {
-    const unsubProd = onSnapshot(
-      collection(dbSlitterReadOnly, 'productionLogs'),
+    const unsub = onSnapshot(
+      collection(db, 'slitterStock'),
       (snap) => {
         const logs = snap.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
         }));
-        setProductionLogsExt(logs);
+        setSlitterStockExt(logs);
       },
-      (err) => console.error('Erro ao ler productionLogs (slitter):', err)
-    );
-
-    const unsubShip = onSnapshot(
-      collection(dbSlitterReadOnly, 'shippingLogs'),
-      (snap) => {
-        const logs = snap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        }));
-        setShippingLogsExt(logs);
-      },
-      (err) => console.error('Erro ao ler shippingLogs (slitter):', err)
+      (err) => console.error('Erro ao ler slitterStock:', err)
     );
 
     return () => {
-      unsubProd();
-      unsubShip();
+      unsub();
     };
   }, []);
 
@@ -4120,39 +4106,21 @@ const parseNumberBR = (v) => {
   }, [historicoProducaoReal]);
 
   const estoquePerfis = useMemo(() => {
-    const prodMap = new Map();
-    const shipMap = new Map();
-    const nameMap = new Map();
-
-    productionLogsExt.forEach((item) => {
-      const code = String(item?.productCode || '').trim();
-      if (!code) return;
-      const qtd = Number(item?.pieces || 0);
-      prodMap.set(code, (prodMap.get(code) || 0) + (Number.isFinite(qtd) ? qtd : 0));
-      const nome = item?.productName || '';
-      if (nome) nameMap.set(code, nome);
-    });
-
-    shippingLogsExt.forEach((item) => {
-      const code = String(item?.productCode || '').trim();
-      if (!code) return;
-      const qtd = Number(item?.quantity || 0);
-      shipMap.set(code, (shipMap.get(code) || 0) + (Number.isFinite(qtd) ? qtd : 0));
-      const nome = item?.productName || '';
-      if (nome && !nameMap.has(code)) nameMap.set(code, nome);
-    });
-
-    const codigos = new Set([...prodMap.keys(), ...shipMap.keys()]);
     const itens = [];
-    codigos.forEach((code) => {
-      const prod = prodMap.get(code) || 0;
-      const ship = shipMap.get(code) || 0;
-      const saldoQtd = prod - ship;
+
+    slitterStockExt.forEach((item) => {
+      const code = String(item?.cod || item?.productCode || item?.id || '').trim();
+      if (!code) return;
+      const saldoQtd = Number(item?.saldoQtd || 0);
       if (!saldoQtd) return;
 
       const catalogo = CATALOGO_PRODUTOS?.find((p) => p.cod === code);
-      const desc = catalogo?.desc || nameMap.get(code) || 'Item sem descricao';
-      const pesoUnit = Number(catalogo?.pesoUnit || 0);
+      const desc =
+        catalogo?.desc ||
+        item?.productName ||
+        item?.desc ||
+        'Item sem descricao';
+      const pesoUnit = Number(catalogo?.pesoUnit || item?.pesoUnit || 0);
       const saldoKg = pesoUnit ? saldoQtd * pesoUnit : 0;
 
       itens.push({
@@ -4167,7 +4135,7 @@ const parseNumberBR = (v) => {
     });
 
     return itens.sort((a, b) => String(a.cod).localeCompare(String(b.cod)));
-  }, [productionLogsExt, shippingLogsExt, CATALOGO_PRODUTOS]);
+  }, [slitterStockExt, CATALOGO_PRODUTOS]);
 
   const estoqueComercialBase = useMemo(
     () => [...estoqueTelhas, ...estoquePerfis],

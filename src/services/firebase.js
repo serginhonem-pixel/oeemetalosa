@@ -43,20 +43,3 @@ export const db = getFirestore(app);
 export const IS_PRODUCTION = !isLocalhost;
 export const auth = getAuth(app);
 export const storage = getStorage(app);
-
-const firebaseConfigSlitter = {
-  apiKey: env.VITE_SLITTER_API_KEY,
-  authDomain: env.VITE_SLITTER_AUTH_DOMAIN,
-  projectId: env.VITE_SLITTER_PROJECT_ID,
-  storageBucket: env.VITE_SLITTER_STORAGE_BUCKET,
-  messagingSenderId: env.VITE_SLITTER_MESSAGING_SENDER_ID,
-  appId: env.VITE_SLITTER_APP_ID,
-  measurementId: env.VITE_SLITTER_MEASUREMENT_ID,
-};
-
-const slitterApp =
-  getApps().find((item) => item.name === 'slitter-app') ||
-  initializeApp(firebaseConfigSlitter, 'slitter-app');
-
-// Slitter: somente leitura (saldo de perfis).
-export const dbSlitterReadOnly = getFirestore(slitterApp);
