@@ -1181,6 +1181,8 @@ const [itensReprogramados, setItensReprogramados] = useState([]); // já fizemos
   const [ajusteEstoqueComp, setAjusteEstoqueComp] = useState('');
   const [ajusteEstoqueQtd, setAjusteEstoqueQtd] = useState('');
   const [ajusteEstoqueSaldoAtual, setAjusteEstoqueSaldoAtual] = useState(0);
+  const [ajusteEstoqueLockProduto, setAjusteEstoqueLockProduto] = useState(false);
+  const [estoqueResetando, setEstoqueResetando] = useState(false);
 
   useEffect(() => {
     if (abaAtiva === 'comercial') {
@@ -2005,17 +2007,33 @@ const handleDownloadModeloParadas = () => {
       setAjusteEstoqueDesc(produto?.desc || '');
       setAjusteEstoqueComp(produto?.custom ? '' : String(produto?.comp || ''));
     }
+    const saldoAtual = Number(
+      estoqueComercialBase.find((item) => String(item.cod) === String(codigo))?.saldoQtd || 0
+    );
+    setAjusteEstoqueSaldoAtual(saldoAtual);
+    if (ajusteEstoqueModo === 'editar') {
+      setAjusteEstoqueQtd(String(saldoAtual));
+    }
   };
 
   const abrirAjusteEstoqueNovo = () => {
     resetAjusteEstoque();
     setAjusteEstoqueModo('novo');
+    setAjusteEstoqueLockProduto(false);
+    setMostrarAjusteEstoque(true);
+  };
+
+  const abrirAjusteEstoqueInventario = () => {
+    resetAjusteEstoque();
+    setAjusteEstoqueModo('editar');
+    setAjusteEstoqueLockProduto(false);
     setMostrarAjusteEstoque(true);
   };
 
   const abrirAjusteEstoqueEdicao = (item) => {
     const saldoAtual = Number(item?.saldoQtd || 0);
     setAjusteEstoqueModo('editar');
+    setAjusteEstoqueLockProduto(true);
     setAjusteEstoqueCod(item?.cod || '');
     setAjusteEstoqueDesc(item?.desc || '');
     setAjusteEstoqueComp(
@@ -2024,6 +2042,69 @@ const handleDownloadModeloParadas = () => {
     setAjusteEstoqueSaldoAtual(saldoAtual);
     setAjusteEstoqueQtd(String(saldoAtual));
     setMostrarAjusteEstoque(true);
+  };
+
+  const zerarEstoqueDireto = async () => {
+    if (estoqueResetando) return;
+    if (IS_LOCALHOST) {
+      alert('Modo local: limpeza bloqueada.');
+      return;
+    }
+
+    const producaoAlvos = historicoProducaoReal.filter((item) => {
+      const destino = String(item?.destino || '').toLowerCase();
+      const origem = String(item?.origem || '').toLowerCase();
+      const tipo = String(item?.tipo || '').toLowerCase();
+      const cliente = String(item?.cliente || '').toLowerCase();
+      const romaneioId = String(item?.romaneioId || item?.id || '').toLowerCase();
+      return (
+        destino.includes('estoque') ||
+        origem.includes('estoque') ||
+        tipo === 'est' ||
+        cliente.includes('estoque') ||
+        romaneioId === 'estoque'
+      );
+    });
+
+    const slitterAlvos = slitterStockExt.filter((item) => item?.id);
+
+    if (!producaoAlvos.length && !slitterAlvos.length) {
+      alert('Nao ha registros de estoque para apagar.');
+      return;
+    }
+
+    const ok = window.confirm(
+      `Isso vai apagar ${producaoAlvos.length} registros de estoque e ${slitterAlvos.length} do slitterStock. Continuar?`
+    );
+    if (!ok) return;
+
+    const okFinal = window.confirm('Acao irreversivel. Deseja confirmar?');
+    if (!okFinal) return;
+
+    setEstoqueResetando(true);
+    try {
+      let removidosProd = 0;
+      for (const item of producaoAlvos) {
+        if (!item?.id) continue;
+        await safeDeleteDoc('producao', String(item.id));
+        removidosProd += 1;
+      }
+
+      let removidosSlitter = 0;
+      for (const item of slitterAlvos) {
+        await safeDeleteDoc('slitterStock', String(item.id));
+        removidosSlitter += 1;
+      }
+
+      alert(
+        `Estoque zerado. Removidos: ${removidosProd} em producao e ${removidosSlitter} em slitterStock.`
+      );
+    } catch (err) {
+      console.error('Erro ao zerar estoque:', err);
+      alert('Erro ao apagar estoque. Veja o console (F12).');
+    } finally {
+      setEstoqueResetando(false);
+    }
   };
 
   const salvarAjusteEstoque = async ({ cod, desc, comp, qtd }) => {
@@ -4082,7 +4163,7 @@ const parseNumberBR = (v) => {
     const producaoEstoque = historicoProducaoReal.filter((item) =>
       String(item?.destino || "").toLowerCase().includes("estoque")
     );
-    const base = producaoEstoque.length > 0 ? producaoEstoque : historicoProducaoReal;
+    const base = producaoEstoque;
 
     const saldoPorCod = {};
     const saldoKgPorCod = {};
@@ -6854,13 +6935,30 @@ const handleImportBackup = (json) => {
                           )}
                         </div>
                         {canManageEstoque && (
-                          <button
-                            type="button"
-                            onClick={abrirAjusteEstoqueNovo}
-                            className="px-3 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
-                          >
-                            + Adicionar estoque
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={abrirAjusteEstoqueNovo}
+                              className="px-3 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+                            >
+                              + Adicionar estoque
+                            </button>
+                            <button
+                              type="button"
+                              onClick={abrirAjusteEstoqueInventario}
+                              className="px-3 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white"
+                            >
+                              Ajustar estoque
+                            </button>
+                            <button
+                              type="button"
+                              onClick={zerarEstoqueDireto}
+                              disabled={estoqueResetando}
+                              className="px-3 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-60"
+                            >
+                              {estoqueResetando ? 'Zerando...' : 'Zerar estoque'}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -7633,7 +7731,11 @@ const handleImportBackup = (json) => {
                   <div className="bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl w-full max-w-lg overflow-hidden">
                     <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                       <h3 className="text-lg font-bold text-white">
-                        {ajusteEstoqueModo === 'editar' ? 'Editar estoque' : 'Adicionar estoque'}
+                        {ajusteEstoqueModo === 'editar'
+                          ? ajusteEstoqueLockProduto
+                            ? 'Editar estoque'
+                            : 'Ajustar estoque'
+                          : 'Adicionar estoque'}
                       </h3>
                       <button
                         type="button"
@@ -7649,7 +7751,7 @@ const handleImportBackup = (json) => {
                         <select
                           value={ajusteEstoqueCod}
                           onChange={handleSelectAjusteEstoqueProduto}
-                          disabled={ajusteEstoqueModo === 'editar'}
+                          disabled={ajusteEstoqueModo === 'editar' && ajusteEstoqueLockProduto}
                           className="w-full bg-black/50 border border-white/10 rounded p-2 text-white text-sm disabled:opacity-60"
                         >
                           <option value="">Selecionar telha...</option>

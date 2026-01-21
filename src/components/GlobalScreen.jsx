@@ -1781,6 +1781,14 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
         totalPorDia: new Map(),
         totalPorMaquina: new Map(),
         metaPorMaquina: new Map(),
+        mediaPorMaquina: new Map(),
+        metaTotalDia: 0,
+        prevTotalPorMaquina: new Map(),
+        prevMediaPorMaquina: new Map(),
+        prevDiasCountPorMaquina: new Map(),
+        prevDiasAllCount: 0,
+        prevTotalAll: 0,
+        prevMediaAll: 0,
       };
     }
 
@@ -1825,12 +1833,75 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
       return da - db;
     });
 
-    return { dias, maquinas: maquinasResumo, porDia, totalPorDia, totalPorMaquina, metaPorMaquina };
+    const mediaPorMaquina = new Map();
+    const diasCount = dias.length || 1;
+    for (const nome of maquinasResumo) {
+      const total = Number(totalPorMaquina.get(nome) || 0);
+      mediaPorMaquina.set(nome, total / diasCount);
+    }
+
+    const metaTotalDia = maquinasResumo.reduce(
+      (acc, nome) => acc + Number(metaPorMaquina.get(nome) || 0),
+      0
+    );
+
+    const prevTotalPorMaquina = new Map();
+    const prevDiasPorMaquina = new Map();
+    const prevDiasAll = new Set();
+
+    for (const l of prevLancamentosFiltradosSupervisor) {
+      const nome = l.maquina;
+      if (!nome) continue;
+      const valor = Number(l.real) || 0;
+      prevTotalPorMaquina.set(nome, (prevTotalPorMaquina.get(nome) || 0) + valor);
+
+      const dia = l.dia || '';
+      if (dia) {
+        prevDiasAll.add(dia);
+        if (!prevDiasPorMaquina.has(nome)) prevDiasPorMaquina.set(nome, new Set());
+        prevDiasPorMaquina.get(nome).add(dia);
+      }
+    }
+
+    const prevMediaPorMaquina = new Map();
+    const prevDiasCountPorMaquina = new Map();
+    for (const nome of maquinasResumo) {
+      const total = Number(prevTotalPorMaquina.get(nome) || 0);
+      const diasSet = prevDiasPorMaquina.get(nome);
+      const diasCount = diasSet ? diasSet.size : 0;
+      prevDiasCountPorMaquina.set(nome, diasCount);
+      prevMediaPorMaquina.set(nome, diasCount ? total / diasCount : 0);
+    }
+
+    const prevTotalAll = Array.from(prevTotalPorMaquina.values()).reduce(
+      (acc, v) => acc + Number(v || 0),
+      0
+    );
+    const prevDiasAllCount = prevDiasAll.size;
+    const prevMediaAll = prevDiasAllCount ? prevTotalAll / prevDiasAllCount : 0;
+
+    return {
+      dias,
+      maquinas: maquinasResumo,
+      porDia,
+      totalPorDia,
+      totalPorMaquina,
+      metaPorMaquina,
+      mediaPorMaquina,
+      metaTotalDia,
+      prevTotalPorMaquina,
+      prevMediaPorMaquina,
+      prevDiasCountPorMaquina,
+      prevDiasAllCount,
+      prevTotalAll,
+      prevMediaAll,
+    };
   }, [
     presentationMode,
     filtroSupervisor,
     maquinasFiltradas,
     lancamentosFiltradosSupervisor,
+    prevLancamentosFiltradosSupervisor,
   ]);
 
   // ===== KPIs (Resumo Executivo) =====
@@ -2767,11 +2838,15 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
               {resumoDiarioSupervisor.dias.length === 0 ? (
                 <div className="p-6 text-sm text-zinc-500">Sem lançamentos para o período.</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs">
-                    <thead className="bg-black/30 text-zinc-500 uppercase text-[10px] font-bold tracking-wider sticky top-0">
+                <div className="overflow-x-auto nice-scrollbar">
+                  <table className="min-w-full text-sm [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-20 [&_th:first-child]:bg-zinc-900 [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-zinc-900">
+                    <thead className="bg-black/30 text-zinc-500 uppercase text-[11px] font-bold tracking-wider sticky top-0">
                       <tr>
                         <th className="px-3 py-2 text-left">Máquina</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Meta/dia</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Media/dia</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Media mes anterior</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Total mes anterior</th>
                         {resumoDiarioSupervisor.dias.map((dia) => (
                           <th key={dia} className="px-3 py-2 text-right whitespace-nowrap">
                             {dia}
@@ -2784,6 +2859,108 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                       {resumoDiarioSupervisor.maquinas.map((nome) => (
                         <tr key={nome} className="hover:bg-white/[0.03] transition-colors">
                           <td className="px-3 py-2 text-zinc-300 font-medium">{nome}</td>
+                          <td className="px-3 py-2 text-right text-zinc-200 font-semibold">
+                            {formatInt(resumoDiarioSupervisor.metaPorMaquina.get(nome) || 0)}
+                          </td>
+                          {(() => {
+                            const metaDiaAtual = Number(
+                              resumoDiarioSupervisor.metaPorMaquina.get(nome) || 0
+                            );
+                            const mediaDiaAtual = Number(
+                              resumoDiarioSupervisor.mediaPorMaquina.get(nome) || 0
+                            );
+                            const prevMediaDia = Number(
+                              resumoDiarioSupervisor.prevMediaPorMaquina.get(nome) || 0
+                            );
+                            const prevTotal = Number(
+                              resumoDiarioSupervisor.prevTotalPorMaquina.get(nome) || 0
+                            );
+                            const prevDiasCount =
+                              Number(resumoDiarioSupervisor.prevDiasCountPorMaquina.get(nome) || 0) || 0;
+
+                            const metaPrevTotal = metaDiaAtual > 0 ? metaDiaAtual * prevDiasCount : 0;
+
+                            const makeStatus = (valor, meta) => {
+                              const perf = meta > 0 ? (valor / meta) * 100 : 0;
+                              const statusTone =
+                                meta <= 0
+                                  ? 'border-zinc-800 text-zinc-400'
+                                  : perf >= 100
+                                  ? 'border-emerald-500/40 text-emerald-300'
+                                  : perf >= 95
+                                  ? 'border-amber-400/40 text-amber-300'
+                                  : 'border-red-500/40 text-red-300';
+                              const IconDir = perf >= 100 ? ArrowUpRight : ArrowDownRight;
+                              const showIcon = meta > 0 && valor > 0;
+                              return { perf, statusTone, IconDir, showIcon };
+                            };
+
+                            const mediaAtualStatus = makeStatus(mediaDiaAtual, metaDiaAtual);
+                            const mediaPrevStatus = makeStatus(prevMediaDia, metaDiaAtual);
+                            const totalPrevStatus = makeStatus(prevTotal, metaPrevTotal);
+
+                            const MediaAtualIcon = mediaAtualStatus.IconDir;
+                            const MediaPrevIcon = mediaPrevStatus.IconDir;
+                            const TotalPrevIcon = totalPrevStatus.IconDir;
+
+                            return (
+                              <>
+                                <td className="px-3 py-2 text-right">
+                                  <div
+                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border bg-black/20 ${mediaAtualStatus.statusTone}`}
+                                    title={
+                                      metaDiaAtual > 0
+                                        ? `${mediaAtualStatus.perf.toFixed(0)}% da meta dia`
+                                        : 'Sem meta definida'
+                                    }
+                                  >
+                                    {mediaAtualStatus.showIcon ? (
+                                      <MediaAtualIcon size={12} />
+                                    ) : null}
+                                    <span className="font-semibold">
+                                      {mediaDiaAtual.toLocaleString('pt-BR', {
+                                        maximumFractionDigits: 1,
+                                      })}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <div
+                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border bg-black/20 ${mediaPrevStatus.statusTone}`}
+                                    title={
+                                      metaDiaAtual > 0
+                                        ? `${mediaPrevStatus.perf.toFixed(0)}% da meta dia`
+                                        : 'Sem meta definida'
+                                    }
+                                  >
+                                    {mediaPrevStatus.showIcon ? (
+                                      <MediaPrevIcon size={12} />
+                                    ) : null}
+                                    <span className="font-semibold">
+                                      {prevMediaDia.toLocaleString('pt-BR', {
+                                        maximumFractionDigits: 1,
+                                      })}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <div
+                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border bg-black/20 ${totalPrevStatus.statusTone}`}
+                                    title={
+                                      metaPrevTotal > 0
+                                        ? `${totalPrevStatus.perf.toFixed(0)}% da meta do mes anterior`
+                                        : 'Sem meta definida'
+                                    }
+                                  >
+                                    {totalPrevStatus.showIcon ? (
+                                      <TotalPrevIcon size={12} />
+                                    ) : null}
+                                    <span className="font-semibold">{formatInt(prevTotal)}</span>
+                                  </div>
+                                </td>
+                              </>
+                            );
+                          })()}
                           {resumoDiarioSupervisor.dias.map((dia) => {
                             const mapaDia = resumoDiarioSupervisor.porDia.get(dia);
                             const valor = Number(mapaDia?.get(nome) || 0);
@@ -2824,24 +3001,6 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="border-t border-zinc-800 bg-black/20">
-                      <tr>
-                        <td className="px-3 py-2 text-zinc-400 font-bold">Total</td>
-                        {resumoDiarioSupervisor.dias.map((dia) => (
-                          <td key={`total-${dia}`} className="px-3 py-2 text-right font-bold text-zinc-100">
-                            {formatInt(resumoDiarioSupervisor.totalPorDia.get(dia) || 0)}
-                          </td>
-                        ))}
-                        <td className="px-3 py-2 text-right font-black text-zinc-100">
-                          {formatInt(
-                            resumoDiarioSupervisor.dias.reduce(
-                              (acc, dia) => acc + Number(resumoDiarioSupervisor.totalPorDia.get(dia) || 0),
-                              0
-                            )
-                          )}
-                        </td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
               )}

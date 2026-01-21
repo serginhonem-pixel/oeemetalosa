@@ -14,3 +14,27 @@ body {
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+.nice-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 #0f1014;
+}
+
+.nice-scrollbar::-webkit-scrollbar {
+  height: 10px;
+}
+
+.nice-scrollbar::-webkit-scrollbar-track {
+  background: #0f1014;
+  border-radius: 999px;
+}
+
+.nice-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #2563eb, #22c55e);
+  border-radius: 999px;
+  border: 2px solid #0f1014;
+}
+
+.nice-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #3b82f6, #34d399);
+}
