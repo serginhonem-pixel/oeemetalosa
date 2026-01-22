@@ -12,6 +12,7 @@ import {
   LabelList,
   Cell,
   ReferenceLine,
+  Customized,
 } from 'recharts';
 import {
   PlusCircle,
@@ -177,6 +178,14 @@ const formatCompact = (n) =>
 const formatInt = (n) => Number(n || 0).toLocaleString('pt-BR');
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`;
 const normalizeSupervisor = (value) => String(value || '').trim();
+
+const isoWeekNumber = (date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+};
 
 const getPaceStatus = (pace) => {
   const p = Number(pace || 0);
@@ -913,6 +922,151 @@ const GlobalScreen = () => {
   // (Tendência removida a pedido) — usamos apenas os dados do mês
   const dadosChart = useMemo(() => dadosGrafico.dados || [], [dadosGrafico.dados]);
 
+  const weekDividerMarkers = useMemo(() => {
+    if (!(dadosChart || []).length) return [];
+
+    const [yStr, mStr] = String(mesRef || '').split('-');
+    const year = Number(yStr);
+    const monthIdx = Number(mStr) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(monthIdx)) return [];
+
+    const markers = [];
+
+    (dadosChart || []).forEach((d, fullIdx) => {
+      if (d.tipo !== 'diario') return;
+      const day = Number(String(d.name || '').split('/')[0]);
+      if (!day) return;
+      const dt = new Date(year, monthIdx, day);
+      const dow = dt.getDay(); // 0=dom,1=seg,...6=sab
+      if (dow < 1 || dow > 6) return; // considera seg-sab (sabado sÃ³ se existir lanÃ§amento)
+      const isFirstBiz = markers.length === 0;
+      const isMonday = dow === 1;
+      if (isFirstBiz || isMonday) {
+        markers.push({ name: d.name, label: `Sem ${isoWeekNumber(dt)}`, index: fullIdx });
+      }
+    });
+
+    return markers;
+  }, [dadosChart, mesRef]);
+
+  const weekLabelMarkers = useMemo(() => {
+    const diarios = (dadosChart || []).filter((d) => d.tipo === 'diario');
+    if (!diarios.length || !weekDividerMarkers.length) return [];
+
+    const [yStr, mStr] = String(mesRef || '').split('-');
+    const year = Number(yStr);
+    const monthIdx = Number(mStr) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(monthIdx)) return [];
+
+    const weekGroups = new Map();
+    diarios.forEach((d, idx) => {
+      const day = Number(String(d.name || '').split('/')[0]);
+      if (!day) return;
+      const dt = new Date(year, monthIdx, day);
+      const dow = dt.getDay();
+      if (dow < 1 || dow > 6) return;
+      const wk = isoWeekNumber(dt);
+      if (!weekGroups.has(wk)) weekGroups.set(wk, []);
+      weekGroups.get(wk).push(idx);
+    });
+
+    const labels = [];
+    weekDividerMarkers.forEach((m) => {
+      const wk = Number(String(m.label || '').replace('Sem ', ''));
+      const idxs = weekGroups.get(wk);
+      if (!idxs || !idxs.length) return;
+      const startIdx = idxs[0];
+      const endIdx = idxs[idxs.length - 1];
+      const midIdx = Math.floor((startIdx + endIdx) / 2);
+      const name = diarios[midIdx]?.name;
+      if (name) labels.push({ name, label: m.label });
+    });
+    return labels;
+  }, [dadosChart, weekDividerMarkers]);
+
+  const weekMarkerMap = useMemo(
+    () => new Map(weekLabelMarkers.map((m) => [m.name, m.label])),
+    [weekLabelMarkers]
+  );
+
+  const weekDividerMarkersBiz = useMemo(() => {
+    if (!(dadosChart || []).length) return [];
+
+    const [yStr, mStr] = String(mesRef || '').split('-');
+    const year = Number(yStr);
+    const monthIdx = Number(mStr) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(monthIdx)) return [];
+
+    const diarios = (dadosChart || []).filter((d) => d.tipo === 'diario');
+    const markers = [];
+
+    diarios.forEach((d, idx) => {
+      const day = Number(String(d.name || '').split('/')[0]);
+      if (!day) return;
+      const dt = new Date(year, monthIdx, day);
+      const dow = dt.getDay(); // 0=dom,1=seg,...6=sab
+      if (dow < 1 || dow > 6) return; // seg-sab (sabado so se existir lancamento)
+
+      if (idx === 0) {
+        markers.push({ name: d.name, label: `Sem ${isoWeekNumber(dt)}` });
+        return;
+      }
+
+      const prev = diarios[idx - 1];
+      const prevDay = Number(String(prev.name || '').split('/')[0]);
+      if (!prevDay) return;
+      const prevDt = new Date(year, monthIdx, prevDay);
+      const prevWeek = isoWeekNumber(prevDt);
+      const currWeek = isoWeekNumber(dt);
+
+      if (currWeek !== prevWeek) {
+        markers.push({ name: d.name, label: `Sem ${currWeek}` });
+      }
+    });
+
+    return markers;
+  }, [dadosChart, mesRef]);
+
+  const weekLabelMarkersBiz = useMemo(() => {
+    const diarios = (dadosChart || []).filter((d) => d.tipo === 'diario');
+    if (!diarios.length || !weekDividerMarkersBiz.length) return [];
+
+    const [yStr, mStr] = String(mesRef || '').split('-');
+    const year = Number(yStr);
+    const monthIdx = Number(mStr) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(monthIdx)) return [];
+
+    const weekGroups = new Map();
+    diarios.forEach((d, idx) => {
+      const day = Number(String(d.name || '').split('/')[0]);
+      if (!day) return;
+      const dt = new Date(year, monthIdx, day);
+      const dow = dt.getDay();
+      if (dow < 1 || dow > 6) return;
+      const wk = isoWeekNumber(dt);
+      if (!weekGroups.has(wk)) weekGroups.set(wk, []);
+      weekGroups.get(wk).push(idx);
+    });
+
+    const labels = [];
+    weekDividerMarkersBiz.forEach((m) => {
+      const wk = Number(String(m.label || '').replace('Sem ', ''));
+      const idxs = weekGroups.get(wk);
+      if (!idxs || !idxs.length) return;
+      const startIdx = idxs[0];
+      const endIdx = idxs[idxs.length - 1];
+      const midIdx = Math.floor((startIdx + endIdx) / 2);
+      const name = diarios[midIdx]?.name;
+      if (name) labels.push({ name, label: m.label });
+    });
+    return labels;
+  }, [dadosChart, mesRef, weekDividerMarkersBiz]);
+
+  const weekMarkerMapBiz = useMemo(
+    () => new Map(weekLabelMarkersBiz.map((m) => [m.name, m.label])),
+    [weekLabelMarkersBiz]
+  );
+
   const getBarFill = (entry) => {
     if (!entry) return '#3b82f6';
     if (entry.tipo === 'projetado') return '#fb923c'; // projeção
@@ -935,8 +1089,11 @@ const GlobalScreen = () => {
     const perfColor = perf >= 100 ? '#34d399' : '#fb923c';
     const valColor = '#E5E7EB';
 
-    const smallBar = height < 36;
-    const baseY = smallBar ? y - 6 : y + 14;
+    const smallBar = height < (presentationMode ? 48 : 36);
+    const valueFont = presentationMode ? 22 : 11;
+    const pctFont = presentationMode ? 22 : 11;
+    const projFont = presentationMode ? 16 : 9;
+    const baseY = smallBar ? y - (presentationMode ? 10 : 6) : y + (presentationMode ? 20 : 14);
 
     const valueText = formatCompact(val);
     const pctText = `${perf.toFixed(0)}%`;
@@ -948,7 +1105,10 @@ const GlobalScreen = () => {
           y={baseY}
           fill={valColor}
           textAnchor="middle"
-          fontSize={11}
+          fontSize={valueFont}
+          stroke="#000000"
+          strokeWidth={presentationMode ? 3 : 2}
+          paintOrder="stroke"
           fontWeight={800}
         >
           {valueText}
@@ -956,10 +1116,13 @@ const GlobalScreen = () => {
 
         <text
           x={x + width / 2}
-          y={smallBar ? y - 20 : y - 10}
+          y={smallBar ? y - (presentationMode ? 28 : 20) : y - (presentationMode ? 14 : 10)}
           fill={perfColor}
           textAnchor="middle"
-          fontSize={11}
+          fontSize={pctFont}
+          stroke="#000000"
+          strokeWidth={presentationMode ? 3 : 2}
+          paintOrder="stroke"
           fontWeight={900}
         >
           {pctText}
@@ -968,10 +1131,13 @@ const GlobalScreen = () => {
         {isProj && (
           <text
             x={x + width / 2}
-            y={smallBar ? y - 34 : y - 24}
+            y={smallBar ? y - (presentationMode ? 44 : 34) : y - (presentationMode ? 28 : 24)}
             fill="#a1a1aa"
             textAnchor="middle"
-            fontSize={9}
+            fontSize={projFont}
+            stroke="#000000"
+            strokeWidth={presentationMode ? 2.5 : 2}
+            paintOrder="stroke"
             fontWeight={800}
           >
             PROJ
@@ -1743,11 +1909,9 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
 
   const barSize = useMemo(() => {
     const n = dadosChart?.length || 0;
-    if (n <= 6) return 80;
-    if (n <= 10) return 56;
-    if (n <= 16) return 40;
-    return 28;
-  }, [dadosChart]);
+    const base = n <= 6 ? 80 : n <= 10 ? 56 : n <= 16 ? 40 : 28;
+    return Math.round(base * (presentationMode ? 1.2 : 1));
+  }, [dadosChart, presentationMode]);
 
   const prevStats = useMemo(() => {
     const lanc =
@@ -2595,7 +2759,7 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                 subtitle={k.subtitle}
                 tone={k.tone}
                 emphasize={!!k.emphasize}
-                compact={presentationMode}
+                compact={!presentationMode}
                 rightBadge={k.rightBadge}
                 icon={k.icon}
               />
@@ -2682,7 +2846,11 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
               </div>
             </div>
 
-            <div className="flex-1 w-full relative min-h-[520px] p-4 bg-[#09090b]">
+            <div
+              className={`flex-1 w-full relative p-4 bg-[#09090b] ${
+                presentationMode ? 'min-h-[620px]' : 'min-h-[520px]'
+              }`}
+            >
               {maquinasFiltradas.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-zinc-600 gap-4">
                   <BarChart3 size={48} className="opacity-20" />
@@ -2697,13 +2865,34 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                         <stop offset="90%" stopColor="#71717a" stopOpacity={0.05} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} stroke="#27272a" />
                     <XAxis
+                      xAxisId="days"
                       dataKey="name"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: '#a1a1aa', fontSize: 11, fontWeight: '600' }}
+                      tick={{
+                        fill: '#a1a1aa',
+                        fontSize: presentationMode ? 18 : 11,
+                        fontWeight: '600',
+                      }}
                       dy={12}
+                      interval={0}
+                    />
+                    <XAxis
+                      xAxisId="weeks"
+                      dataKey="name"
+                      axisLine={false}
+                      tickLine={false}
+                      ticks={weekLabelMarkersBiz.map((m) => m.name)}
+                      tickFormatter={(val) => weekMarkerMapBiz.get(val) || ''}
+                      tick={{
+                        fill: '#a1a1aa',
+                        fontSize: presentationMode ? 16 : 11,
+                        fontWeight: '700',
+                      }}
+                      height={presentationMode ? 28 : 20}
+                      dy={presentationMode ? 26 : 20}
                       interval={0}
                     />
                     <YAxis hide domain={[0, 'auto']} />
@@ -2714,27 +2903,53 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                         if (active && payload && payload.length) {
                           const d = payload[0].payload;
                           const isProj = d.tipo === 'projetado';
+                          const idx = dadosChart.findIndex(
+                            (it) => it.name === d.name && it.tipo === d.tipo
+                          );
+                          const diariosAte = dadosChart.filter(
+                            (it, i) => i <= idx && it.tipo === 'diario'
+                          );
+                          const totalAte = diariosAte.reduce(
+                            (acc, it) => acc + (Number(it.realOriginal) || 0),
+                            0
+                          );
+                          const diasAte = diariosAte.length;
+                          const mediaAte = diasAte > 0 ? totalAte / diasAte : 0;
+                          const paceAte =
+                            Number(dadosGrafico.metaDiariaAtiva || 0) > 0
+                              ? (mediaAte / Number(dadosGrafico.metaDiariaAtiva || 0)) * 100
+                              : 0;
+                          const projAte =
+                            diasAte > 0
+                              ? Math.round(mediaAte * Number(dadosGrafico.diasUteis || 0))
+                              : 0;
+                          const tooltipHeaderClass = presentationMode
+                            ? 'text-[14px]'
+                            : 'text-[10px]';
+                          const tooltipRowClass = presentationMode ? 'text-base' : 'text-xs';
                           return (
                             <div className="bg-zinc-950 border border-zinc-700 p-3 shadow-2xl rounded-lg min-w-[220px]">
-                              <div className="font-bold uppercase text-[10px] text-zinc-500 mb-2 border-b border-zinc-800 pb-1 tracking-wider">
+                              <div
+                                className={`font-bold uppercase ${tooltipHeaderClass} text-zinc-500 mb-2 border-b border-zinc-800 pb-1 tracking-wider`}
+                              >
                                 {isProj ? 'Previsão final' : `Dia ${d.name}`}
                               </div>
                               <div className="space-y-1">
-                                <div className="flex justify-between items-center text-xs">
+                                <div className={`flex justify-between items-center ${tooltipRowClass}`}>
                                   <span className="text-zinc-400">Realizado</span>
                                   <span className="text-white font-mono font-bold">{formatInt(d.realOriginal)}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-xs">
+                                <div className={`flex justify-between items-center ${tooltipRowClass}`}>
                                   <span className="text-zinc-400">Meta</span>
                                   <span className="text-zinc-300 font-mono">{formatInt(d.metaOriginal)}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-xs">
+                                <div className={`flex justify-between items-center ${tooltipRowClass}`}>
                                   <span className="text-zinc-400">Dia mês anterior</span>
                                   <span className="text-zinc-300 font-mono">
                                     {d.prevDiaLabel || '-'}
                                   </span>
                                 </div>
-                                <div className="flex justify-between items-center text-xs">
+                                <div className={`flex justify-between items-center ${tooltipRowClass}`}>
                                   <span className="text-zinc-400">
                                     Resultado mes anterior ({monthLabel(prevMesRef)})
                                   </span>
@@ -2745,7 +2960,30 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                                       : ''}
                                   </span>
                                 </div>
-                                <div className={`pt-2 mt-1 border-t border-zinc-800 text-xs font-bold flex justify-between ${d.performance >= 100 ? 'text-emerald-400' : 'text-orange-300'}`}>
+                                {!isProj ? (
+                                  <>
+                                    <div className={`flex justify-between items-center ${tooltipRowClass}`}>
+                                      <span className="text-zinc-400">Pace até o dia</span>
+                                      <span className="text-zinc-300 font-mono">
+                                        {paceAte.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                    <div className={`flex justify-between items-center ${tooltipRowClass}`}>
+                                      <span className="text-zinc-400">Projeção até o dia</span>
+                                      <span className="text-zinc-300 font-mono">
+                                        {formatCompact(projAte)}
+                                        {!dadosGrafico.unidadeMix && dadosGrafico.unidadeAtiva
+                                          ? ` ${dadosGrafico.unidadeAtiva}`
+                                          : ''}
+                                      </span>
+                                    </div>
+                                  </>
+                                ) : null}
+                                <div
+                                  className={`pt-2 mt-1 border-t border-zinc-800 ${tooltipRowClass} font-bold flex justify-between ${
+                                    d.performance >= 100 ? 'text-emerald-400' : 'text-orange-300'
+                                  }`}
+                                >
                                   <span>Atingimento</span>
                                   <span>{Number(d.performance || 0).toFixed(1)}%</span>
                                 </div>
@@ -2758,33 +2996,76 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                       }}
                     />
 
+                    <Customized
+                      component={({ xAxisMap, offset }) => {
+                        const axes = xAxisMap ? Object.values(xAxisMap) : [];
+                        const axis =
+                          axes.reduce((best, a) => {
+                            const len = (a?.ticks?.length || 0);
+                            const bestLen = (best?.ticks?.length || 0);
+                            return len > bestLen ? a : best;
+                          }, null) ||
+                          (xAxisMap && (xAxisMap.days || xAxisMap['days'])) ||
+                          (xAxisMap ? Object.values(xAxisMap).find((a) => a.axisId === 'days') : null);
+                        if (!axis || !offset) return null;
+
+                        const scale = axis.scale;
+                        const domain =
+                          (scale && typeof scale.domain === 'function' ? scale.domain() : []) ||
+                          axis.ticks?.map((t) => t.value) ||
+                          [];
+
+                        const coordFor = (val) => {
+                          if (scale && typeof scale === 'function') {
+                            const base = scale(val);
+                            if (base == null) return null;
+                            const band =
+                              typeof scale.bandwidth === 'function' ? scale.bandwidth() : 0;
+                            return base + (band ? band / 2 : 0);
+                          }
+                          const tick = axis.ticks?.find((t) => t.value === val);
+                          return tick?.coordinate ?? null;
+                        };
+
+                        return (
+                          <g>
+                            {weekDividerMarkersBiz.map((m) => {
+                              const idx = domain.indexOf(m.name);
+                              if (idx <= 0) return null;
+                              const curr = coordFor(domain[idx]);
+                              const prev = coordFor(domain[idx - 1]);
+                              if (curr == null || prev == null) return null;
+                              const x = (prev + curr) / 2;
+                              return (
+                                <line
+                                  key={`week-${m.name}`}
+                                  x1={x}
+                                  x2={x}
+                                  y1={offset.top}
+                                  y2={offset.top + offset.height}
+                                  stroke="#52525b"
+                                  strokeOpacity={0.8}
+                                  strokeWidth={1}
+                                />
+                              );
+                            })}
+                          </g>
+                        );
+                      }}
+                    />
+
                     <ReferenceLine
                       y={100}
                       label={{
                         position: 'right',
-                        value: 'META (100%)',
-                        fill: '#d4d4d8',
-                        fontSize: 10,
-                        fontWeight: 'bold',
+                        value: 'META 100%',
+                        fill: '#a1a1aa',
+                        fontSize: presentationMode ? 12 : 9,
+                        fontWeight: '600',
                         dy: -10,
                       }}
                       stroke="#d4d4d8"
-                      strokeOpacity={0.35}
-                    />
-
-                    <ReferenceLine
-                      y={Number(dadosGrafico.aderenciaMeta || 0)}
-                      label={{
-                        position: 'right',
-                        value: `PACE (${Number(dadosGrafico.aderenciaMeta || 0).toFixed(0)}%)`,
-                        fill: '#c4b5fd',
-                        fontSize: 10,
-                        fontWeight: 'bold',
-                        dy: -10,
-                      }}
-                      stroke="#a78bfa"
-                      strokeOpacity={0.35}
-                      strokeDasharray="6 6"
+                      strokeOpacity={0.2}
                     />
 
                     <Area
@@ -2807,17 +3088,7 @@ const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
                       ))}
                       <LabelList content={renderBarLabel} />
                     </Bar>         
-                    <Line
-                      isAnimationActive={false}
-                      type="monotone"
-                      dataKey="metaPlotada"
-                      stroke="#d4d4d8"
-                      strokeWidth={2}
-                      strokeDasharray="4 4"
-                      dot={false}
-                      activeDot={false}
-                      opacity={0.6}
-                    />
+                    {/* metaPlotada removida: ReferenceLine META jÃ¡ indica a meta */}
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
