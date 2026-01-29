@@ -2134,7 +2134,7 @@ const handleDownloadModeloParadas = () => {
   };
 
   const salvarAjusteEstoque = async ({ cod, desc, comp, qtd }) => {
-    const quantidade = Number(qtd);
+    const quantidade = parseNumberBR(qtd);
     if (!Number.isFinite(quantidade) || quantidade === 0) {
       alert('Quantidade invalida.');
       return false;
@@ -2193,7 +2193,7 @@ const handleDownloadModeloParadas = () => {
       return;
     }
 
-    const novaQtd = parseInt(ajusteEstoqueQtd, 10);
+    const novaQtd = parseNumberBR(ajusteEstoqueQtd);
     if (!Number.isFinite(novaQtd)) {
       alert('Quantidade invalida.');
       return;
