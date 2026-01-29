@@ -326,6 +326,8 @@ const getLocalISODate = (baseDate = new Date()) => {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const BR_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+const STATUS_FINALIZADO = new Set(['PRONTO', 'FINALIZADO', 'RETIRADA', 'CONCLUIDO']);
+const DIA_FECHAMENTO_PROMPT_KEY = 'diaFechamentoPrompt';
 
 const normalizeISODateInput = (value) => {
   if (!value) return '';
@@ -819,6 +821,7 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [loginInfo, setLoginInfo] = useState('');
   const [loginPending, setLoginPending] = useState(false);
+  const [dadosCarregados, setDadosCarregados] = useState(false);
   const [devViewMode, setDevViewMode] = useState(() => {
     if (!IS_LOCALHOST) return 'admin';
     try {
@@ -1064,6 +1067,60 @@ export default function App() {
   const [dataFiltroImpressao, setDataFiltroImpressao] = useState(hoje);
   const [numeroControleImpressao, setNumeroControleImpressao] = useState('');
   const [filaProducao, setFilaProducao] = useState([]);
+  const ultimoDiaPromptRef = useRef('');
+
+  const getOrdensAbertasPorData = (dataISO) => {
+    if (!dataISO) return [];
+    return (filaProducao || []).filter((r) => {
+      const data = getDataRomaneio(r);
+      if (!data || data !== dataISO) return false;
+      return !isStatusFinalizado(r?.status);
+    });
+  };
+
+  useEffect(() => {
+    if (!authUser || !dadosCarregados) return;
+    const email = String(authUser.email || '').toLowerCase();
+    if (email !== 'pcp5@metalosa.com.br' && email !== 'pcp@metalosa.com.br') return;
+
+    const checkViradaDia = () => {
+      const hojeAgora = getLocalISODate();
+      if (ultimoDiaPromptRef.current === hojeAgora) return;
+
+      let ultimo = '';
+      try {
+        ultimo = localStorage.getItem(DIA_FECHAMENTO_PROMPT_KEY) || '';
+      } catch (err) {
+        ultimo = '';
+      }
+
+      if (ultimo === hojeAgora) {
+        ultimoDiaPromptRef.current = hojeAgora;
+        return;
+      }
+
+      const ontemISO = getLocalISODate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      const pendentes = getOrdensAbertasPorData(ontemISO);
+      if (pendentes.length > 0) {
+        const msg =
+          `Virou o dia. Existem ${pendentes.length} ordem(ns) de ${formatarDataBR(ontemISO)} ainda em aberto. ` +
+          'Todas foram fechadas?';
+        window.confirm(msg);
+      }
+
+      try {
+        localStorage.setItem(DIA_FECHAMENTO_PROMPT_KEY, hojeAgora);
+      } catch (err) {
+        // sem storage
+      }
+
+      ultimoDiaPromptRef.current = hojeAgora;
+    };
+
+    checkViradaDia();
+    const id = setInterval(checkViradaDia, 60 * 1000);
+    return () => clearInterval(id);
+  }, [authUser, dadosCarregados, filaProducao]);
 
   useEffect(() => {
     if (!dataFiltroImpressao) return;
@@ -1278,6 +1335,11 @@ const [dataFimOEE, setDataFimOEE]       = useState(hojeISO);
   }
 };
 
+const isStatusFinalizado = (status) => {
+  const label = String(status || '').toUpperCase().trim();
+  return STATUS_FINALIZADO.has(label);
+};
+
   useEffect(() => {
     const unsub = onSnapshot(
       collection(db, 'slitterStock'),
@@ -1395,6 +1457,7 @@ useEffect(() => {
   let unsubProducao = null;
 
   const carregarDados = async () => {
+    setDadosCarregados(false);
     // ------------------------------
     // MODO DEV (localhost)
     // ------------------------------
@@ -1411,7 +1474,7 @@ useEffect(() => {
           setFilaProducao(parsed.romaneios || []);
           setHistoricoProducaoReal(parsed.producao || []);
           setHistoricoParadas(parsed.paradas || []);
-
+          setDadosCarregados(true);
           return; // já carregou do cache, não precisa ir pro JSON nem Firebase
         }
         if (parsed.global) {
@@ -1440,6 +1503,7 @@ setGlobalDevSnapshot({
       setFilaProducao(dadosLocais.romaneios || []);
       setHistoricoProducaoReal(dadosLocais.producao || []);
       setHistoricoParadas(dadosLocais.paradas || []);
+      setDadosCarregados(true);
       return; // importante: não ir para o bloco do Firebase
     }
 
@@ -1520,6 +1584,8 @@ try {
   // MUITO importante pra você não ficar “zerado” sem saber o motivo:
   toast?.(`Erro Firebase: ${erro?.code || erro?.message || "desconhecido"}`) ||
     alert(`Erro Firebase: ${erro?.code || erro?.message || "desconhecido"}`);
+} finally {
+  setDadosCarregados(true);
 }
 
   };
