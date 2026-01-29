@@ -1024,6 +1024,7 @@ export default function App() {
   );
 
   const [abaAtiva, setAbaAtiva] = useState('agenda');
+  const PRODUCAO_PARADAS_ATIVAS = false;
   const [pcpAbaAtiva, setPcpAbaAtiva] = useState('ordens');
   const [pcpCrpData, setPcpCrpData] = useState(hoje);
   const [pcpFiltroData, setPcpFiltroData] = useState('');
@@ -1046,6 +1047,11 @@ export default function App() {
       setAbaAtiva('comercial');
     }
   }, [effectiveViewMode, abaAtiva]);
+  useEffect(() => {
+    if (!PRODUCAO_PARADAS_ATIVAS && (abaAtiva === 'producao' || abaAtiva === 'apontamento')) {
+      setAbaAtiva('comercial');
+    }
+  }, [abaAtiva, PRODUCAO_PARADAS_ATIVAS]);
 
 
   const toggleItemSelecionado = (id) => {
@@ -2134,7 +2140,7 @@ const handleDownloadModeloParadas = () => {
   };
 
   const salvarAjusteEstoque = async ({ cod, desc, comp, qtd }) => {
-    const quantidade = Number(qtd);
+    const quantidade = parseNumberBR(qtd);
     if (!Number.isFinite(quantidade) || quantidade === 0) {
       alert('Quantidade invalida.');
       return false;
@@ -2193,7 +2199,7 @@ const handleDownloadModeloParadas = () => {
       return;
     }
 
-    const novaQtd = parseInt(ajusteEstoqueQtd, 10);
+    const novaQtd = parseNumberBR(ajusteEstoqueQtd);
     if (!Number.isFinite(novaQtd)) {
       alert('Quantidade invalida.');
       return;
@@ -4182,9 +4188,14 @@ const parseNumberBR = (v) => {
   };
 
   const estoqueTelhasSaldo = useMemo(() => {
-    const producaoEstoque = historicoProducaoReal.filter((item) =>
-      String(item?.destino || "").toLowerCase().includes("estoque")
-    );
+    const producaoEstoque = historicoProducaoReal.filter((item) => {
+      const destino = String(item?.destino || "").toLowerCase();
+      const origem = String(item?.origem || "").toLowerCase();
+      if (!destino.includes("estoque")) return false;
+      // PCP aponta para OEE, mas nao deve mexer no saldo comercial
+      if (origem === "pcp_estoque") return false;
+      return true;
+    });
 
     const saldoPorCod = {};
     const saldoKgPorCod = {};
@@ -4388,7 +4399,16 @@ const parseNumberBR = (v) => {
         return cod.includes(termo) || desc.includes(termo);
       });
     }
-    return lista;
+    const getPercent = (item) => {
+      const estudo = estoqueEstudo[item.cod] || {};
+      const estoqueMaxBase = Number(estudo.estoqueMaximo || 0);
+      const maxBase = estoqueMaxBase && estoqueMaxBase > 0 ? estoqueMaxBase : 5000;
+      const saldoQtd = Number(item.saldoQtd || 0);
+      return maxBase ? (saldoQtd / maxBase) * 100 : 0;
+    };
+    return lista
+      .slice()
+      .sort((a, b) => getPercent(b) - getPercent(a));
   }, [
     estoqueComercialBase,
     estoqueComercialBaseComZeros,
@@ -4396,6 +4416,7 @@ const parseNumberBR = (v) => {
     filtroEstoque,
     comercialVisao,
     comercialBusca,
+    estoqueEstudo,
   ]);
 
   const handleDownloadEstoqueExcel = () => {
@@ -5342,10 +5363,10 @@ const handleImportBackup = (json) => {
               <BotaoMenu ativo={abaAtiva === 'planejamento'} onClick={() => setAbaAtiva('planejamento')} icon={<ClipboardList size={20} />} label="PCP" />
             )}
             <BotaoMenu ativo={abaAtiva === 'comercial'} onClick={() => setAbaAtiva('comercial')} icon={<Box size={20} />} label="Comercial" />
-            {effectiveViewMode !== 'comercial' && (
+            {effectiveViewMode !== 'comercial' && PRODUCAO_PARADAS_ATIVAS && (
               <BotaoMenu ativo={abaAtiva === 'producao'} onClick={() => setAbaAtiva('producao')} icon={<Factory size={20} />} label="Prod" />
             )}
-            {effectiveViewMode !== 'comercial' && (
+            {effectiveViewMode !== 'comercial' && PRODUCAO_PARADAS_ATIVAS && (
               <BotaoMenu ativo={abaAtiva === 'apontamento'} onClick={() => setAbaAtiva('apontamento')} icon={<AlertOctagon size={20} />} label="Paradas" />
             )}
             
@@ -6209,7 +6230,7 @@ const handleImportBackup = (json) => {
 )}
 
           {/* ABA PRODUCAO */}
-{abaAtiva === "producao" && (
+{PRODUCAO_PARADAS_ATIVAS && abaAtiva === "producao" && (
   <ProducaoScreen
     formApontProdData={formApontProdData}
     setFormApontProdData={setFormApontProdData}
@@ -6243,7 +6264,7 @@ const handleImportBackup = (json) => {
 
           
           {/* ABA PARADAS */}
-          {abaAtiva === 'apontamento' && (
+          {PRODUCAO_PARADAS_ATIVAS && abaAtiva === 'apontamento' && (
   <ParadasScreen
     eventosParada={historicoParadas}
     onRegistrarParada={handleRegistrarParada}
@@ -7005,8 +7026,8 @@ const handleImportBackup = (json) => {
                 )}
 
                 {comercialVisao === 'estoque' && (
-                  <div className="bg-zinc-900/50 border border-white/5 rounded-3xl overflow-hidden backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[500px]">
-                    <div className="p-5 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="bg-gradient-to-b from-zinc-950/70 via-zinc-900/50 to-zinc-900/70 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm shadow-[0_20px_60px_rgba(0,0,0,0.45)] animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[500px]">
+                    <div className="p-5 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
                         <h2 className="text-lg font-bold text-white flex items-center gap-2">
                           <Package className="text-sky-400" size={18} />
@@ -7100,7 +7121,7 @@ const handleImportBackup = (json) => {
 
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
-                        <thead className="bg-zinc-950/30 text-xs font-semibold text-zinc-500 uppercase tracking-wider border-b border-white/5">
+                        <thead className="bg-zinc-950/70 text-[13px] font-semibold text-zinc-400 uppercase tracking-wider border-b border-white/10 sticky top-0 z-10 backdrop-blur">
                           <tr>
                             <th className="px-5 py-3">Produto</th>
                             <th className="px-5 py-3">Disponibilidade visual</th>
@@ -7112,7 +7133,7 @@ const handleImportBackup = (json) => {
                             )}
                             <th className="px-5 py-3">Status</th>
                             <th className="px-5 py-3 text-right">
-                              {canManageEstoque ? 'Acoes' : 'Solicitar'}
+                              {canManageEstoque ? 'Acoes' : (effectiveViewMode !== 'comercial' ? 'Transferir' : 'Solicitar')}
                             </th>
                           </tr>
                         </thead>
@@ -7167,15 +7188,21 @@ const handleImportBackup = (json) => {
                                 : { label: '--', tone: 'text-zinc-500' };
                             return (
                               <>
-                                <tr className="group hover:bg-white/[0.02] transition-colors border-b border-white/5">
+                                <tr className="group odd:bg-white/[0.01] hover:bg-white/[0.035] transition-colors border-b border-white/5">
                                   <td className="px-5 py-4">
                                     <div className="flex items-start gap-3">
+                                      <span className={`mt-1 h-2.5 w-2.5 rounded-full ${status.bg} shadow-[0_0_10px_rgba(16,185,129,0.35)]`} />
                                       <div>
-                                        <div className="text-sm font-semibold text-white">
-                                          {item.cod} - {item.desc}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-zinc-200">
+                                            {item.cod}
+                                          </span>
+                                          <span className="text-base font-semibold text-white">{item.desc}</span>
                                         </div>
-                                        <div className="text-[11px] text-zinc-500 font-mono flex items-center gap-2">
-                                          <span>{getEstoqueGrupoLabel(item)}</span>
+                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                                          <span className="px-2 py-0.5 rounded-full bg-zinc-800/70 border border-white/5">
+                                            {getEstoqueGrupoLabel(item)}
+                                          </span>
                                           {estudo.maquina && (
                                             <>
                                               <span className="w-1 h-1 rounded-full bg-zinc-700" />
@@ -7193,32 +7220,39 @@ const handleImportBackup = (json) => {
                                       </div>
                                     </div>
                                   </td>
-                                <td className="px-5 py-4 w-52">
-                                  <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-2">
+                                <td className="px-5 py-4 w-56">
+                                  <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
                                     <span className="uppercase tracking-wide">Nivel</span>
-                                    <span className="font-mono text-white">{percent.toFixed(0)}%</span>
+                                    <span className="font-mono text-white text-[13px]">{percent.toFixed(0)}%</span>
                                   </div>
-                                  <div className="relative h-3 w-full rounded-full bg-zinc-900 border border-white/10 overflow-hidden shadow-inner">
-                                    <div className={`absolute inset-y-0 left-0 ${status.bg} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+                                  <div className="relative h-5 w-full rounded-2xl bg-zinc-950/80 border border-white/15 overflow-hidden shadow-inner">
+                                    <div
+                                      className="absolute inset-y-0 left-0 rounded-2xl transition-all duration-700 ease-out"
+                                      style={{ width: `${percent}%` }}
+                                    >
+                                      <div className={`h-full ${status.bg} bg-gradient-to-r from-emerald-500/90 via-emerald-400/90 to-emerald-300/90`} />
+                                      <div className="absolute inset-x-0 top-0 h-1 bg-white/20" />
+                                    </div>
                                     <div className="absolute inset-y-0 right-0 w-px bg-white/15" />
+                                    <div className="absolute inset-x-2 bottom-0 h-px bg-white/10" />
                                   </div>
-                                  <div className="mt-1 text-[10px] text-zinc-500">Base un</div>
+                                  <div className="mt-1 text-[11px] text-zinc-500">Base un</div>
                                 </td>
                                 <td className="px-5 py-4">
-                                  <div className="text-sm font-bold text-white tabular-nums">
-                                    {Number(item.saldoKg || 0).toFixed(1)} kg
-                                  </div>
-                                  <div className="text-[10px] text-zinc-500">
+                                  <div className="text-base font-bold text-white tabular-nums">
                                     {Number(item.saldoQtd || 0).toLocaleString()} un
                                   </div>
+                                  <div className="text-[11px] text-zinc-500">
+                                    {Number(item.saldoKg || 0).toFixed(1)} kg
+                                  </div>
                                 </td>
                                 <td className="px-5 py-4">
-                                  <div className="text-sm font-medium text-zinc-100 tabular-nums">
+                                  <div className="text-base font-medium text-zinc-100 tabular-nums">
                                     {demandaUn ? Math.round(demandaUn).toLocaleString() : '--'}
                                   </div>
                                 </td>
                                 <td className="px-5 py-4">
-                                  <div className="text-sm font-medium text-zinc-100 tabular-nums">
+                                  <div className="text-base font-medium text-zinc-100 tabular-nums">
                                     {estoqueMaxUn ? Math.round(estoqueMaxUn).toLocaleString() : '--'}
                                   </div>
                                 </td>
@@ -7228,7 +7262,7 @@ const handleImportBackup = (json) => {
                                   </td>
                                 )}
                                 <td className="px-5 py-4">
-                                  <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${status.text} ${status.border} ${status.bgSoft}`}>
+                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${status.text} ${status.border} ${status.bgSoft}`}>
                                     {status.label}
                                   </span>
                                 </td>
@@ -7249,6 +7283,15 @@ const handleImportBackup = (json) => {
                                       >
                                         Excluir
                                       </button>
+                                      {effectiveViewMode !== 'comercial' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => abrirMovimentacaoEstoque(item)}
+                                          className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-2"
+                                        >
+                                          <ArrowRightLeft size={12} /> Transferir
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() => abrirMovimentacaoEstoque(item)}
@@ -7263,7 +7306,7 @@ const handleImportBackup = (json) => {
                                       onClick={() => abrirMovimentacaoEstoque(item)}
                                       className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-2 ml-auto"
                                     >
-                                      <ArrowRightLeft size={12} /> Solicitar
+                                      <ArrowRightLeft size={12} /> {effectiveViewMode !== 'comercial' ? 'Transferir' : 'Solicitar'}
                                     </button>
                                   )}
                                 </td>
