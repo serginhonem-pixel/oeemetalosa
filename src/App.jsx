@@ -79,6 +79,9 @@ GlobalWorkerOptions.workerSrc = new URL(
 const DEV_CACHE_KEY = getDevCacheKey();
 const DEV_VIEW_STORAGE_KEY = `${DEV_CACHE_KEY}:viewMode`;
 
+import ProcessosScreen from './components/ProcessosScreen';
+import CadastroScreen from './components/CadastroScreen';
+
 const LoginScreen = ({ onLogin, onResetPassword, error, info, pending }) => {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -5444,6 +5447,7 @@ const handleImportBackup = (json) => {
             {effectiveViewMode !== 'comercial' && (
               <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
             )}
+            <BotaoMenu ativo={abaAtiva === 'processos'} onClick={() => setAbaAtiva('processos')} icon={<Layers size={20} />} label="Processos" />
             <div className="md:hidden">
               <BotaoMenu
                 ativo={false}
@@ -6563,6 +6567,11 @@ const handleImportBackup = (json) => {
                 </ResponsiveContainer>
               </div>
             </div>
+          )}
+
+          {/* ABA PROCESSOS */}
+          {abaAtiva === 'processos' && (
+            <ProcessosScreen />
           )}
 
           {/* ABA COMERCIAL */}

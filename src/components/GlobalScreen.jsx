@@ -178,6 +178,9 @@ const formatCompact = (n) =>
 const formatInt = (n) => Number(n || 0).toLocaleString('pt-BR');
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`;
 const normalizeSupervisor = (value) => String(value || '').trim();
+const MESES_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const makeProcessoAnoId = (processo, ano) =>
+  `${String(processo || '').trim()}__${String(ano || '').trim()}`.replace(/[\\/#?]/g, '_');
 
 const isoWeekNumber = (date) => {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
