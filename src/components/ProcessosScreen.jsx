@@ -5,6 +5,8 @@ import { db } from '../services/firebase';
 import { safeAddDoc } from '../services/firebaseSafeWrites';
 import { IS_PRODUCTION } from '../services/firebase';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LabelList, LineChart, Line } from 'recharts';
 
 const ProcessosScreen = () => {
@@ -707,49 +709,107 @@ const ProcessosScreen = () => {
 
     // Exportar para PDF
     const exportarPDF = () => {
-        const conteudo = `
-            RELATÓRIO DE PROCESSOS - ${new Date().toLocaleDateString('pt-BR')}
-            
-            ============================================
-            KPIs PRINCIPAIS
-            ============================================
-            Total Anual: ${kpis.total.toLocaleString('pt-BR')}
-            Média Mensal: ${kpis.media.toLocaleString('pt-BR')}
-            Maior Mês: ${kpis.maiorMes.toLocaleString('pt-BR')} (${kpis.maiorMesNome})
-            Menor Mês: ${kpis.menorMes.toLocaleString('pt-BR')} (${kpis.menorMesNome})
-            
-            ${analiseDesempenho ? `
-            ============================================
-            ANÁLISE DE DESEMPENHO
-            ============================================
-            Taxa Crescimento Médio: ${analiseDesempenho.taxaCrescimentoMedio.toFixed(1)}%
-            Desvio Padrão: ${analiseDesempenho.desvioPadrao.toFixed(0)}
-            Coeficiente de Variação: ${analiseDesempenho.coeficienteVariacao.toFixed(1)}%
-            Mês Mais Forte: ${analiseDesempenho.maisForte.mes} (${analiseDesempenho.maisForte.quantidade.toLocaleString('pt-BR')})
-            Mês Mais Fraco: ${analiseDesempenho.maisFraco.mes} (${analiseDesempenho.maisFraco.quantidade.toLocaleString('pt-BR')})
-            Previsão Próximo Mês: ${Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
-            ` : ''}
-            
-            ============================================
-            DADOS POR MÊS
-            ============================================
-            ${dadosComVariacao.map(item => 
-                `${item.mes}: ${item.quantidade.toLocaleString('pt-BR')} ${item.percentual !== null ? `(${item.simbolo} ${item.percentual > 0 ? '+' : ''}${item.percentual.toFixed(1)}%)` : ''}`
-            ).join('\n            ')}
-            
-            ============================================
-            DADOS DETALHADOS
-            ============================================
-            ${dadosProcessos.map(item => 
-                `${item.tipo} - ${item.mes}: ${item.quantidade.toLocaleString('pt-BR')}`
-            ).join('\n            ')}
-        `;
+        const doc = new jsPDF();
+        const hoje = new Date().toLocaleDateString('pt-BR');
+        let yPos = 20;
         
-        const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `Processos_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.txt`;
-        link.click();
+        // Título
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text('RELATÓRIO DE PROCESSOS', 105, yPos, { align: 'center' });
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(hoje, 105, yPos + 8, { align: 'center' });
+        yPos += 20;
+        
+        // KPIs Principais
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('KPIs PRINCIPAIS', 14, yPos);
+        yPos += 10;
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Total Anual: ${kpis.total.toLocaleString('pt-BR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Média Mensal: ${kpis.media.toLocaleString('pt-BR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Maior Mês: ${kpis.maiorMes.toLocaleString('pt-BR')} (${kpis.maiorMesNome})`, 14, yPos);
+        yPos += 7;
+        doc.text(`Menor Mês: ${kpis.menorMes.toLocaleString('pt-BR')} (${kpis.menorMesNome})`, 14, yPos);
+        yPos += 15;
+        
+        // Análise de Desempenho
+        if (analiseDesempenho) {
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('ANÁLISE DE DESEMPENHO', 14, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Taxa Crescimento Médio: ${analiseDesempenho.taxaCrescimentoMedio > 0 ? '+' : ''}${analiseDesempenho.taxaCrescimentoMedio.toFixed(1)}%`, 14, yPos);
+            yPos += 7;
+            doc.text(`Desvio Padrão: ${analiseDesempenho.desvioPadrao.toFixed(0)}`, 14, yPos);
+            yPos += 7;
+            doc.text(`Coeficiente de Variação: ${analiseDesempenho.coeficienteVariacao.toFixed(1)}%`, 14, yPos);
+            yPos += 7;
+            doc.text(`Mês Mais Forte: ${analiseDesempenho.maisForte.mes} (${analiseDesempenho.maisForte.quantidade.toLocaleString('pt-BR')})`, 14, yPos);
+            yPos += 7;
+            doc.text(`Mês Mais Fraco: ${analiseDesempenho.maisFraco.mes} (${analiseDesempenho.maisFraco.quantidade.toLocaleString('pt-BR')})`, 14, yPos);
+            yPos += 7;
+            doc.text(`Previsão Próximo Mês: ${Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}`, 14, yPos);
+            yPos += 15;
+        }
+        
+        // Dados por Mês
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('DADOS POR MÊS', 14, yPos);
+        yPos += 10;
+        
+        // Cabeçalho da tabela
+        doc.setFont('helvetica', 'bold');
+        doc.setFillColor(16, 185, 129);
+        doc.setTextColor(255, 255, 255);
+        doc.rect(14, yPos - 5, 180, 7, 'F');
+        
+        doc.text('Mês', 16, yPos);
+        doc.text('Quantidade', 60, yPos);
+        doc.text('Variação', 120, yPos);
+        doc.text('Percentual', 160, yPos);
+        yPos += 10;
+        
+        // Dados da tabela
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        
+        dadosComVariacao.forEach((item, idx) => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+            }
+            
+            const bgColor = idx % 2 === 0 ? [240, 240, 240] : [255, 255, 255];
+            doc.setFillColor(...bgColor);
+            doc.rect(14, yPos - 5, 180, 7, 'F');
+            
+            doc.text(item.mes || '', 16, yPos);
+            doc.text(item.quantidade ? item.quantidade.toLocaleString('pt-BR') : 'N/A', 60, yPos);
+            doc.text(item.variacao !== null && item.variacao !== undefined ? item.variacao.toLocaleString('pt-BR') : 'N/A', 120, yPos);
+            const percentualText = item.percentual !== null && item.percentual !== undefined ? `${item.percentual > 0 ? '+' : ''}${Number(item.percentual).toFixed(1)}%` : 'N/A';
+            doc.text(percentualText, 160, yPos);
+            yPos += 7;
+        });
+        
+        // Salvar PDF
+        doc.save(`Processos_${hoje.replace(/\//g, '-')}.pdf`);
     };
 
     // Cores para o gráfico de pizza
