@@ -478,7 +478,7 @@ const ProcessosScreen = () => {
         if (pctRaw === null || Number.isNaN(pctRaw)) {
             return (
                 <g>
-                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={800} textAnchor="middle">{formatted}</text>
+                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={16} fontWeight={900} textAnchor="middle">{formatted}</text>
                 </g>
             );
         }
@@ -490,8 +490,8 @@ const ProcessosScreen = () => {
 
         return (
             <g>
-                <text x={cornerX} y={cornerPctY} fill={color} fontSize={14} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
-                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={800} textAnchor="middle">{formatted}</text>
+                <text x={cornerX} y={cornerPctY} fill={color} fontSize={16} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
+                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={16} fontWeight={900} textAnchor="middle">{formatted}</text>
             </g>
         );
     };
@@ -546,7 +546,7 @@ const ProcessosScreen = () => {
                     x={centerX} 
                     y={totalY} 
                     fill="#F9FAFB" 
-                    fontSize={15} 
+                    fontSize={17} 
                     fontWeight={900} 
                     textAnchor="middle"
                 >
@@ -557,8 +557,8 @@ const ProcessosScreen = () => {
                         x={centerX} 
                         y={totalY + 18} 
                         fill={color} 
-                        fontSize={13} 
-                        fontWeight={800} 
+                        fontSize={15} 
+                        fontWeight={900} 
                         textAnchor="middle"
                     >
                         {arrowChar} {pctText}
@@ -617,6 +617,141 @@ const ProcessosScreen = () => {
     const top5 = getTop5Processos();
     const acumuladoData = calcularAcumulado();
 
+    // Análise de Desempenho
+    const calcularAnaliseDesempenho = () => {
+        if (dadosComVariacao.length < 2) return null;
+        
+        // Taxa de crescimento médio mensal
+        const crescimentos = dadosComVariacao
+            .filter(item => item.percentual !== null)
+            .map(item => item.percentual);
+        const taxaCrescimentoMedio = crescimentos.length > 0
+            ? crescimentos.reduce((a, b) => a + b, 0) / crescimentos.length
+            : 0;
+        
+        // Desvio padrão
+        const valores = dadosComVariacao.map(item => item.quantidade);
+        const media = valores.reduce((a, b) => a + b, 0) / valores.length;
+        const variancia = valores.reduce((sum, val) => sum + Math.pow(val - media, 2), 0) / valores.length;
+        const desvioPadrao = Math.sqrt(variancia);
+        const coeficienteVariacao = (desvioPadrao / media) * 100;
+        
+        // Identificar mês mais forte e mais fraco
+        const maisForte = dadosComVariacao.reduce((prev, current) => 
+            (prev.quantidade > current.quantidade) ? prev : current
+        );
+        const maisFraco = dadosComVariacao.reduce((prev, current) => 
+            (prev.quantidade < current.quantidade) ? prev : current
+        );
+        
+        // Previsão próximo mês (média móvel simples dos últimos 3 meses)
+        const ultimos3 = dadosComVariacao.slice(-3);
+        const previsao = ultimos3.reduce((sum, item) => sum + item.quantidade, 0) / ultimos3.length;
+        
+        return {
+            taxaCrescimentoMedio,
+            desvioPadrao,
+            coeficienteVariacao,
+            maisForte,
+            maisFraco,
+            previsao
+        };
+    };
+
+    const analiseDesempenho = calcularAnaliseDesempenho();
+
+    // Exportar para Excel
+    const exportarExcel = () => {
+        const wb = XLSX.utils.book_new();
+        
+        // Aba 1: Dados brutos
+        const dadosExport = dadosProcessos.map(item => ({
+            'Tipo': item.tipo,
+            'Quantidade': item.quantidade,
+            'Mês': item.mes,
+            'Data Criação': item.createdAt?.toDate ? item.createdAt.toDate().toLocaleDateString('pt-BR') : 'N/A'
+        }));
+        const ws1 = XLSX.utils.json_to_sheet(dadosExport);
+        XLSX.utils.book_append_sheet(wb, ws1, 'Dados');
+        
+        // Aba 2: KPIs
+        const kpisExport = [
+            { 'Indicador': 'Total Anual', 'Valor': kpis.total },
+            { 'Indicador': 'Média Mensal', 'Valor': kpis.media },
+            { 'Indicador': 'Maior Mês', 'Valor': `${kpis.maiorMes} (${kpis.maiorMesNome})` },
+            { 'Indicador': 'Menor Mês', 'Valor': `${kpis.menorMes} (${kpis.menorMesNome})` }
+        ];
+        if (analiseDesempenho) {
+            kpisExport.push(
+                { 'Indicador': 'Taxa Crescimento Médio', 'Valor': `${analiseDesempenho.taxaCrescimentoMedio.toFixed(1)}%` },
+                { 'Indicador': 'Desvio Padrão', 'Valor': analiseDesempenho.desvioPadrao.toFixed(0) },
+                { 'Indicador': 'Coef. Variação', 'Valor': `${analiseDesempenho.coeficienteVariacao.toFixed(1)}%` },
+                { 'Indicador': 'Previsão Próximo Mês', 'Valor': Math.round(analiseDesempenho.previsao) }
+            );
+        }
+        const ws2 = XLSX.utils.json_to_sheet(kpisExport);
+        XLSX.utils.book_append_sheet(wb, ws2, 'KPIs');
+        
+        // Aba 3: Por mês
+        const porMesExport = dadosComVariacao.map(item => ({
+            'Mês': item.mes,
+            'Quantidade': item.quantidade,
+            'Variação': item.variacao,
+            'Percentual': item.percentual ? `${item.percentual.toFixed(1)}%` : 'N/A'
+        }));
+        const ws3 = XLSX.utils.json_to_sheet(porMesExport);
+        XLSX.utils.book_append_sheet(wb, ws3, 'Por Mês');
+        
+        XLSX.writeFile(wb, `Processos_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+    };
+
+    // Exportar para PDF
+    const exportarPDF = () => {
+        const conteudo = `
+            RELATÓRIO DE PROCESSOS - ${new Date().toLocaleDateString('pt-BR')}
+            
+            ============================================
+            KPIs PRINCIPAIS
+            ============================================
+            Total Anual: ${kpis.total.toLocaleString('pt-BR')}
+            Média Mensal: ${kpis.media.toLocaleString('pt-BR')}
+            Maior Mês: ${kpis.maiorMes.toLocaleString('pt-BR')} (${kpis.maiorMesNome})
+            Menor Mês: ${kpis.menorMes.toLocaleString('pt-BR')} (${kpis.menorMesNome})
+            
+            ${analiseDesempenho ? `
+            ============================================
+            ANÁLISE DE DESEMPENHO
+            ============================================
+            Taxa Crescimento Médio: ${analiseDesempenho.taxaCrescimentoMedio.toFixed(1)}%
+            Desvio Padrão: ${analiseDesempenho.desvioPadrao.toFixed(0)}
+            Coeficiente de Variação: ${analiseDesempenho.coeficienteVariacao.toFixed(1)}%
+            Mês Mais Forte: ${analiseDesempenho.maisForte.mes} (${analiseDesempenho.maisForte.quantidade.toLocaleString('pt-BR')})
+            Mês Mais Fraco: ${analiseDesempenho.maisFraco.mes} (${analiseDesempenho.maisFraco.quantidade.toLocaleString('pt-BR')})
+            Previsão Próximo Mês: ${Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
+            ` : ''}
+            
+            ============================================
+            DADOS POR MÊS
+            ============================================
+            ${dadosComVariacao.map(item => 
+                `${item.mes}: ${item.quantidade.toLocaleString('pt-BR')} ${item.percentual !== null ? `(${item.simbolo} ${item.percentual > 0 ? '+' : ''}${item.percentual.toFixed(1)}%)` : ''}`
+            ).join('\n            ')}
+            
+            ============================================
+            DADOS DETALHADOS
+            ============================================
+            ${dadosProcessos.map(item => 
+                `${item.tipo} - ${item.mes}: ${item.quantidade.toLocaleString('pt-BR')}`
+            ).join('\n            ')}
+        `;
+        
+        const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `Processos_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.txt`;
+        link.click();
+    };
+
     // Cores para o gráfico de pizza
     const COLORS = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1', '#14B8A6'];
 
@@ -635,6 +770,22 @@ const ProcessosScreen = () => {
                             </div>
                         </div>
                         <div className="flex gap-3">
+                            <button
+                                onClick={exportarExcel}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors duration-200"
+                                title="Exportar para Excel"
+                            >
+                                <FileText size={18} />
+                                Excel
+                            </button>
+                            <button
+                                onClick={exportarPDF}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors duration-200"
+                                title="Exportar para PDF/TXT"
+                            >
+                                <Download size={18} />
+                                PDF
+                            </button>
                             <button
                                 onClick={() => setShowLancamentoForm(!showLancamentoForm)}
                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors duration-200"
@@ -779,8 +930,8 @@ const ProcessosScreen = () => {
                         )}
 
                         {/* Gráfico de Processos */}
-                        <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
-                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+                        <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-3">
+                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
                                 <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                                     <BarChart3 size={20} className="text-purple-400" />
                                     Análise de Processos por Mês
@@ -827,8 +978,8 @@ const ProcessosScreen = () => {
                                         <h3 className="text-2xl font-bold text-white mb-5">
                                             {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
                                         </h3>
-                                        <ResponsiveContainer width="100%" height={420}>
-                                            <BarChart data={dadosComVariacao} margin={{ top: 70, right: 30, left: 20, bottom: 70 }}>
+                                        <ResponsiveContainer width="100%" height={550}>
+                                            <BarChart data={dadosComVariacao} margin={{ top: 80, right: 20, left: 20, bottom: 70 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                 <XAxis 
                                                     dataKey="mes" 
@@ -927,42 +1078,6 @@ const ProcessosScreen = () => {
                                         </div>
                                     )}
 
-                                    {/* Gráfico de Pizza - Distribuição Geral por Tipo */}
-                                    {filtroTipo === 'Todos' && (
-                                        <div>
-                                            <h3 className="text-3xl font-black text-white mb-6">Distribuição Geral por Tipo</h3>
-                                            <ResponsiveContainer width="100%" height={450}>
-                                                <PieChart>
-                                                    <Pie
-                                                        data={pieChartData}
-                                                        cx="50%"
-                                                        cy="50%"
-                                                        labelLine={true}
-                                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                                        outerRadius={130}
-                                                        fill="#8884d8"
-                                                        dataKey="value"
-                                                    >
-                                                        {pieChartData.map((entry, index) => (
-                                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                        ))}
-                                                    </Pie>
-                                                    <Tooltip 
-                                                        contentStyle={{
-                                                            backgroundColor: '#1F2937',
-                                                            border: '2px solid #374151',
-                                                            borderRadius: '12px',
-                                                            color: '#F9FAFB',
-                                                            fontSize: '15px',
-                                                            padding: '16px',
-                                                            fontWeight: 600
-                                                        }}
-                                                        formatter={(value) => [value.toLocaleString('pt-BR'), 'Quantidade']}
-                                                    />
-                                                </PieChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -990,6 +1105,47 @@ const ProcessosScreen = () => {
                                 <div className="text-amber-400 text-sm font-semibold">{kpis.menorMesNome}</div>
                             </div>
                         </div>
+
+                        {/* KPI Cards - Análise de Desempenho */}
+                        {analiseDesempenho && (
+                            <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-5">
+                                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                    <BarChart3 size={20} className="text-cyan-400" />
+                                    Análise de Desempenho
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="bg-gradient-to-br from-cyan-900/60 to-cyan-800/30 border-2 border-cyan-500/50 rounded-xl p-4">
+                                        <div className="text-cyan-300 text-sm font-bold mb-2 tracking-wide">CRESCIMENTO MÉDIO</div>
+                                        <div className="text-white text-3xl font-black mb-1">
+                                            {analiseDesempenho.taxaCrescimentoMedio > 0 ? '+' : ''}
+                                            {analiseDesempenho.taxaCrescimentoMedio.toFixed(1)}%
+                                        </div>
+                                        <div className="text-cyan-400 text-xs font-semibold">Taxa mensal</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-purple-900/60 to-purple-800/30 border-2 border-purple-500/50 rounded-xl p-4">
+                                        <div className="text-purple-300 text-sm font-bold mb-2 tracking-wide">VARIABILIDADE</div>
+                                        <div className="text-white text-3xl font-black mb-1">
+                                            {analiseDesempenho.coeficienteVariacao.toFixed(1)}%
+                                        </div>
+                                        <div className="text-purple-400 text-xs font-semibold">Coef. variação</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-indigo-900/60 to-indigo-800/30 border-2 border-indigo-500/50 rounded-xl p-4">
+                                        <div className="text-indigo-300 text-sm font-bold mb-2 tracking-wide">PREVISÃO</div>
+                                        <div className="text-white text-3xl font-black mb-1">
+                                            {Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
+                                        </div>
+                                        <div className="text-indigo-400 text-xs font-semibold">Próximo mês</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-pink-900/60 to-pink-800/30 border-2 border-pink-500/50 rounded-xl p-4">
+                                        <div className="text-pink-300 text-sm font-bold mb-2 tracking-wide">AMPLITUDE</div>
+                                        <div className="text-white text-3xl font-black mb-1">
+                                            {(analiseDesempenho.maisForte.quantidade - analiseDesempenho.maisFraco.quantidade).toLocaleString('pt-BR')}
+                                        </div>
+                                        <div className="text-pink-400 text-xs font-semibold">Maior - Menor</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Gráfico de Linha - Tendência */}
                         {dadosComVariacao.length > 0 && (
@@ -1039,44 +1195,6 @@ const ProcessosScreen = () => {
                             </div>
                         )}
 
-                        {/* Gráfico de Top 5 Processos */}
-                        {top5.length > 0 && (
-                            <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
-                                <h3 className="text-2xl font-bold text-white mb-5">Top 5 Processos</h3>
-                                <ResponsiveContainer width="100%" height={340}>
-                                    <BarChart
-                                        layout="vertical"
-                                        data={top5}
-                                        margin={{ top: 10, right: 30, left: 200, bottom: 10 }}
-                                    >
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
-                                        <XAxis type="number" stroke="#9CA3AF" fontSize={13} fontWeight={600} />
-                                        <YAxis 
-                                            dataKey="tipo" 
-                                            type="category" 
-                                            stroke="#9CA3AF"
-                                            fontSize={13}
-                                            fontWeight={600}
-                                            width={190}
-                                        />
-                                        <Tooltip 
-                                            contentStyle={{
-                                                backgroundColor: '#1F2937',
-                                                border: '2px solid #374151',
-                                                borderRadius: '12px',
-                                                color: '#F9FAFB',
-                                                fontSize: '14px',
-                                                padding: '16px',
-                                                fontWeight: 600
-                                            }}
-                                            formatter={(value) => [value.toLocaleString('pt-BR'), 'Quantidade']}
-                                        />
-                                        <Bar dataKey="quantidade" fill="#F59E0B" radius={[0, 8, 8, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        )}
-
                         {/* Gráfico de Acumulado */}
                         {acumuladoData.length > 0 && (
                             <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
@@ -1112,7 +1230,7 @@ const ProcessosScreen = () => {
                                             formatter={(value) => [value.toLocaleString('pt-BR'), 'Acumulado']}
                                         />
                                         <Bar dataKey="acumulado" fill="#8B5CF6" radius={[8, 8, 0, 0]}>
-                                            <LabelList dataKey="acumulado" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fontSize={13} fontWeight={900} fill="#F9FAFB" />
+                                            <LabelList dataKey="acumulado" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fontSize={15} fontWeight={900} fill="#F9FAFB" />
                                         </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>
