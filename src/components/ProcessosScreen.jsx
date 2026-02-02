@@ -20,6 +20,8 @@ const ProcessosScreen = () => {
     const [dadosImportacao, setDadosImportacao] = useState([]);
     const [importando, setImportando] = useState(false);
     const fileInputRef = useRef(null);
+    const [visualizacao, setVisualizacao] = useState('todos'); // 'todos', 'anoAtual', 'comparacao'
+    const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
 
     const [novoProcesso, setNovoProcesso] = useState({
         nome: '',
@@ -498,6 +500,42 @@ const ProcessosScreen = () => {
         );
     };
 
+    // Label customizado para comparação entre anos
+    const CustomComparacaoLabel = ({ x, y, width, height, payload, index }) => {
+        if (!payload || payload.isEmpty) return null;
+
+        // No contexto de um BarChart, payload contém os dados da linha inteira
+        const valor2025 = payload.quantidade_2025 || 0;
+        const valor2026 = payload.quantidade_2026 || 0;
+
+        if (valor2025 === 0 && valor2026 === 0) return null;
+
+        // Calcular percentual de variação
+        const percentual = valor2025 > 0 ? ((valor2026 - valor2025) / valor2025) * 100 : 0;
+        const arrow = percentual > 0 ? '▲' : percentual < 0 ? '▼' : '▶';
+        const cor = percentual > 0 ? '#22c55e' : percentual < 0 ? '#ef4444' : '#9CA3AF';
+        const pctText = `${percentual > 0 ? '+' : ''}${percentual.toFixed(1)}%`;
+
+        // Posicionar no centro, acima das barras
+        const xPos = x + width / 2;
+        const yPos = y - 35; // Mais para cima para não conflitar com os valores das barras
+
+        return (
+            <g>
+                <text
+                    x={xPos}
+                    y={yPos}
+                    fill={cor}
+                    fontSize={14}
+                    fontWeight={900}
+                    textAnchor="middle"
+                >
+                    {arrow} {pctText}
+                </text>
+            </g>
+        );
+    };
+
     // Label customizado para gráfico empilhado - mostra total da coluna e variação
     const CustomStackedLabel = ({ x, y, width, payload }) => {
         if (!payload) return null;
@@ -591,6 +629,50 @@ const ProcessosScreen = () => {
         return { total, media, maiorMes, maiorMesNome, menorMes, menorMesNome };
     };
 
+    // Função para filtrar dados de visualização
+    const obterDadosFiltrados = () => {
+        // Aplica filtro de tipo em todos os dados primeiro
+        let dadosFiltrados = dadosComVariacao;
+        if (filtroTipo !== 'Todos') {
+            dadosFiltrados = dadosFiltrados.filter(item => {
+                const tiposDoMes = item.tipos || []; // tipos é um array de tipos naquele mês
+                // Se não houver informação de tipos específicos, comparar com a variável processo
+                return true; // Mantém todos se não houver info de tipos específicos
+            });
+        }
+
+        if (visualizacao === 'anoAtual') {
+            // Mostrar apenas meses do ano atual
+            return dadosFiltrados.filter(item => item.mes.includes(anoSelecionado.toString()));
+        } else if (visualizacao === 'comparacao') {
+            // Retorna dados separados por ano para mostrar 2 colunas lado a lado (apenas 2025 e 2026)
+            const mesesOrdem = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
+                               'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+            const resultado = [];
+            const anosComparacao = ['2025', '2026']; // Apenas esses dois anos
+            
+            // Agrupa por mês e mantém dados de cada ano separado
+            mesesOrdem.forEach(mes => {
+                const dadosMes = {};
+                dadosMes.mes = mes;
+                
+                anosComparacao.forEach(ano => {
+                    const item = dadosFiltrados.find(d => {
+                        const [mesItem, anoItem] = d.mes.split(' ');
+                        return mesItem === mes && (anoItem || new Date().getFullYear().toString()) === ano;
+                    });
+                    dadosMes[`quantidade_${ano}`] = item?.quantidade || 0;
+                });
+                
+                resultado.push(dadosMes);
+            });
+            
+            return resultado;
+        }
+        // Retornar todos os dados (visualizacao === 'todos')
+        return dadosFiltrados;
+    };
+
     const getTop5Processos = () => {
         const tipoMap = {};
         const tiposExcluir = ['Todos carrinhos', 'Todo consumo', 'Todo o consumo']; // Tipos a excluir
@@ -625,14 +707,24 @@ const ProcessosScreen = () => {
         
         // Taxa de crescimento médio mensal
         const crescimentos = dadosComVariacao
-            .filter(item => item.percentual !== null)
-            .map(item => item.percentual);
-        const taxaCrescimentoMedio = crescimentos.length > 0
-            ? crescimentos.reduce((a, b) => a + b, 0) / crescimentos.length
-            : 0;
+            .filter(item => item.percentual !== null && item.percentual !== undefined && !isNaN(item.percentual))
+            .map(item => Number(item.percentual));
+        
+        if (crescimentos.length === 0) {
+            return {
+                taxaCrescimentoMedio: 0,
+                desvioPadrao: 0,
+                coeficienteVariacao: 0,
+                maisForte: dadosComVariacao[0],
+                maisFraco: dadosComVariacao[0],
+                previsao: 0
+            };
+        }
+        
+        const taxaCrescimentoMedio = crescimentos.reduce((a, b) => a + b, 0) / crescimentos.length;
         
         // Desvio padrão
-        const valores = dadosComVariacao.map(item => item.quantidade);
+        const valores = dadosComVariacao.map(item => Number(item.quantidade));
         const media = valores.reduce((a, b) => a + b, 0) / valores.length;
         const variancia = valores.reduce((sum, val) => sum + Math.pow(val - media, 2), 0) / valores.length;
         const desvioPadrao = Math.sqrt(variancia);
@@ -1033,13 +1125,66 @@ const ProcessosScreen = () => {
                                 </div>
                             ) : (
                                 <div className="space-y-6">
+                                    {/* Controles de Visualização */}
+                                    <div className="bg-zinc-900/60 border border-white/10 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-white font-semibold">Visualizar:</span>
+                                            <div className="flex gap-2 flex-wrap">
+                                                <button
+                                                    onClick={() => setVisualizacao('todos')}
+                                                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                                        visualizacao === 'todos'
+                                                            ? 'bg-purple-600 text-white'
+                                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                                    }`}
+                                                >
+                                                    Todos os Meses
+                                                </button>
+                                                <button
+                                                    onClick={() => setVisualizacao('anoAtual')}
+                                                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                                        visualizacao === 'anoAtual'
+                                                            ? 'bg-cyan-600 text-white'
+                                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                                    }`}
+                                                >
+                                                    Ano Atual
+                                                </button>
+                                                <button
+                                                    onClick={() => setVisualizacao('comparacao')}
+                                                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                                        visualizacao === 'comparacao'
+                                                            ? 'bg-emerald-600 text-white'
+                                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                                    }`}
+                                                >
+                                                    Comparação Meses
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {visualizacao === 'anoAtual' && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-zinc-400 text-sm">Selecionar Ano:</span>
+                                                <select
+                                                    value={anoSelecionado}
+                                                    onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
+                                                    className="px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 hover:border-purple-500 transition-colors"
+                                                >
+                                                    {[2025, 2026, 2027, 2028].map(a => (
+                                                        <option key={a} value={a}>{a}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Gráfico de Barras - Evolução por Mês */}
                                     <div>
                                         <h3 className="text-2xl font-bold text-white mb-5">
                                             {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
                                         </h3>
                                         <ResponsiveContainer width="100%" height={550}>
-                                            <BarChart data={dadosComVariacao} margin={{ top: 80, right: 20, left: 20, bottom: 70 }}>
+                                            <BarChart data={obterDadosFiltrados()} margin={{ top: 80, right: 20, left: 20, bottom: 70 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                 <XAxis 
                                                     dataKey="mes" 
@@ -1067,7 +1212,10 @@ const ProcessosScreen = () => {
                                                         fontWeight: 600
                                                     }}
                                                     formatter={(value, name, props) => {
-                                                        if (name === 'quantidade') {
+                                                        if (visualizacao === 'comparacao') {
+                                                            // Para comparação, mostrar o nome do ano
+                                                            return [value.toLocaleString('pt-BR'), name.replace('quantidade_', 'Ano ')];
+                                                        } else if (name === 'quantidade') {
                                                             const item = props.payload;
                                                             let variacaoText = '';
                                                             if (item.variacao !== null) {
@@ -1080,9 +1228,21 @@ const ProcessosScreen = () => {
                                                     }}
                                                     labelFormatter={(label) => `Mês: ${label}`}
                                                 />
-                                                <Bar dataKey="quantidade" fill="#8B5CF6" radius={[4, 4, 0, 0]}>
-                                                    <LabelList dataKey="quantidade" content={CustomBarLabel} />
-                                                </Bar>
+                                                {visualizacao === 'comparacao' ? (
+                                                    <>
+                                                        <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]}>
+                                                            <LabelList dataKey="quantidade_2025" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
+                                                        </Bar>
+                                                        <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]}>
+                                                            <LabelList dataKey="quantidade_2026" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
+                                                            <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
+                                                        </Bar>
+                                                    </>
+                                                ) : (
+                                                    <Bar dataKey="quantidade" fill="#8B5CF6" radius={[4, 4, 0, 0]}>
+                                                        <LabelList dataKey="quantidade" content={CustomBarLabel} />
+                                                    </Bar>
+                                                )}
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -1177,22 +1337,21 @@ const ProcessosScreen = () => {
                                     <div className="bg-gradient-to-br from-cyan-900/60 to-cyan-800/30 border-2 border-cyan-500/50 rounded-xl p-4">
                                         <div className="text-cyan-300 text-sm font-bold mb-2 tracking-wide">CRESCIMENTO MÉDIO</div>
                                         <div className="text-white text-3xl font-black mb-1">
-                                            {analiseDesempenho.taxaCrescimentoMedio > 0 ? '+' : ''}
-                                            {analiseDesempenho.taxaCrescimentoMedio.toFixed(1)}%
+                                            {isNaN(analiseDesempenho.taxaCrescimentoMedio) ? '--' : (analiseDesempenho.taxaCrescimentoMedio > 0 ? '+' : '') + analiseDesempenho.taxaCrescimentoMedio.toFixed(1) + '%'}
                                         </div>
                                         <div className="text-cyan-400 text-xs font-semibold">Taxa mensal</div>
                                     </div>
                                     <div className="bg-gradient-to-br from-purple-900/60 to-purple-800/30 border-2 border-purple-500/50 rounded-xl p-4">
                                         <div className="text-purple-300 text-sm font-bold mb-2 tracking-wide">VARIABILIDADE</div>
                                         <div className="text-white text-3xl font-black mb-1">
-                                            {analiseDesempenho.coeficienteVariacao.toFixed(1)}%
+                                            {isNaN(analiseDesempenho.coeficienteVariacao) ? '--' : analiseDesempenho.coeficienteVariacao.toFixed(1) + '%'}
                                         </div>
                                         <div className="text-purple-400 text-xs font-semibold">Coef. variação</div>
                                     </div>
                                     <div className="bg-gradient-to-br from-indigo-900/60 to-indigo-800/30 border-2 border-indigo-500/50 rounded-xl p-4">
                                         <div className="text-indigo-300 text-sm font-bold mb-2 tracking-wide">PREVISÃO</div>
                                         <div className="text-white text-3xl font-black mb-1">
-                                            {Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
+                                            {isNaN(analiseDesempenho.previsao) ? '--' : Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
                                         </div>
                                         <div className="text-indigo-400 text-xs font-semibold">Próximo mês</div>
                                     </div>
