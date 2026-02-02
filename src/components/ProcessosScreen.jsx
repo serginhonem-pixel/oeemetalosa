@@ -1183,8 +1183,8 @@ const ProcessosScreen = () => {
                                         <h3 className="text-2xl font-bold text-white mb-5">
                                             {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
                                         </h3>
-                                        <ResponsiveContainer width="100%" height={550}>
-                                            <BarChart data={obterDadosFiltrados()} margin={{ top: 80, right: 20, left: 20, bottom: 70 }}>
+                                        <ResponsiveContainer width="100%" height={420}>
+                                            <BarChart data={obterDadosFiltrados()} margin={{ top: 60, right: 20, left: 20, bottom: 60 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                 <XAxis 
                                                     dataKey="mes" 
