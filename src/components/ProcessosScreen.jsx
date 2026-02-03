@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Layers, Plus, BarChart3, X, Settings, Calendar, Hash, Tag, Upload, Download, FileText, ChevronUp, ChevronDown } from 'lucide-react';
+import { Layers, Plus, BarChart3, X, Settings, Calendar, Hash, Tag, Upload, Download, FileText, ChevronUp, ChevronDown, Projector } from 'lucide-react';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { safeAddDoc } from '../services/firebaseSafeWrites';
@@ -7,6 +7,8 @@ import { IS_PRODUCTION } from '../services/firebase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+import PptxGenJS from 'pptxgenjs';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LabelList, LineChart, Line } from 'recharts';
 
 const ProcessosScreen = () => {
@@ -20,8 +22,10 @@ const ProcessosScreen = () => {
     const [dadosImportacao, setDadosImportacao] = useState([]);
     const [importando, setImportando] = useState(false);
     const fileInputRef = useRef(null);
+    const exportAreaRef = useRef(null);
     const [visualizacao, setVisualizacao] = useState('todos'); // 'todos', 'anoAtual', 'comparacao'
     const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
+    const [exportandoPptx, setExportandoPptx] = useState(false);
 
     const [novoProcesso, setNovoProcesso] = useState({
         nome: '',
@@ -904,6 +908,67 @@ const ProcessosScreen = () => {
         doc.save(`Processos_${hoje.replace(/\//g, '-')}.pdf`);
     };
 
+    // Captura de gráficos e cards
+    const captureProcessosPNG = async () => {
+        const el = exportAreaRef.current;
+        if (!el) throw new Error('exportAreaRef está null (não achou a área de exportação).');
+
+        const canvas = await html2canvas(el, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#09090b',
+            logging: false
+        });
+
+        return canvas.toDataURL('image/png', 1.0);
+    };
+
+    const exportarPPTX = async () => {
+        if (exportandoPptx) return;
+        if (dadosProcessos.length === 0) {
+            alert('Sem dados para exportar.');
+            return;
+        }
+
+        setExportandoPptx(true);
+
+        const filtroOriginal = filtroTipo;
+        const visualizacaoOriginal = visualizacao;
+        const anoOriginal = anoSelecionado;
+
+        try {
+            const pptx = new PptxGenJS();
+            pptx.layout = 'LAYOUT_WIDE';
+            pptx.author = 'ProcessosScreen';
+
+            const tiposParaExportar = ['Todos', ...tiposProcessosUnicos.filter((t) => !['Todos carrinhos', 'Todo consumo', 'Todo o consumo'].includes(t))];
+
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+            for (const tipoAtual of tiposParaExportar) {
+                setFiltroTipo(tipoAtual);
+                await sleep(450);
+                await new Promise((r) => requestAnimationFrame(r));
+
+                const imgData = await captureProcessosPNG();
+                const slide = pptx.addSlide();
+                slide.addImage({ data: imgData, x: 0, y: 0, w: 13.33, h: 7.5 });
+            }
+
+            const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+            await pptx.writeFile({ fileName: `Processos_${hoje}.pptx` });
+            alert('PPTX baixado com sucesso.');
+        } catch (error) {
+            console.error('Erro ao gerar PPTX:', error);
+            alert('Erro ao gerar PPTX.');
+        } finally {
+            setFiltroTipo(filtroOriginal);
+            setVisualizacao(visualizacaoOriginal);
+            setAnoSelecionado(anoOriginal);
+            setExportandoPptx(false);
+        }
+    };
+
     // Cores para o gráfico de pizza
     const COLORS = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1', '#14B8A6'];
 
@@ -937,6 +1002,15 @@ const ProcessosScreen = () => {
                             >
                                 <Download size={18} />
                                 PDF
+                            </button>
+                            <button
+                                onClick={exportarPPTX}
+                                disabled={exportandoPptx}
+                                className="px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-900 rounded-lg font-semibold flex items-center gap-2 transition-colors duration-200 disabled:opacity-50"
+                                title="Exportar para PPTX"
+                            >
+                                <Projector size={18} />
+                                PPTX
                             </button>
                             <button
                                 onClick={() => setShowLancamentoForm(!showLancamentoForm)}
@@ -1081,178 +1155,112 @@ const ProcessosScreen = () => {
                         </div>
                         )}
 
-                        {/* Gráfico de Processos */}
-                        <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-3">
-                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                                    <BarChart3 size={20} className="text-purple-400" />
-                                    Análise de Processos por Mês
-                                </h2>
-                                
-                                {/* Filtro por Tipo */}
-                                <div className="flex items-center gap-3">
-                                    <label htmlFor="filtroTipo" className="text-sm font-medium text-zinc-300">
-                                        Filtrar por Tipo:
-                                    </label>
-                                    <select
-                                        id="filtroTipo"
-                                        value={filtroTipo}
-                                        onChange={(e) => setFiltroTipo(e.target.value)}
-                                        className="bg-black/60 border border-white/10 rounded-lg p-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-sm"
-                                    >
-                                        <option value="Todos">Todos os Tipos</option>
-                                        {tiposProcessosUnicos.map((tipo) => (
-                                            <option key={tipo} value={tipo}>
-                                                {tipo}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>                            {loading ? (
-                                <div className="flex items-center justify-center h-64 text-zinc-500">
-                                    <div className="text-center">
-                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto mb-2"></div>
-                                        <p>Carregando dados...</p>
+                        <div className="space-y-6">
+                            <div ref={exportAreaRef} className="space-y-6">
+                                {/* Gráfico de Processos */}
+                                <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-3">
+                                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
+                                    <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                                        <BarChart3 size={20} className="text-purple-400" />
+                                        Análise de Processos por Mês
+                                    </h2>
+                                    
+                                    {/* Filtro por Tipo */}
+                                    <div className="flex items-center gap-3">
+                                        <label htmlFor="filtroTipo" className="text-sm font-medium text-zinc-300">
+                                            Filtrar por Tipo:
+                                        </label>
+                                        <select
+                                            id="filtroTipo"
+                                            value={filtroTipo}
+                                            onChange={(e) => setFiltroTipo(e.target.value)}
+                                            className="bg-black/60 border border-white/10 rounded-lg p-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-sm"
+                                        >
+                                            <option value="Todos">Todos os Tipos</option>
+                                            {tiposProcessosUnicos.map((tipo) => (
+                                                <option key={tipo} value={tipo}>
+                                                    {tipo}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
-                                </div>
-                            ) : dadosProcessos.length === 0 ? (
-                                <div className="flex items-center justify-center h-64 text-zinc-500">
-                                    <div className="text-center">
-                                        <BarChart3 size={32} className="mx-auto mb-2 opacity-50" />
-                                        <p>Nenhum dado para exibir</p>
-                                        <p className="text-xs">Importe dados ou lance processos para ver o gráfico</p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-6">
-                                    {/* Controles de Visualização */}
-                                    <div className="bg-zinc-900/60 border border-white/10 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-white font-semibold">Visualizar:</span>
-                                            <div className="flex gap-2 flex-wrap">
-                                                <button
-                                                    onClick={() => setVisualizacao('todos')}
-                                                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                                                        visualizacao === 'todos'
-                                                            ? 'bg-purple-600 text-white'
-                                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                                                    }`}
-                                                >
-                                                    Todos os Meses
-                                                </button>
-                                                <button
-                                                    onClick={() => setVisualizacao('anoAtual')}
-                                                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                                                        visualizacao === 'anoAtual'
-                                                            ? 'bg-cyan-600 text-white'
-                                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                                                    }`}
-                                                >
-                                                    Ano Atual
-                                                </button>
-                                                <button
-                                                    onClick={() => setVisualizacao('comparacao')}
-                                                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                                                        visualizacao === 'comparacao'
-                                                            ? 'bg-emerald-600 text-white'
-                                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                                                    }`}
-                                                >
-                                                    Comparação Meses
-                                                </button>
-                                            </div>
+                                </div>                            {loading ? (
+                                    <div className="flex items-center justify-center h-64 text-zinc-500">
+                                        <div className="text-center">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto mb-2"></div>
+                                            <p>Carregando dados...</p>
                                         </div>
-                                        {visualizacao === 'anoAtual' && (
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-zinc-400 text-sm">Selecionar Ano:</span>
-                                                <select
-                                                    value={anoSelecionado}
-                                                    onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
-                                                    className="px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 hover:border-purple-500 transition-colors"
-                                                >
-                                                    {[2025, 2026, 2027, 2028].map(a => (
-                                                        <option key={a} value={a}>{a}</option>
-                                                    ))}
-                                                </select>
+                                    </div>
+                                ) : dadosProcessos.length === 0 ? (
+                                    <div className="flex items-center justify-center h-64 text-zinc-500">
+                                        <div className="text-center">
+                                            <BarChart3 size={32} className="mx-auto mb-2 opacity-50" />
+                                            <p>Nenhum dado para exibir</p>
+                                            <p className="text-xs">Importe dados ou lance processos para ver o gráfico</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {/* Controles de Visualização */}
+                                        <div className="bg-zinc-900/60 border border-white/10 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-white font-semibold">Visualizar:</span>
+                                                <div className="flex gap-2 flex-wrap">
+                                                    <button
+                                                        onClick={() => setVisualizacao('todos')}
+                                                        className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                                            visualizacao === 'todos'
+                                                                ? 'bg-purple-600 text-white'
+                                                                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                                        }`}
+                                                    >
+                                                        Todos os Meses
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setVisualizacao('anoAtual')}
+                                                        className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                                            visualizacao === 'anoAtual'
+                                                                ? 'bg-cyan-600 text-white'
+                                                                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                                        }`}
+                                                    >
+                                                        Ano Atual
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setVisualizacao('comparacao')}
+                                                        className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                                            visualizacao === 'comparacao'
+                                                                ? 'bg-emerald-600 text-white'
+                                                                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                                        }`}
+                                                    >
+                                                        Comparação Meses
+                                                    </button>
+                                                </div>
                                             </div>
-                                        )}
-                                    </div>
+                                            {visualizacao === 'anoAtual' && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-zinc-400 text-sm">Selecionar Ano:</span>
+                                                    <select
+                                                        value={anoSelecionado}
+                                                        onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
+                                                        className="px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 hover:border-purple-500 transition-colors"
+                                                    >
+                                                        {[2025, 2026, 2027, 2028].map(a => (
+                                                            <option key={a} value={a}>{a}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+                                        </div>
 
-                                    {/* Gráfico de Barras - Evolução por Mês */}
-                                    <div>
-                                        <h3 className="text-2xl font-bold text-white mb-5">
-                                            {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
-                                        </h3>
-                                        <ResponsiveContainer width="100%" height={420}>
-                                            <BarChart data={obterDadosFiltrados()} margin={{ top: 60, right: 20, left: 20, bottom: 60 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
-                                                <XAxis 
-                                                    dataKey="mes" 
-                                                    stroke="#9CA3AF"
-                                                    fontSize={14}
-                                                    fontWeight={600}
-                                                    angle={-45}
-                                                    textAnchor="end"
-                                                    height={80}
-                                                />
-                                                <YAxis 
-                                                    stroke="#9CA3AF"
-                                                    fontSize={14}
-                                                    fontWeight={600}
-                                                    tickFormatter={(value) => value.toLocaleString('pt-BR')}
-                                                />
-                                                <Tooltip 
-                                                    contentStyle={{
-                                                        backgroundColor: '#1F2937',
-                                                        border: '2px solid #374151',
-                                                        borderRadius: '12px',
-                                                        color: '#F9FAFB',
-                                                        fontSize: '15px',
-                                                        padding: '16px',
-                                                        fontWeight: 600
-                                                    }}
-                                                    formatter={(value, name, props) => {
-                                                        if (visualizacao === 'comparacao') {
-                                                            // Para comparação, mostrar o nome do ano
-                                                            return [value.toLocaleString('pt-BR'), name.replace('quantidade_', 'Ano ')];
-                                                        } else if (name === 'quantidade') {
-                                                            const item = props.payload;
-                                                            let variacaoText = '';
-                                                            if (item.variacao !== null) {
-                                                                const sinal = item.variacao > 0 ? '+' : '';
-                                                                variacaoText = `\nVariação: ${sinal}${item.variacao.toLocaleString('pt-BR')} (${item.percentual > 0 ? '+' : ''}${item.percentual.toFixed(1)}%) ${item.simbolo}`;
-                                                            }
-                                                            return [value.toLocaleString('pt-BR') + variacaoText, 'Quantidade'];
-                                                        }
-                                                        return [value.toLocaleString('pt-BR'), name];
-                                                    }}
-                                                    labelFormatter={(label) => `Mês: ${label}`}
-                                                />
-                                                {visualizacao === 'comparacao' ? (
-                                                    <>
-                                                        <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]}>
-                                                            <LabelList dataKey="quantidade_2025" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
-                                                        </Bar>
-                                                        <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]}>
-                                                            <LabelList dataKey="quantidade_2026" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
-                                                            <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
-                                                        </Bar>
-                                                    </>
-                                                ) : (
-                                                    <Bar dataKey="quantidade" fill="#8B5CF6" radius={[4, 4, 0, 0]}>
-                                                        <LabelList dataKey="quantidade" content={CustomBarLabel} />
-                                                    </Bar>
-                                                )}
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-
-                                    {/* Gráfico de Barras Empilhadas - Tipos por Mês */}
-                                    {filtroTipo === 'Todos' && (
+                                        {/* Gráfico de Barras - Evolução por Mês */}
                                         <div>
-                                            <h3 className="text-2xl font-bold text-white mb-5">Distribuição de Tipos por Mês</h3>
+                                            <h3 className="text-2xl font-bold text-white mb-5">
+                                                {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
+                                            </h3>
                                             <ResponsiveContainer width="100%" height={420}>
-                                                <BarChart data={tipoPorMesData} margin={{ top: 70, right: 30, left: 20, bottom: 70 }}>
+                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 60, right: 20, left: 20, bottom: 60 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                     <XAxis 
                                                         dataKey="mes" 
@@ -1279,182 +1287,253 @@ const ProcessosScreen = () => {
                                                             padding: '16px',
                                                             fontWeight: 600
                                                         }}
-                                                        formatter={(value, name) => [value.toLocaleString('pt-BR'), name]}
+                                                        formatter={(value, name, props) => {
+                                                            if (visualizacao === 'comparacao') {
+                                                                // Para comparação, mostrar o nome do ano
+                                                                return [value.toLocaleString('pt-BR'), name.replace('quantidade_', 'Ano ')];
+                                                            } else if (name === 'quantidade') {
+                                                                const item = props.payload;
+                                                                let variacaoText = '';
+                                                                if (item.variacao !== null) {
+                                                                    const sinal = item.variacao > 0 ? '+' : '';
+                                                                    variacaoText = `\nVariação: ${sinal}${item.variacao.toLocaleString('pt-BR')} (${item.percentual > 0 ? '+' : ''}${item.percentual.toFixed(1)}%) ${item.simbolo}`;
+                                                                }
+                                                                return [value.toLocaleString('pt-BR') + variacaoText, 'Quantidade'];
+                                                            }
+                                                            return [value.toLocaleString('pt-BR'), name];
+                                                        }}
                                                         labelFormatter={(label) => `Mês: ${label}`}
                                                     />
-                                                    <Legend fontSize={13} wrapperStyle={{ fontSize: '13px', fontWeight: 600 }} />
-                                                    {tiposParaLegenda.map((tipo, index) => (
-                                                        <Bar 
-                                                            key={tipo}
-                                                            dataKey={tipo} 
-                                                            stackId="a"
-                                                            fill={COLORS[index % COLORS.length]} 
-                                                            radius={index === tiposParaLegenda.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                                                        />
-                                                    ))}
-                                                    <LabelList dataKey="labelId" content={CustomStackedLabel} position="top" />
+                                                    {visualizacao === 'comparacao' ? (
+                                                        <>
+                                                            <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
+                                                                <LabelList dataKey="quantidade_2025" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
+                                                            </Bar>
+                                                            <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
+                                                                <LabelList dataKey="quantidade_2026" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
+                                                                <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
+                                                            </Bar>
+                                                        </>
+                                                    ) : (
+                                                        <Bar dataKey="quantidade" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
+                                                            <LabelList dataKey="quantidade" content={CustomBarLabel} />
+                                                        </Bar>
+                                                    )}
                                                 </BarChart>
                                             </ResponsiveContainer>
                                         </div>
-                                    )}
 
+                                        {/* Gráfico de Barras Empilhadas - Tipos por Mês */}
+                                        {filtroTipo === 'Todos' && (
+                                            <div>
+                                                <h3 className="text-2xl font-bold text-white mb-5">Distribuição de Tipos por Mês</h3>
+                                                <ResponsiveContainer width="100%" height={420}>
+                                                    <BarChart data={tipoPorMesData} margin={{ top: 70, right: 30, left: 20, bottom: 70 }}>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
+                                                        <XAxis 
+                                                            dataKey="mes" 
+                                                            stroke="#9CA3AF"
+                                                            fontSize={14}
+                                                            fontWeight={600}
+                                                            angle={-45}
+                                                            textAnchor="end"
+                                                            height={80}
+                                                        />
+                                                        <YAxis 
+                                                            stroke="#9CA3AF"
+                                                            fontSize={14}
+                                                            fontWeight={600}
+                                                            tickFormatter={(value) => value.toLocaleString('pt-BR')}
+                                                        />
+                                                        <Tooltip 
+                                                            contentStyle={{
+                                                                backgroundColor: '#1F2937',
+                                                                border: '2px solid #374151',
+                                                                borderRadius: '12px',
+                                                                color: '#F9FAFB',
+                                                                fontSize: '15px',
+                                                                padding: '16px',
+                                                                fontWeight: 600
+                                                            }}
+                                                            formatter={(value, name) => [value.toLocaleString('pt-BR'), name]}
+                                                            labelFormatter={(label) => `Mês: ${label}`}
+                                                        />
+                                                        <Legend fontSize={13} wrapperStyle={{ fontSize: '13px', fontWeight: 600 }} />
+                                                        {tiposParaLegenda.map((tipo, index) => (
+                                                            <Bar 
+                                                                key={tipo}
+                                                                dataKey={tipo} 
+                                                                stackId="a"
+                                                                fill={COLORS[index % COLORS.length]} 
+                                                                radius={index === tiposParaLegenda.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                                                                isAnimationActive={!exportandoPptx}
+                                                            />
+                                                        ))}
+                                                        <LabelList dataKey="labelId" content={CustomStackedLabel} position="top" />
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        )}
+
+                                    </div>
+                                )}
+                                </div>
+
+                                {/* KPI Cards */}
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                                    <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/30 border-2 border-blue-500/50 rounded-xl p-5 shadow-lg">
+                                        <div className="text-blue-300 text-base font-bold mb-2 tracking-wide">TOTAL ANUAL</div>
+                                        <div className="text-white text-5xl font-black mb-1">{kpis.total.toLocaleString('pt-BR')}</div>
+                                        <div className="text-blue-400 text-sm font-semibold">Unidades produzidas</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-5 shadow-lg">
+                                        <div className="text-green-300 text-base font-bold mb-2 tracking-wide">MÉDIA MENSAL</div>
+                                        <div className="text-white text-5xl font-black mb-1">{kpis.media.toLocaleString('pt-BR')}</div>
+                                        <div className="text-green-400 text-sm font-semibold">Produção por mês</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-5 shadow-lg">
+                                        <div className="text-emerald-300 text-base font-bold mb-2 tracking-wide">MAIOR MÊS</div>
+                                        <div className="text-white text-5xl font-black mb-1">{kpis.maiorMes.toLocaleString('pt-BR')}</div>
+                                        <div className="text-emerald-400 text-sm font-semibold">{kpis.maiorMesNome}</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-amber-900/60 to-amber-800/30 border-2 border-amber-500/50 rounded-xl p-5 shadow-lg">
+                                        <div className="text-amber-300 text-base font-bold mb-2 tracking-wide">MENOR MÊS</div>
+                                        <div className="text-white text-5xl font-black mb-1">{kpis.menorMes.toLocaleString('pt-BR')}</div>
+                                        <div className="text-amber-400 text-sm font-semibold">{kpis.menorMesNome}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* KPI Cards - Análise de Desempenho */}
+                            {analiseDesempenho && (
+                                <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-5">
+                                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                        <BarChart3 size={20} className="text-cyan-400" />
+                                        Análise de Desempenho
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <div className="bg-gradient-to-br from-cyan-900/60 to-cyan-800/30 border-2 border-cyan-500/50 rounded-xl p-4">
+                                            <div className="text-cyan-300 text-sm font-bold mb-2 tracking-wide">CRESCIMENTO MÉDIO</div>
+                                            <div className="text-white text-3xl font-black mb-1">
+                                                {isNaN(analiseDesempenho.taxaCrescimentoMedio) ? '--' : (analiseDesempenho.taxaCrescimentoMedio > 0 ? '+' : '') + analiseDesempenho.taxaCrescimentoMedio.toFixed(1) + '%'}
+                                            </div>
+                                            <div className="text-cyan-400 text-xs font-semibold">Taxa mensal</div>
+                                        </div>
+                                        <div className="bg-gradient-to-br from-purple-900/60 to-purple-800/30 border-2 border-purple-500/50 rounded-xl p-4">
+                                            <div className="text-purple-300 text-sm font-bold mb-2 tracking-wide">VARIABILIDADE</div>
+                                            <div className="text-white text-3xl font-black mb-1">
+                                                {isNaN(analiseDesempenho.coeficienteVariacao) ? '--' : analiseDesempenho.coeficienteVariacao.toFixed(1) + '%'}
+                                            </div>
+                                            <div className="text-purple-400 text-xs font-semibold">Coef. variação</div>
+                                        </div>
+                                        <div className="bg-gradient-to-br from-indigo-900/60 to-indigo-800/30 border-2 border-indigo-500/50 rounded-xl p-4">
+                                            <div className="text-indigo-300 text-sm font-bold mb-2 tracking-wide">PREVISÃO</div>
+                                            <div className="text-white text-3xl font-black mb-1">
+                                                {isNaN(analiseDesempenho.previsao) ? '--' : Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
+                                            </div>
+                                            <div className="text-indigo-400 text-xs font-semibold">Próximo mês</div>
+                                        </div>
+                                        <div className="bg-gradient-to-br from-pink-900/60 to-pink-800/30 border-2 border-pink-500/50 rounded-xl p-4">
+                                            <div className="text-pink-300 text-sm font-bold mb-2 tracking-wide">AMPLITUDE</div>
+                                            <div className="text-white text-3xl font-black mb-1">
+                                                {(analiseDesempenho.maisForte.quantidade - analiseDesempenho.maisFraco.quantidade).toLocaleString('pt-BR')}
+                                            </div>
+                                            <div className="text-pink-400 text-xs font-semibold">Maior - Menor</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Gráfico de Linha - Tendência */}
+                            {dadosComVariacao.length > 0 && (
+                                <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
+                                    <h3 className="text-2xl font-bold text-white mb-5">Tendência Mensal de Produção</h3>
+                                    <ResponsiveContainer width="100%" height={420}>
+                                        <LineChart data={dadosComVariacao} margin={{ top: 40, right: 30, left: 20, bottom: 80 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
+                                            <XAxis 
+                                                dataKey="mes" 
+                                                stroke="#9CA3AF"
+                                                fontSize={14}
+                                                fontWeight={600}
+                                                angle={-45}
+                                                textAnchor="end"
+                                                height={80}
+                                            />
+                                            <YAxis 
+                                                stroke="#9CA3AF"
+                                                fontSize={14}
+                                                fontWeight={600}
+                                                tickFormatter={(value) => value.toLocaleString('pt-BR')}
+                                            />
+                                            <Tooltip 
+                                                contentStyle={{
+                                                    backgroundColor: '#1F2937',
+                                                    border: '2px solid #374151',
+                                                    borderRadius: '12px',
+                                                    color: '#F9FAFB',
+                                                    fontSize: '14px',
+                                                    padding: '16px',
+                                                    fontWeight: 600
+                                                }}
+                                                formatter={(value) => [value.toLocaleString('pt-BR'), 'Quantidade']}
+                                            />
+                                            <Line 
+                                                type="monotone" 
+                                                dataKey="quantidade" 
+                                                stroke="#10B981" 
+                                                strokeWidth={4}
+                                                dot={{ fill: '#10B981', r: 6 }}
+                                                activeDot={{ r: 7 }}
+                                                isAnimationActive={!exportandoPptx}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+
+                            {/* Gráfico de Acumulado */}
+                            {acumuladoData.length > 0 && (
+                                <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
+                                    <h3 className="text-2xl font-bold text-white mb-5">Crescimento Acumulado</h3>
+                                    <ResponsiveContainer width="100%" height={420}>
+                                        <BarChart data={acumuladoData} margin={{ top: 40, right: 30, left: 20, bottom: 80 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
+                                            <XAxis 
+                                                dataKey="mes" 
+                                                stroke="#9CA3AF"
+                                                fontSize={14}
+                                                fontWeight={600}
+                                                angle={-45}
+                                                textAnchor="end"
+                                                height={80}
+                                            />
+                                            <YAxis 
+                                                stroke="#9CA3AF"
+                                                fontSize={14}
+                                                fontWeight={600}
+                                                tickFormatter={(value) => value.toLocaleString('pt-BR')}
+                                            />
+                                            <Tooltip 
+                                                contentStyle={{
+                                                    backgroundColor: '#1F2937',
+                                                    border: '2px solid #374151',
+                                                    borderRadius: '12px',
+                                                    color: '#F9FAFB',
+                                                    fontSize: '14px',
+                                                    padding: '16px',
+                                                    fontWeight: 600
+                                                }}
+                                                formatter={(value) => [value.toLocaleString('pt-BR'), 'Acumulado']}
+                                            />
+                                            <Bar dataKey="acumulado" fill="#8B5CF6" radius={[8, 8, 0, 0]} isAnimationActive={!exportandoPptx}>
+                                                <LabelList dataKey="acumulado" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fontSize={15} fontWeight={900} fill="#F9FAFB" />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
                                 </div>
                             )}
                         </div>
-
-                        {/* KPI Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                            <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/30 border-2 border-blue-500/50 rounded-xl p-5 shadow-lg">
-                                <div className="text-blue-300 text-base font-bold mb-2 tracking-wide">TOTAL ANUAL</div>
-                                <div className="text-white text-5xl font-black mb-1">{kpis.total.toLocaleString('pt-BR')}</div>
-                                <div className="text-blue-400 text-sm font-semibold">Unidades produzidas</div>
-                            </div>
-                            <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-5 shadow-lg">
-                                <div className="text-green-300 text-base font-bold mb-2 tracking-wide">MÉDIA MENSAL</div>
-                                <div className="text-white text-5xl font-black mb-1">{kpis.media.toLocaleString('pt-BR')}</div>
-                                <div className="text-green-400 text-sm font-semibold">Produção por mês</div>
-                            </div>
-                            <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-5 shadow-lg">
-                                <div className="text-emerald-300 text-base font-bold mb-2 tracking-wide">MAIOR MÊS</div>
-                                <div className="text-white text-5xl font-black mb-1">{kpis.maiorMes.toLocaleString('pt-BR')}</div>
-                                <div className="text-emerald-400 text-sm font-semibold">{kpis.maiorMesNome}</div>
-                            </div>
-                            <div className="bg-gradient-to-br from-amber-900/60 to-amber-800/30 border-2 border-amber-500/50 rounded-xl p-5 shadow-lg">
-                                <div className="text-amber-300 text-base font-bold mb-2 tracking-wide">MENOR MÊS</div>
-                                <div className="text-white text-5xl font-black mb-1">{kpis.menorMes.toLocaleString('pt-BR')}</div>
-                                <div className="text-amber-400 text-sm font-semibold">{kpis.menorMesNome}</div>
-                            </div>
-                        </div>
-
-                        {/* KPI Cards - Análise de Desempenho */}
-                        {analiseDesempenho && (
-                            <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-5">
-                                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                                    <BarChart3 size={20} className="text-cyan-400" />
-                                    Análise de Desempenho
-                                </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div className="bg-gradient-to-br from-cyan-900/60 to-cyan-800/30 border-2 border-cyan-500/50 rounded-xl p-4">
-                                        <div className="text-cyan-300 text-sm font-bold mb-2 tracking-wide">CRESCIMENTO MÉDIO</div>
-                                        <div className="text-white text-3xl font-black mb-1">
-                                            {isNaN(analiseDesempenho.taxaCrescimentoMedio) ? '--' : (analiseDesempenho.taxaCrescimentoMedio > 0 ? '+' : '') + analiseDesempenho.taxaCrescimentoMedio.toFixed(1) + '%'}
-                                        </div>
-                                        <div className="text-cyan-400 text-xs font-semibold">Taxa mensal</div>
-                                    </div>
-                                    <div className="bg-gradient-to-br from-purple-900/60 to-purple-800/30 border-2 border-purple-500/50 rounded-xl p-4">
-                                        <div className="text-purple-300 text-sm font-bold mb-2 tracking-wide">VARIABILIDADE</div>
-                                        <div className="text-white text-3xl font-black mb-1">
-                                            {isNaN(analiseDesempenho.coeficienteVariacao) ? '--' : analiseDesempenho.coeficienteVariacao.toFixed(1) + '%'}
-                                        </div>
-                                        <div className="text-purple-400 text-xs font-semibold">Coef. variação</div>
-                                    </div>
-                                    <div className="bg-gradient-to-br from-indigo-900/60 to-indigo-800/30 border-2 border-indigo-500/50 rounded-xl p-4">
-                                        <div className="text-indigo-300 text-sm font-bold mb-2 tracking-wide">PREVISÃO</div>
-                                        <div className="text-white text-3xl font-black mb-1">
-                                            {isNaN(analiseDesempenho.previsao) ? '--' : Math.round(analiseDesempenho.previsao).toLocaleString('pt-BR')}
-                                        </div>
-                                        <div className="text-indigo-400 text-xs font-semibold">Próximo mês</div>
-                                    </div>
-                                    <div className="bg-gradient-to-br from-pink-900/60 to-pink-800/30 border-2 border-pink-500/50 rounded-xl p-4">
-                                        <div className="text-pink-300 text-sm font-bold mb-2 tracking-wide">AMPLITUDE</div>
-                                        <div className="text-white text-3xl font-black mb-1">
-                                            {(analiseDesempenho.maisForte.quantidade - analiseDesempenho.maisFraco.quantidade).toLocaleString('pt-BR')}
-                                        </div>
-                                        <div className="text-pink-400 text-xs font-semibold">Maior - Menor</div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Gráfico de Linha - Tendência */}
-                        {dadosComVariacao.length > 0 && (
-                            <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
-                                <h3 className="text-2xl font-bold text-white mb-5">Tendência Mensal de Produção</h3>
-                                <ResponsiveContainer width="100%" height={420}>
-                                    <LineChart data={dadosComVariacao} margin={{ top: 40, right: 30, left: 20, bottom: 80 }}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
-                                        <XAxis 
-                                            dataKey="mes" 
-                                            stroke="#9CA3AF"
-                                            fontSize={14}
-                                            fontWeight={600}
-                                            angle={-45}
-                                            textAnchor="end"
-                                            height={80}
-                                        />
-                                        <YAxis 
-                                            stroke="#9CA3AF"
-                                            fontSize={14}
-                                            fontWeight={600}
-                                            tickFormatter={(value) => value.toLocaleString('pt-BR')}
-                                        />
-                                        <Tooltip 
-                                            contentStyle={{
-                                                backgroundColor: '#1F2937',
-                                                border: '2px solid #374151',
-                                                borderRadius: '12px',
-                                                color: '#F9FAFB',
-                                                fontSize: '14px',
-                                                padding: '16px',
-                                                fontWeight: 600
-                                            }}
-                                            formatter={(value) => [value.toLocaleString('pt-BR'), 'Quantidade']}
-                                        />
-                                        <Line 
-                                            type="monotone" 
-                                            dataKey="quantidade" 
-                                            stroke="#10B981" 
-                                            strokeWidth={4}
-                                            dot={{ fill: '#10B981', r: 6 }}
-                                            activeDot={{ r: 7 }}
-                                            isAnimationActive={true}
-                                        />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        )}
-
-                        {/* Gráfico de Acumulado */}
-                        {acumuladoData.length > 0 && (
-                            <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
-                                <h3 className="text-2xl font-bold text-white mb-5">Crescimento Acumulado</h3>
-                                <ResponsiveContainer width="100%" height={420}>
-                                    <BarChart data={acumuladoData} margin={{ top: 40, right: 30, left: 20, bottom: 80 }}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
-                                        <XAxis 
-                                            dataKey="mes" 
-                                            stroke="#9CA3AF"
-                                            fontSize={14}
-                                            fontWeight={600}
-                                            angle={-45}
-                                            textAnchor="end"
-                                            height={80}
-                                        />
-                                        <YAxis 
-                                            stroke="#9CA3AF"
-                                            fontSize={14}
-                                            fontWeight={600}
-                                            tickFormatter={(value) => value.toLocaleString('pt-BR')}
-                                        />
-                                        <Tooltip 
-                                            contentStyle={{
-                                                backgroundColor: '#1F2937',
-                                                border: '2px solid #374151',
-                                                borderRadius: '12px',
-                                                color: '#F9FAFB',
-                                                fontSize: '14px',
-                                                padding: '16px',
-                                                fontWeight: 600
-                                            }}
-                                            formatter={(value) => [value.toLocaleString('pt-BR'), 'Acumulado']}
-                                        />
-                                        <Bar dataKey="acumulado" fill="#8B5CF6" radius={[8, 8, 0, 0]}>
-                                            <LabelList dataKey="acumulado" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fontSize={15} fontWeight={900} fill="#F9FAFB" />
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        )}
 
                         {/* Tabela de Processos */}
                         <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">                            <div className="overflow-x-auto">
