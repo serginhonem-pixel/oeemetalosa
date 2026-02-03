@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layers, Plus, BarChart3, X, Settings, Calendar, Hash, Tag, Upload, Download, FileText, ChevronUp, ChevronDown, Projector } from 'lucide-react';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { safeAddDoc } from '../services/firebaseSafeWrites';
+import { safeAddDoc, safeUpdateDoc } from '../services/firebaseSafeWrites';
 import { IS_PRODUCTION } from '../services/firebase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -17,6 +17,7 @@ const ProcessosScreen = () => {
     const [mes, setMes] = useState('');
     const [ano, setAno] = useState('2025');
     const [showModalCadastro, setShowModalCadastro] = useState(false);
+    const [showModalEdicao, setShowModalEdicao] = useState(false);
     const [novoProcessoCustomizado, setNovoProcessoCustomizado] = useState('');
     const [showModalImportacao, setShowModalImportacao] = useState(false);
     const [dadosImportacao, setDadosImportacao] = useState([]);
@@ -105,8 +106,7 @@ const ProcessosScreen = () => {
 
                 if (IS_PRODUCTION) {
                     // Atualizar no Firestore
-                    const ref = doc(db, 'processos', editingId);
-                    await updateDoc(ref, atualizado);
+                    await safeUpdateDoc('processos', editingId, atualizado);
                 } else {
                     // Atualizar no localStorage
                     const processosAtuais = JSON.parse(localStorage.getItem('processos') || '[]');
@@ -117,6 +117,7 @@ const ProcessosScreen = () => {
 
                 // Limpar estado de edição
                 setEditingId(null);
+                setShowModalEdicao(false);
             } else {
                 const novoDado = {
                     id: `local-${Date.now()}`,
@@ -143,6 +144,7 @@ const ProcessosScreen = () => {
             setMes('');
             setNovoProcessoCustomizado('');
             setEditingId(null);
+            setShowModalEdicao(false);
             // Mantém o ano atual como padrão
 
         } catch (error) {
@@ -1603,8 +1605,8 @@ const ProcessosScreen = () => {
                                                                     const [m, a] = item.mes.split(' ');
                                                                     setMes(m);
                                                                     setAno(a || String(new Date().getFullYear()));
-                                                                    setShowLancamentoForm(true);
                                                                     setEditingId(item.id);
+                                                                    setShowModalEdicao(true);
                                                                 }}
                                                                 className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded-md text-xs font-semibold"
                                                             >
@@ -1774,6 +1776,150 @@ const ProcessosScreen = () => {
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Edição de Lançamento */}
+            {showModalEdicao && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <div className="bg-zinc-900 rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl">
+                        <div className="flex justify-between items-center p-4 md:p-6 border-b border-white/10 bg-white/5">
+                            <h3 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
+                                <Settings size={20} className="text-yellow-400" />
+                                Editar Lançamento
+                            </h3>
+                            <button
+                                onClick={() => {
+                                    setShowModalEdicao(false);
+                                    setEditingId(null);
+                                }}
+                                className="text-zinc-400 hover:text-white"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
+                            <div className="space-y-2">
+                                <label htmlFor="processo-editar" className="text-sm font-medium text-zinc-300">
+                                    Tipo/Grupo/Processo
+                                </label>
+                                <select
+                                    id="processo-editar"
+                                    value={processo}
+                                    onChange={(e) => {
+                                        setProcesso(e.target.value);
+                                        if (e.target.value !== 'Outro') {
+                                            setNovoProcessoCustomizado('');
+                                        }
+                                    }}
+                                    className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    required
+                                >
+                                    <option value="">Selecione um processo</option>
+                                    {opcoesProcessos.map((tipo, index) => (
+                                        <option key={index} value={tipo}>
+                                            {tipo}
+                                        </option>
+                                    ))}
+                                </select>
+                                {processo === 'Outro' && (
+                                    <div className="mt-2">
+                                        <input
+                                            type="text"
+                                            value={novoProcessoCustomizado}
+                                            onChange={(e) => setNovoProcessoCustomizado(e.target.value)}
+                                            className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                            placeholder="Digite o nome do novo processo"
+                                            required
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-2">
+                                    <label htmlFor="mes-editar" className="text-sm font-medium text-zinc-300">
+                                        Mês
+                                    </label>
+                                    <select
+                                        id="mes-editar"
+                                        value={mes}
+                                        onChange={(e) => setMes(e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                        required
+                                    >
+                                        <option value="">Mês</option>
+                                        <option value="Janeiro">Janeiro</option>
+                                        <option value="Fevereiro">Fevereiro</option>
+                                        <option value="Março">Março</option>
+                                        <option value="Abril">Abril</option>
+                                        <option value="Maio">Maio</option>
+                                        <option value="Junho">Junho</option>
+                                        <option value="Julho">Julho</option>
+                                        <option value="Agosto">Agosto</option>
+                                        <option value="Setembro">Setembro</option>
+                                        <option value="Outubro">Outubro</option>
+                                        <option value="Novembro">Novembro</option>
+                                        <option value="Dezembro">Dezembro</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label htmlFor="ano-editar" className="text-sm font-medium text-zinc-300">
+                                        Ano
+                                    </label>
+                                    <select
+                                        id="ano-editar"
+                                        value={ano}
+                                        onChange={(e) => setAno(e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                        required
+                                    >
+                                        <option value="">Ano</option>
+                                        <option value="2025">2025</option>
+                                        <option value="2026">2026</option>
+                                        <option value="2027">2027</option>
+                                        <option value="2028">2028</option>
+                                        <option value="2029">2029</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label htmlFor="quantidade-editar" className="text-sm font-medium text-zinc-300">
+                                        Quantidade
+                                    </label>
+                                    <input
+                                        type="number"
+                                        id="quantidade-editar"
+                                        value={quantidade}
+                                        onChange={(e) => setQuantidade(e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                        placeholder="0"
+                                        min="0"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowModalEdicao(false);
+                                        setEditingId(null);
+                                    }}
+                                    className="px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors duration-200"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg font-semibold transition-colors duration-200"
+                                >
+                                    Salvar edição
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
