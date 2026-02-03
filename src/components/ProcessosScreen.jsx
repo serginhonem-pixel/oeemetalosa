@@ -72,8 +72,8 @@ const ProcessosScreen = () => {
                 const processos = [];
                 querySnapshot.forEach((doc) => {
                     processos.push({
-                        id: doc.id,
-                        ...doc.data()
+                        ...doc.data(),
+                        id: doc.id
                     });
                 });
                 setDadosProcessos(processos);
@@ -119,8 +119,7 @@ const ProcessosScreen = () => {
                 setEditingId(null);
                 setShowModalEdicao(false);
             } else {
-                const novoDado = {
-                    id: `local-${Date.now()}`,
+                const baseDado = {
                     quantidade: parseInt(quantidade),
                     mes: `${mes} ${ano}`,
                     tipo: tipoProcessoFinal,
@@ -128,9 +127,10 @@ const ProcessosScreen = () => {
                 };
 
                 if (IS_PRODUCTION) {
-                    // Em produção: salvar no Firebase
-                    await safeAddDoc('processos', novoDado);
+                    // Em produção: salvar no Firebase (sem id para não sobrescrever doc.id)
+                    await safeAddDoc('processos', baseDado);
                 } else {
+                    const novoDado = { ...baseDado, id: `local-${Date.now()}` };
                     // Em desenvolvimento: salvar no localStorage
                     salvarProcessoLocal(novoDado);
                     // Atualizar estado imediatamente
@@ -275,11 +275,10 @@ const ProcessosScreen = () => {
         setImportando(true);
         try {
             if (IS_PRODUCTION) {
-                // Importar para Firebase
+                // Importar para Firebase (sem id para não sobrescrever doc.id)
                 for (const dado of dadosImportacao) {
                     await safeAddDoc('processos', {
-                        ...dado,
-                        id: `import-${Date.now()}-${Math.random()}`
+                        ...dado
                     });
                 }
             } else {
