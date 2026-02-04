@@ -29,25 +29,37 @@ const ProcessosScreen = () => {
     const [exportandoPptx, setExportandoPptx] = useState(false);
 
     const [novoProcesso, setNovoProcesso] = useState({
-        nome: '',
-        codigo: '',
-        descricao: ''
+        nome: ''
     });
 
     // Dados da tabela
     const [dadosProcessos, setDadosProcessos] = useState([]);
+    const [catalogoProcessos, setCatalogoProcessos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showLancamentoForm, setShowLancamentoForm] = useState(true);
     const [filtroTipo, setFiltroTipo] = useState('Todos');
     const [editingId, setEditingId] = useState(null);
 
-    // Extrair tipos únicos de processos da tabela
-    const tiposProcessosUnicos = [...new Set(dadosProcessos.map(item => item.tipo))].sort();
+    const normalizarNome = (valor) => String(valor || '').trim();
+    const normalizarNomeLower = (valor) => normalizarNome(valor).toLowerCase();
+
+    const tiposCatalogo = catalogoProcessos
+        .map((item) => normalizarNome(item?.nome))
+        .filter(Boolean);
+
+    // Extrair tipos únicos de processos da tabela + catálogo
+    const tiposProcessosUnicos = [
+        ...new Set([
+            ...dadosProcessos.map(item => item.tipo),
+            ...tiposCatalogo
+        ].filter(Boolean))
+    ].sort();
     const tiposParaLegenda = tiposProcessosUnicos.filter(tipo => !['Todos carrinhos', 'Todo consumo', 'Todo o consumo'].includes(tipo));
 
     // Adicionar opção "Outro" se não estiver na lista
-    const opcoesProcessos = tiposProcessosUnicos.length > 0 
-        ? (tiposProcessosUnicos.includes('Outro') ? tiposProcessosUnicos : [...tiposProcessosUnicos, 'Outro'])
+    const tiposSemOutro = tiposProcessosUnicos.filter((tipo) => tipo !== 'Outro');
+    const opcoesProcessos = tiposSemOutro.length > 0 
+        ? [...tiposSemOutro, 'Outro']
         : ['Corte', 'Dobramento', 'Pintura', 'Outro']; // Opções padrão se não houver dados
 
     // Funções auxiliares para persistência local
@@ -61,6 +73,11 @@ const ProcessosScreen = () => {
         const processos = JSON.parse(localStorage.getItem('processos') || '[]');
         setDadosProcessos(processos);
         setLoading(false);
+    };
+
+    const carregarCatalogoLocal = () => {
+        const catalogo = JSON.parse(localStorage.getItem('processos_catalogo') || '[]');
+        setCatalogoProcessos(catalogo);
     };
 
     // Carregar dados
@@ -84,6 +101,26 @@ const ProcessosScreen = () => {
             // Em desenvolvimento: carregar do localStorage
             carregarProcessosLocal();
         }
+    }, []);
+
+    useEffect(() => {
+        if (IS_PRODUCTION) {
+            const qCatalogo = query(collection(db, 'processos_catalogo'));
+            const unsubscribe = onSnapshot(qCatalogo, (querySnapshot) => {
+                const catalogo = [];
+                querySnapshot.forEach((doc) => {
+                    catalogo.push({
+                        ...doc.data(),
+                        id: doc.id
+                    });
+                });
+                catalogo.sort((a, b) => normalizarNome(a.nome).localeCompare(normalizarNome(b.nome), 'pt-BR'));
+                setCatalogoProcessos(catalogo);
+            });
+            return () => unsubscribe();
+        }
+
+        carregarCatalogoLocal();
     }, []);
 
     const handleSubmit = async (e) => {
@@ -153,13 +190,42 @@ const ProcessosScreen = () => {
         }
     };
 
-    const handleCadastroProcesso = (e) => {
+    const handleCadastroProcesso = async (e) => {
         e.preventDefault();
-        // Lógica para cadastrar novo processo
-        console.log('Novo processo:', novoProcesso);
-        // Reset form
-        setNovoProcesso({ nome: '', codigo: '', descricao: '' });
-        setShowModalCadastro(false);
+        const nome = normalizarNome(novoProcesso.nome);
+        if (!nome) return;
+
+        const existe = catalogoProcessos.some(
+            (item) => normalizarNomeLower(item?.nome) === normalizarNomeLower(nome)
+        );
+
+        if (existe) {
+            alert('Este processo já está cadastrado.');
+            return;
+        }
+
+        const novoCadastro = {
+            nome,
+            createdAt: new Date()
+        };
+
+        try {
+            if (IS_PRODUCTION) {
+                await safeAddDoc('processos_catalogo', novoCadastro);
+            } else {
+                const catalogoAtual = JSON.parse(localStorage.getItem('processos_catalogo') || '[]');
+                const novoItem = { ...novoCadastro, id: `local-${Date.now()}` };
+                const atualizado = [...catalogoAtual, novoItem];
+                localStorage.setItem('processos_catalogo', JSON.stringify(atualizado));
+                setCatalogoProcessos(atualizado);
+            }
+
+            setNovoProcesso({ nome: '' });
+            setShowModalCadastro(false);
+        } catch (error) {
+            console.error('Erro ao cadastrar processo:', error);
+            alert('Erro ao cadastrar processo. Verifique o console para mais detalhes.');
+        }
     };
 
     // Funções de importação
@@ -1955,32 +2021,6 @@ const ProcessosScreen = () => {
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-zinc-300">
-                                    Código
-                                </label>
-                                <input
-                                    type="text"
-                                    value={novoProcesso.codigo}
-                                    onChange={(e) => setNovoProcesso({...novoProcesso, codigo: e.target.value})}
-                                    className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
-                                    placeholder="Ex: PROC001"
-                                    required
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-zinc-300">
-                                    Descrição
-                                </label>
-                                <textarea
-                                    rows={3}
-                                    value={novoProcesso.descricao}
-                                    onChange={(e) => setNovoProcesso({...novoProcesso, descricao: e.target.value})}
-                                    className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
-                                    placeholder="Descrição detalhada do processo"
-                                />
-                            </div>
 
                             <div className="flex justify-end gap-3 pt-4">
                                 <button
