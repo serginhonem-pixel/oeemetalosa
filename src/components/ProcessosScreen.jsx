@@ -228,6 +228,26 @@ const ProcessosScreen = () => {
         }
     };
 
+    const handleExcluirProcessoCatalogo = async (item) => {
+        if (!item) return;
+        const confirmar = window.confirm(`Excluir o processo "${item.nome}"?`);
+        if (!confirmar) return;
+
+        try {
+            if (IS_PRODUCTION) {
+                await deleteDoc(doc(db, 'processos_catalogo', item.id));
+            } else {
+                const catalogoAtual = JSON.parse(localStorage.getItem('processos_catalogo') || '[]');
+                const atualizado = catalogoAtual.filter((p) => p.id !== item.id);
+                localStorage.setItem('processos_catalogo', JSON.stringify(atualizado));
+                setCatalogoProcessos(atualizado);
+            }
+        } catch (error) {
+            console.error('Erro ao excluir processo:', error);
+            alert('Erro ao excluir processo. Verifique o console para mais detalhes.');
+        }
+    };
+
     // Funções de importação
     const handleFileUpload = (event) => {
         const file = event.target.files[0];
@@ -2021,7 +2041,6 @@ const ProcessosScreen = () => {
                                 />
                             </div>
 
-
                             <div className="flex justify-end gap-3 pt-4">
                                 <button
                                     type="button"
@@ -2039,6 +2058,37 @@ const ProcessosScreen = () => {
                                 </button>
                             </div>
                         </form>
+                        <div className="px-4 pb-4 md:px-6 md:pb-6">
+                            <div className="border-t border-white/10 pt-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-sm font-semibold text-white">Processos cadastrados</h4>
+                                    <span className="text-xs text-zinc-400">
+                                        {catalogoProcessos.length} item(ns)
+                                    </span>
+                                </div>
+                                {catalogoProcessos.length === 0 ? (
+                                    <p className="text-xs text-zinc-500">Nenhum processo cadastrado.</p>
+                                ) : (
+                                    <div className="max-h-48 overflow-y-auto space-y-2">
+                                        {catalogoProcessos.map((item) => (
+                                            <div
+                                                key={item.id || item.nome}
+                                                className="flex items-center justify-between gap-3 bg-zinc-800/40 border border-white/10 rounded-lg px-3 py-2"
+                                            >
+                                                <span className="text-sm text-zinc-100">{item.nome}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleExcluirProcessoCatalogo(item)}
+                                                    className="text-xs text-red-200 hover:text-red-100 bg-red-600/20 hover:bg-red-600/30 px-2 py-1 rounded-md transition-colors"
+                                                >
+                                                    Excluir
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

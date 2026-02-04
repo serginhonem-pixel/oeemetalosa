@@ -28,10 +28,24 @@ const firebaseConfigDev = {
   measurementId: env.VITE_FIREBASE_MEASUREMENT_ID_DEV,
 };
 
+const isPrivateIPv4 = (hostname) => {
+  if (!hostname) return false;
+  if (hostname.startsWith('10.')) return true;
+  if (hostname.startsWith('192.168.')) return true;
+  if (hostname.startsWith('172.')) {
+    const parts = hostname.split('.');
+    const second = Number(parts[1] || 0);
+    return second >= 16 && second <= 31;
+  }
+  return false;
+};
+
 const isLocalhost =
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1');
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.endsWith('.local') ||
+    isPrivateIPv4(window.location.hostname));
 
 const firebaseConfig = isLocalhost ? firebaseConfigDev : firebaseConfigProd;
 
