@@ -709,10 +709,10 @@ const ProcessosScreen = () => {
         if (pctRaw === null || Number.isNaN(pctRaw)) {
             return (
                 <g>
-                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={900} textAnchor="middle">
+                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">
                         <tspan x={x + width / 2} dy="0">{formatted}</tspan>
                         {labelHasMedia && (
-                            <tspan x={x + width / 2} dy="14" fill="#FCD34D" fontSize="11" fontWeight="700">
+                            <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
                                 {mediaDiaText}
                             </tspan>
                         )}
@@ -728,11 +728,11 @@ const ProcessosScreen = () => {
 
         return (
             <g>
-                <text x={cornerX} y={cornerPctY} fill={color} fontSize={16} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
-                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={900} textAnchor="middle">
+                <text x={cornerX} y={cornerPctY} fill={color} fontSize={20} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
+                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">
                     <tspan x={x + width / 2} dy="0">{formatted}</tspan>
                     {labelHasMedia && (
-                        <tspan x={x + width / 2} dy="14" fill="#FCD34D" fontSize="11" fontWeight="700">
+                        <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
                             {mediaDiaText}
                         </tspan>
                     )}
