@@ -18,6 +18,7 @@ const ProcessosScreen = () => {
     const [ano, setAno] = useState('2025');
     const [showModalCadastro, setShowModalCadastro] = useState(false);
     const [showModalEdicao, setShowModalEdicao] = useState(false);
+    const [cadastroTab, setCadastroTab] = useState('processos'); // 'processos' | 'diasUteis'
     const [novoProcessoCustomizado, setNovoProcessoCustomizado] = useState('');
     const [showModalImportacao, setShowModalImportacao] = useState(false);
     const [dadosImportacao, setDadosImportacao] = useState([]);
@@ -27,6 +28,67 @@ const ProcessosScreen = () => {
     const [visualizacao, setVisualizacao] = useState('todos'); // 'todos', 'anoAtual', 'comparacao'
     const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
     const [exportandoPptx, setExportandoPptx] = useState(false);
+
+    const DIAS_UTEIS_PADRAO_2025 = {
+        janeiro: 22,
+        fevereiro: 20,
+        marco: 21,
+        abril: 19,
+        maio: 21,
+        junho: 20,
+        julho: 23,
+        agosto: 20,
+        setembro: 22,
+        outubro: 22,
+        novembro: 20,
+        dezembro: 21
+    };
+
+    const normalizeMesNome = (mesNome) =>
+        String(mesNome || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+
+    const MESES = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+
+    const buildDiasUteisDefaults = () => (
+        MESES.map((mes) => ({
+            id: `default-2025-${mes}`,
+            mes,
+            ano: 2025,
+            diasUteis: DIAS_UTEIS_PADRAO_2025[normalizeMesNome(mes)]
+        }))
+    );
+
+    const [diasUteisMes, setDiasUteisMes] = useState([]);
+    const [novoDiaMes, setNovoDiaMes] = useState({ mes: 'Janeiro', ano: 2025, diasUteis: 0 });
+
+    const getDiasUteisByMesLabel = (mesLabel) => {
+        const raw = normalizeMesNome(mesLabel);
+        if (!raw) return null;
+        const match = raw.match(/[a-z]+/);
+        const key = match ? match[0] : '';
+        const anoMatch = String(mesLabel || '').match(/(\d{4})/);
+        const ano = anoMatch ? Number(anoMatch[1]) : null;
+
+        const fromState = diasUteisMes.find((item) => (
+            normalizeMesNome(item.mes) === key && (ano ? Number(item.ano) === ano : true)
+        ));
+
+        if (fromState && Number.isFinite(Number(fromState.diasUteis))) {
+            return Number(fromState.diasUteis);
+        }
+
+        if (ano === 2025 || ano === null) {
+            return DIAS_UTEIS_PADRAO_2025[key] || null;
+        }
+
+        return null;
+    };
 
     const [novoProcesso, setNovoProcesso] = useState({
         nome: ''
@@ -121,6 +183,34 @@ const ProcessosScreen = () => {
         }
 
         carregarCatalogoLocal();
+    }, []);
+
+    // Dias úteis por mês (configurável)
+    useEffect(() => {
+        if (IS_PRODUCTION) {
+            const qDias = query(collection(db, 'dias_uteis_mes'));
+            const unsubscribe = onSnapshot(qDias, (querySnapshot) => {
+                const itens = [];
+                querySnapshot.forEach((doc) => {
+                    itens.push({ ...doc.data(), id: doc.id });
+                });
+                if (itens.length > 0) {
+                    setDiasUteisMes(itens);
+                } else {
+                    setDiasUteisMes(buildDiasUteisDefaults());
+                }
+            });
+            return () => unsubscribe();
+        }
+
+        const local = JSON.parse(localStorage.getItem('dias_uteis_mes') || '[]');
+        if (local.length > 0) {
+            setDiasUteisMes(local);
+        } else {
+            const defaults = buildDiasUteisDefaults();
+            setDiasUteisMes(defaults);
+            localStorage.setItem('dias_uteis_mes', JSON.stringify(defaults));
+        }
     }, []);
 
     const handleSubmit = async (e) => {
@@ -245,6 +335,41 @@ const ProcessosScreen = () => {
         } catch (error) {
             console.error('Erro ao excluir processo:', error);
             alert('Erro ao excluir processo. Verifique o console para mais detalhes.');
+        }
+    };
+
+    const handleSalvarDiaMes = async (e) => {
+        e.preventDefault();
+        const mes = novoDiaMes.mes;
+        const ano = Number(novoDiaMes.ano);
+        const diasUteis = Number(novoDiaMes.diasUteis);
+        if (!mes || !ano || !Number.isFinite(diasUteis)) return;
+
+        const mesKey = normalizeMesNome(mes);
+        const existente = diasUteisMes.find((item) =>
+            normalizeMesNome(item.mes) === mesKey && Number(item.ano) === ano
+        );
+
+        if (IS_PRODUCTION) {
+            if (existente && existente.id && !String(existente.id).startsWith('default-')) {
+                await safeUpdateDoc('dias_uteis_mes', existente.id, { mes, ano, diasUteis, updatedAt: new Date() });
+            } else {
+                await safeAddDoc('dias_uteis_mes', { mes, ano, diasUteis, createdAt: new Date() });
+            }
+        } else {
+            const atual = JSON.parse(localStorage.getItem('dias_uteis_mes') || '[]');
+            let novo;
+            if (existente) {
+                novo = atual.map((item) =>
+                    normalizeMesNome(item.mes) === mesKey && Number(item.ano) === ano
+                        ? { ...item, mes, ano, diasUteis, updatedAt: new Date() }
+                        : item
+                );
+            } else {
+                novo = [...atual, { id: `local-${Date.now()}`, mes, ano, diasUteis, createdAt: new Date() }];
+            }
+            localStorage.setItem('dias_uteis_mes', JSON.stringify(novo));
+            setDiasUteisMes(novo);
         }
     };
 
@@ -436,10 +561,16 @@ const ProcessosScreen = () => {
         });
         
         return Object.entries(mesMap)
-            .map(([mes, quantidade]) => ({
-                mes,
-                quantidade
-            }))
+            .map(([mes, quantidade]) => {
+                const diasUteis = getDiasUteisByMesLabel(mes);
+                const mediaDia = diasUteis ? quantidade / diasUteis : null;
+                return {
+                    mes,
+                    quantidade,
+                    diasUteis,
+                    mediaDia
+                };
+            })
             .sort((a, b) => {
                 // Ordenar por data (assumindo formato "Mês Ano")
                 const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
@@ -550,8 +681,13 @@ const ProcessosScreen = () => {
     };
 
     // Label customizado: seta (▲/▼) + porcentagem em cima, valor formatado abaixo
-    const CustomBarLabel = ({ x, y, width, value, payload, index }) => {
+    const CustomBarLabel = ({ x, y, width, height, value, payload, index }) => {
         const formatted = Number(value).toLocaleString('pt-BR');
+        const mesLabel = payload?.mes ?? dadosComVariacao?.[index]?.mes ?? '';
+        const diasUteis = payload?.diasUteis || getDiasUteisByMesLabel(mesLabel);
+        const mediaDiaCalc = payload?.mediaDia ?? (diasUteis ? (Number(value) / diasUteis) : null);
+        const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`;
+        const labelHasMedia = Boolean(mediaDiaText);
 
         // tentar obter percentual do payload; se não existir, calcular via dadosComVariacao pelo índice
         let pctRaw = null;
@@ -573,7 +709,14 @@ const ProcessosScreen = () => {
         if (pctRaw === null || Number.isNaN(pctRaw)) {
             return (
                 <g>
-                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={16} fontWeight={900} textAnchor="middle">{formatted}</text>
+                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={900} textAnchor="middle">
+                        <tspan x={x + width / 2} dy="0">{formatted}</tspan>
+                        {labelHasMedia && (
+                            <tspan x={x + width / 2} dy="14" fill="#FCD34D" fontSize="11" fontWeight="700">
+                                {mediaDiaText}
+                            </tspan>
+                        )}
+                    </text>
                 </g>
             );
         }
@@ -586,7 +729,32 @@ const ProcessosScreen = () => {
         return (
             <g>
                 <text x={cornerX} y={cornerPctY} fill={color} fontSize={16} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
-                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={16} fontWeight={900} textAnchor="middle">{formatted}</text>
+                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={900} textAnchor="middle">
+                    <tspan x={x + width / 2} dy="0">{formatted}</tspan>
+                    {labelHasMedia && (
+                        <tspan x={x + width / 2} dy="14" fill="#FCD34D" fontSize="11" fontWeight="700">
+                            {mediaDiaText}
+                        </tspan>
+                    )}
+                </text>
+            </g>
+        );
+    };
+
+    const CustomAvgDiaComparacaoLabel = ({ x, y, width, value, payload }) => {
+        if (!payload) return null;
+        const diasUteis = getDiasUteisByMesLabel(payload.mes);
+        if (!diasUteis || !value) return null;
+
+        const mediaDia = Number(value) / diasUteis;
+        const mediaDiaText = `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`;
+        const textY = y + 16;
+
+        return (
+            <g>
+                <text x={x + width / 2} y={textY} fill="#E5E7EB" fontSize={11} fontWeight={700} textAnchor="middle">
+                    {mediaDiaText}
+                </text>
             </g>
         );
     };
@@ -722,6 +890,12 @@ const ProcessosScreen = () => {
 
     // Função para filtrar dados de visualização
     const obterDadosFiltrados = () => {
+        const withMediaDia = (item) => {
+            if (!item || item.quantidade === undefined || item.quantidade === null) return item;
+            const diasUteis = getDiasUteisByMesLabel(item.mes);
+            const mediaDia = diasUteis ? (Number(item.quantidade) / diasUteis) : null;
+            return { ...item, diasUteis, mediaDia };
+        };
         // Aplica filtro de tipo em todos os dados primeiro
         let dadosFiltrados = dadosComVariacao;
         if (filtroTipo !== 'Todos') {
@@ -734,7 +908,9 @@ const ProcessosScreen = () => {
 
         if (visualizacao === 'anoAtual') {
             // Mostrar apenas meses do ano atual
-            return dadosFiltrados.filter(item => item.mes.includes(anoSelecionado.toString()));
+            return dadosFiltrados
+                .filter(item => item.mes.includes(anoSelecionado.toString()))
+                .map(withMediaDia);
         } else if (visualizacao === 'comparacao') {
             // Retorna dados separados por ano para mostrar 2 colunas lado a lado (apenas 2025 e 2026)
             const mesesOrdem = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
@@ -761,7 +937,7 @@ const ProcessosScreen = () => {
             return resultado;
         }
         // Retornar todos os dados (visualizacao === 'todos')
-        return dadosFiltrados;
+        return dadosFiltrados.map(withMediaDia);
     };
 
     const getTop5Processos = () => {
@@ -1395,9 +1571,11 @@ const ProcessosScreen = () => {
                                                         <>
                                                             <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
                                                                 <LabelList dataKey="quantidade_2025" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
+                                                                <LabelList dataKey="quantidade_2025" content={CustomAvgDiaComparacaoLabel} />
                                                             </Bar>
                                                             <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
                                                                 <LabelList dataKey="quantidade_2026" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
+                                                                <LabelList dataKey="quantidade_2026" content={CustomAvgDiaComparacaoLabel} />
                                                                 <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
                                                             </Bar>
                                                         </>
@@ -2026,69 +2204,193 @@ const ProcessosScreen = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleCadastroProcesso} className="p-4 md:p-6 space-y-4">
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-zinc-300">
-                                    Nome do Processo
-                                </label>
-                                <input
-                                    type="text"
-                                    value={novoProcesso.nome}
-                                    onChange={(e) => setNovoProcesso({...novoProcesso, nome: e.target.value})}
-                                    className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
-                                    placeholder="Ex: Corte, Dobramento, Pintura"
-                                    required
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-3 pt-4">
+                        <div className="px-4 md:px-6 pt-4">
+                            <div className="flex gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setShowModalCadastro(false)}
-                                    className="px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors duration-200"
+                                    onClick={() => setCadastroTab('processos')}
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold ${
+                                        cadastroTab === 'processos'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                    }`}
                                 >
-                                    Cancelar
+                                    Processos
                                 </button>
                                 <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-colors duration-200 flex items-center gap-2"
+                                    type="button"
+                                    onClick={() => setCadastroTab('diasUteis')}
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold ${
+                                        cadastroTab === 'diasUteis'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                    }`}
                                 >
-                                    <Plus size={18} />
-                                    Cadastrar
+                                    Dias Úteis
                                 </button>
                             </div>
-                        </form>
-                        <div className="px-4 pb-4 md:px-6 md:pb-6">
-                            <div className="border-t border-white/10 pt-4">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h4 className="text-sm font-semibold text-white">Processos cadastrados</h4>
-                                    <span className="text-xs text-zinc-400">
-                                        {catalogoProcessos.length} item(ns)
-                                    </span>
-                                </div>
-                                {catalogoProcessos.length === 0 ? (
-                                    <p className="text-xs text-zinc-500">Nenhum processo cadastrado.</p>
-                                ) : (
-                                    <div className="max-h-48 overflow-y-auto space-y-2">
-                                        {catalogoProcessos.map((item) => (
-                                            <div
-                                                key={item.id || item.nome}
-                                                className="flex items-center justify-between gap-3 bg-zinc-800/40 border border-white/10 rounded-lg px-3 py-2"
-                                            >
-                                                <span className="text-sm text-zinc-100">{item.nome}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleExcluirProcessoCatalogo(item)}
-                                                    className="text-xs text-red-200 hover:text-red-100 bg-red-600/20 hover:bg-red-600/30 px-2 py-1 rounded-md transition-colors"
-                                                >
-                                                    Excluir
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
                         </div>
+
+                        {cadastroTab === 'processos' && (
+                            <>
+                                <form onSubmit={handleCadastroProcesso} className="p-4 md:p-6 space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-zinc-300">
+                                            Nome do Processo
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={novoProcesso.nome}
+                                            onChange={(e) => setNovoProcesso({...novoProcesso, nome: e.target.value})}
+                                            className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                            placeholder="Ex: Corte, Dobramento, Pintura"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div className="flex justify-end gap-3 pt-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowModalCadastro(false)}
+                                            className="px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors duration-200"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-colors duration-200 flex items-center gap-2"
+                                        >
+                                            <Plus size={18} />
+                                            Cadastrar
+                                        </button>
+                                    </div>
+                                </form>
+                                <div className="px-4 pb-4 md:px-6 md:pb-6">
+                                    <div className="border-t border-white/10 pt-4">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h4 className="text-sm font-semibold text-white">Processos cadastrados</h4>
+                                            <span className="text-xs text-zinc-400">
+                                                {catalogoProcessos.length} item(ns)
+                                            </span>
+                                        </div>
+                                        {catalogoProcessos.length === 0 ? (
+                                            <p className="text-xs text-zinc-500">Nenhum processo cadastrado.</p>
+                                        ) : (
+                                            <div className="max-h-48 overflow-y-auto space-y-2">
+                                                {catalogoProcessos.map((item) => (
+                                                    <div
+                                                        key={item.id || item.nome}
+                                                        className="flex items-center justify-between gap-3 bg-zinc-800/40 border border-white/10 rounded-lg px-3 py-2"
+                                                    >
+                                                        <span className="text-sm text-zinc-100">{item.nome}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleExcluirProcessoCatalogo(item)}
+                                                            className="text-xs text-red-200 hover:text-red-100 bg-red-600/20 hover:bg-red-600/30 px-2 py-1 rounded-md transition-colors"
+                                                        >
+                                                            Excluir
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {cadastroTab === 'diasUteis' && (
+                            <>
+                                <form onSubmit={handleSalvarDiaMes} className="p-4 md:p-6 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-zinc-300">Mês</label>
+                                            <select
+                                                value={novoDiaMes.mes}
+                                                onChange={(e) => setNovoDiaMes({ ...novoDiaMes, mes: e.target.value })}
+                                                className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                            >
+                                                {MESES.map((m) => (
+                                                    <option key={m} value={m}>{m}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-zinc-300">Ano</label>
+                                            <input
+                                                type="number"
+                                                value={novoDiaMes.ano}
+                                                onChange={(e) => setNovoDiaMes({ ...novoDiaMes, ano: e.target.value })}
+                                                className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                                min="2000"
+                                                max="2100"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-zinc-300">Dias úteis</label>
+                                            <input
+                                                type="number"
+                                                value={novoDiaMes.diasUteis}
+                                                onChange={(e) => setNovoDiaMes({ ...novoDiaMes, diasUteis: e.target.value })}
+                                                className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                                min="0"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end gap-3 pt-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowModalCadastro(false)}
+                                            className="px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors duration-200"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-colors duration-200 flex items-center gap-2"
+                                        >
+                                            <Plus size={18} />
+                                            Salvar
+                                        </button>
+                                    </div>
+                                </form>
+                                <div className="px-4 pb-4 md:px-6 md:pb-6">
+                                    <div className="border-t border-white/10 pt-4">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h4 className="text-sm font-semibold text-white">Dias úteis cadastrados</h4>
+                                            <span className="text-xs text-zinc-400">
+                                                {diasUteisMes.length} item(ns)
+                                            </span>
+                                        </div>
+                                        {diasUteisMes.length === 0 ? (
+                                            <p className="text-xs text-zinc-500">Nenhum mês cadastrado.</p>
+                                        ) : (
+                                            <div className="max-h-48 overflow-y-auto space-y-2">
+                                                {diasUteisMes
+                                                    .slice()
+                                                    .sort((a, b) => {
+                                                        if (Number(a.ano) !== Number(b.ano)) return Number(a.ano) - Number(b.ano);
+                                                        return MESES.indexOf(a.mes) - MESES.indexOf(b.mes);
+                                                    })
+                                                    .map((item) => (
+                                                        <div
+                                                            key={item.id || `${item.mes}-${item.ano}`}
+                                                            className="flex items-center justify-between gap-3 bg-zinc-800/40 border border-white/10 rounded-lg px-3 py-2"
+                                                        >
+                                                            <span className="text-sm text-zinc-100">
+                                                                {item.mes} {item.ano} · {item.diasUteis} dias
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
