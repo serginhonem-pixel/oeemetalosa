@@ -1204,7 +1204,7 @@ const ProcessosScreen = () => {
             pptx.layout = 'LAYOUT_WIDE';
             pptx.author = 'ProcessosScreen';
 
-            const tiposParaExportar = ['Todos', ...tiposProcessosUnicos.filter((t) => !['Todos carrinhos', 'Todo consumo', 'Todo o consumo'].includes(t))];
+            const tiposParaExportar = ['Todos', ...tiposProcessosUnicos];
 
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
