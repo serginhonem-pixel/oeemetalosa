@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "watch:access-sync": "node scripts/watch-access-sync.mjs"
   },
   "dependencies": {
     "firebase": "^12.6.0",

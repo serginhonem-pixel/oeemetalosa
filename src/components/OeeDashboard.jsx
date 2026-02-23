@@ -57,6 +57,13 @@ const parseISODate = (value) => {
   return Number.isNaN(dt.getTime()) ? null : dt;
 };
 
+const normalizeMachineToken = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "")
+    .toUpperCase();
+
 // ---------- HELPERS ----------
 
 const formatDateBR = (iso) => {
@@ -226,10 +233,58 @@ export default function OeeDashboard({
   }, [rangeStartDraft, rangeEndDraft]);
 
   // Lista de máquinas ativas
-  const maquinasAtivas = useMemo(
+  const maquinasCatalogo = useMemo(
     () => CATALOGO_MAQUINAS.filter((m) => m.ativo),
     []
   );
+
+  const maquinasDisponiveis = useMemo(() => {
+    const byId = new Map();
+
+    maquinasCatalogo.forEach((m) => {
+      const id = String(m.maquinaId || m.id || m.nomeExibicao || "").trim();
+      if (!id) return;
+      byId.set(id, {
+        id,
+        nomeExibicao: String(m.nomeExibicao || id),
+      });
+    });
+
+    const allRows = [
+      ...(Array.isArray(historicoProducaoReal) ? historicoProducaoReal : []),
+      ...(Array.isArray(historicoParadas) ? historicoParadas : []),
+    ];
+
+    allRows.forEach((item) => {
+      const rawId = String(item?.maquinaId || item?.maquinaid || "").trim();
+      const rawNome = String(
+        item?.maquinaNome || item?.maquinaExibicao || item?.maquina || item?.equipamento || ""
+      ).trim();
+      const resolved = rawId || rawNome;
+      if (!resolved) return;
+
+      const fromCatalog = maquinasCatalogo.find((m) => {
+        const cId = String(m.maquinaId || m.id || "").trim();
+        const cNome = String(m.nomeExibicao || "").trim();
+        const tkRawId = normalizeMachineToken(rawId);
+        const tkRawNome = normalizeMachineToken(rawNome);
+        const tkId = normalizeMachineToken(cId);
+        const tkNome = normalizeMachineToken(cNome);
+        return (
+          (tkRawId && (tkRawId === tkId || tkRawId === tkNome)) ||
+          (tkRawNome && (tkRawNome === tkId || tkRawNome === tkNome))
+        );
+      });
+
+      const id = String(fromCatalog?.maquinaId || fromCatalog?.id || resolved).trim();
+      const nomeExibicao = String(fromCatalog?.nomeExibicao || rawNome || id).trim();
+      byId.set(id, { id, nomeExibicao });
+    });
+
+    return Array.from(byId.values()).sort((a, b) =>
+      String(a.nomeExibicao).localeCompare(String(b.nomeExibicao), "pt-BR")
+    );
+  }, [maquinasCatalogo, historicoProducaoReal, historicoParadas]);
 
   const applyVelocidade = () => {
     const parsed = Number(velocidadeDraft);
@@ -339,8 +394,9 @@ export default function OeeDashboard({
     }
 
     const maquinaSelecionadaObj = maquinaId
-      ? maquinasAtivas.find(
+      ? maquinasDisponiveis.find(
           (m) =>
+            m.id === maquinaId ||
             m.maquinaId === maquinaId ||
             m.id === maquinaId ||
             m.nomeExibicao === maquinaId
@@ -357,13 +413,19 @@ export default function OeeDashboard({
           ISO_DATE_RE.test(itemISO) && itemISO >= startISO && itemISO <= endISO;
         
         // 2. Filtro de Máquina (aceita id ou nome)
-        const idRegistro = item.maquinaId || item.maquina || item.maquinaid;
-        const nomeRegistro = item.maquinaNome || item.maquinaExibicao;
+        const idRegistro = String(item.maquinaId || item.maquinaid || item.maquina || "").trim();
+        const nomeRegistro = String(item.maquinaNome || item.maquinaExibicao || item.maquina || "").trim();
+        const tokenSelecionado = normalizeMachineToken(maquinaId);
+        const tokenNomeSelecionado = normalizeMachineToken(nomeSelecionado);
+        const tokenIdRegistro = normalizeMachineToken(idRegistro);
+        const tokenNomeRegistro = normalizeMachineToken(nomeRegistro);
 
         const maquinaOk =
           !maquinaId ||
-          idRegistro === maquinaId ||
-          (!!nomeSelecionado && (idRegistro === nomeSelecionado || nomeRegistro === nomeSelecionado));
+          tokenIdRegistro === tokenSelecionado ||
+          tokenNomeRegistro === tokenSelecionado ||
+          (!!tokenNomeSelecionado &&
+            (tokenIdRegistro === tokenNomeSelecionado || tokenNomeRegistro === tokenNomeSelecionado));
 
         const isProducao =
           "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
@@ -583,7 +645,8 @@ export default function OeeDashboard({
     historicoParadas,
     turnoHoras,
     velocidadeMpm,
-    maquinaId // IMPORTANTE: Recalcula tudo quando troca a máquina
+    maquinaId, // IMPORTANTE: Recalcula tudo quando troca a máquina
+    maquinasDisponiveis
   ]);
 
   const metricLabel =
@@ -659,7 +722,7 @@ export default function OeeDashboard({
                     className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer min-w-[140px]"
                 >
                     <option value="" className="bg-zinc-900">Todas as Máquinas</option>
-                    {maquinasAtivas.map(m => {
+                    {maquinasDisponiveis.map(m => {
                         const val = m.maquinaId || m.id || m.nomeExibicao;
                         return (
                           <option key={val} value={val} className="bg-zinc-900">
