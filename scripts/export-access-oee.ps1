@@ -45,6 +45,7 @@ try {
   $producaoRows = @()
   foreach ($r in $prodDt.Rows) {
     $dataIso = To-IsoDate $r[0]
+    $maq = [string]$r[4]
     $cod = [string]$r[5]
     $desc = [string]$r[6]
     $qtd = 0
@@ -58,6 +59,7 @@ try {
 
     $producaoRows += [PSCustomObject]@{
       DATA      = $dataIso
+      MAQUINA   = if ([string]::IsNullOrWhiteSpace($maq)) { "" } else { $maq.Trim() }
       CODIGO    = $cod.Trim()
       QTD       = $qtd
       DESCRICAO = if ([string]::IsNullOrWhiteSpace($desc)) { "Item s/ descricao" } else { $desc.Trim() }
@@ -87,6 +89,7 @@ try {
     $cod = [string]$r[0]
     $desc = [string]$r[1]
     $categoria = [string]$r[2]
+    $maq = [string]$r[3]
     $obs = [string]$r[12]
 
     if (
@@ -100,6 +103,7 @@ try {
 
     $paradasRows += [PSCustomObject]@{
       DATA       = $dataIso
+      MAQUINA    = if ([string]::IsNullOrWhiteSpace($maq)) { "" } else { $maq.Trim() }
       INICIO     = $inicio
       FIM        = $fim
       COD_MOTIVO = $cod.Trim()

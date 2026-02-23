@@ -119,6 +119,18 @@ const makeId = (prefix, payload, idx) => {
   return `${prefix}_${base}`.replace(/[^a-zA-Z0-9_\-]/g, "");
 };
 
+const normalizeMachineId = (raw) => {
+  const txt = clean(raw).toUpperCase();
+  if (!txt) return maquinaId;
+  if (txt.includes("CONFORMADORA")) return "CONFORMADORA_TELHAS";
+  if (txt.includes("BR200")) return "PERFIL_U_BR200_REGIANE";
+  if (txt.includes("MARAFON")) return "PERFIL_U_MARAFON";
+  if (txt.includes("\"U\" ZL") || txt.includes(" U ZL") || txt.endsWith(" ZL") || txt.includes("PERFIL \"U\" ZL")) {
+    return "PERFIL_U_ZL";
+  }
+  return maquinaId;
+};
+
 const toFields = (obj) => {
   const fields = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -146,8 +158,17 @@ const buildData = () => {
       const qtd = toInt(getField(r, ["QTD", "QUANTIDADE"]));
       const desc = clean(getField(r, ["DESCRICAO", "DESC"])) || "Item s/ descricao";
       const destino = clean(getField(r, ["DESTINO"])) || "Estoque";
+      const maqRaw = getField(r, ["MAQUINA"]);
       if (!data || !cod || qtd <= 0) return null;
-      return { data, cod, qtd, desc, destino, maquinaId, origem: "ACCESS_SYNC" };
+      return {
+        data,
+        cod,
+        qtd,
+        desc,
+        destino,
+        maquinaId: normalizeMachineId(maqRaw),
+        origem: "ACCESS_SYNC",
+      };
     })
     .filter(Boolean);
 
@@ -160,6 +181,7 @@ const buildData = () => {
       const descMotivo = clean(getField(r, ["DESC", "DESCRICAO"])) || codMotivo || "Motivo nao informado";
       const grupo = clean(getField(r, ["GRUPO"])) || "Geral";
       const obs = clean(getField(r, ["OBS"]));
+      const maqRaw = getField(r, ["MAQUINA"]);
       const duracao = duracaoMin(inicio, fim);
       if (!data || !inicio || !fim || !codMotivo || duracao <= 0) return null;
       return {
@@ -171,7 +193,7 @@ const buildData = () => {
         descMotivo,
         grupo,
         obs,
-        maquinaId,
+        maquinaId: normalizeMachineId(maqRaw),
         origem: "ACCESS_SYNC",
       };
     })
