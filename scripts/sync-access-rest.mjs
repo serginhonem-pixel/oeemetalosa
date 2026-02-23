@@ -99,10 +99,10 @@ const duracaoMin = (inicio, fim) => {
   return d > 0 ? d : 0;
 };
 
-const readRows = (xlsxPath) => {
-  const wb = XLSX.readFile(xlsxPath, { raw: false });
+const readRows = (filePath) => {
+  const wb = XLSX.readFile(filePath, { raw: true, codepage: 65001 });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(ws, { defval: "" });
+  return XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
 };
 
 const makeId = (prefix, payload, idx) => {
@@ -131,6 +131,20 @@ const normalizeMachineId = (raw) => {
   return maquinaId;
 };
 
+const machineDisplayById = {
+  CONFORMADORA_TELHAS: "Conformadora de Telhas",
+  PERFIL_U_BR200_REGIANE: 'Perfil "U" BR200 Regiane',
+  PERFIL_U_MARAFON: 'Perfil "U" Marafon',
+  PERFIL_U_ZL: 'Perfil "U" ZL',
+};
+
+const normalizeCode = (raw) => {
+  const txt = clean(raw);
+  if (!txt) return "";
+  if (/^\d+$/.test(txt)) return txt.padStart(5, "0");
+  return txt;
+};
+
 const toFields = (obj) => {
   const fields = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -146,19 +160,25 @@ const toFields = (obj) => {
 };
 
 const buildData = () => {
-  const prodRows = readRows(path.resolve(inputDir, "import_producao.xlsx"));
-  const parRows = readRows(path.resolve(inputDir, "import_paradas.xlsx"));
+  const prodCsv = path.resolve(inputDir, "import_producao.csv");
+  const parCsv = path.resolve(inputDir, "import_paradas.csv");
+  const prodXlsx = path.resolve(inputDir, "import_producao.xlsx");
+  const parXlsx = path.resolve(inputDir, "import_paradas.xlsx");
+  const prodRows = readRows(fs.existsSync(prodCsv) ? prodCsv : prodXlsx);
+  const parRows = readRows(fs.existsSync(parCsv) ? parCsv : parXlsx);
 
   const producao = prodRows
     .map((r) => {
       const data = normalizeDate(getField(r, ["DATA"]));
       const codRaw = getField(r, ["CODIGO", "COD"]);
       const codNum = toInt(codRaw);
-      const cod = clean(codRaw) || (codNum > 0 ? String(codNum).padStart(5, "0") : "");
+      const cod = normalizeCode(codRaw) || (codNum > 0 ? String(codNum).padStart(5, "0") : "");
       const qtd = toInt(getField(r, ["QTD", "QUANTIDADE"]));
       const desc = clean(getField(r, ["DESCRICAO", "DESC"])) || "Item s/ descricao";
       const destino = clean(getField(r, ["DESTINO"])) || "Estoque";
       const maqRaw = getField(r, ["MAQUINA"]);
+      const maqId = normalizeMachineId(maqRaw);
+      const createdAt = `${data}T12:00:00.000Z`;
       if (!data || !cod || qtd <= 0) return null;
       return {
         data,
@@ -166,7 +186,9 @@ const buildData = () => {
         qtd,
         desc,
         destino,
-        maquinaId: normalizeMachineId(maqRaw),
+        maquinaId: maqId,
+        maquina: machineDisplayById[maqId] || clean(maqRaw) || maqId,
+        createdAt,
         origem: "ACCESS_SYNC",
       };
     })
@@ -182,7 +204,9 @@ const buildData = () => {
       const grupo = clean(getField(r, ["GRUPO"])) || "Geral";
       const obs = clean(getField(r, ["OBS"]));
       const maqRaw = getField(r, ["MAQUINA"]);
+      const maqId = normalizeMachineId(maqRaw);
       const duracao = duracaoMin(inicio, fim);
+      const createdAt = `${data}T12:00:00.000Z`;
       if (!data || !inicio || !fim || !codMotivo || duracao <= 0) return null;
       return {
         data,
@@ -193,7 +217,9 @@ const buildData = () => {
         descMotivo,
         grupo,
         obs,
-        maquinaId: normalizeMachineId(maqRaw),
+        maquinaId: maqId,
+        maquina: machineDisplayById[maqId] || clean(maqRaw) || maqId,
+        createdAt,
         origem: "ACCESS_SYNC",
       };
     })
@@ -227,6 +253,49 @@ const commitWrites = async (idToken, writes) => {
   if (!res.ok) throw new Error(`commit falhou: ${res.status} ${await res.text()}`);
 };
 
+const queryAccessSyncDocNames = async (idToken, collectionId) => {
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath: "origem" },
+          op: "EQUAL",
+          value: { stringValue: "ACCESS_SYNC" },
+        },
+      },
+      limit: 2000,
+    },
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`runQuery ${collectionId} falhou: ${res.status} ${await res.text()}`);
+  }
+  const arr = await res.json();
+  return arr.filter((x) => x.document?.name).map((x) => x.document.name);
+};
+
+const cleanupExistingAccessSync = async (idToken) => {
+  const [prodNames, parNames] = await Promise.all([
+    queryAccessSyncDocNames(idToken, "producao"),
+    queryAccessSyncDocNames(idToken, "paradas"),
+  ]);
+  const deletes = [...prodNames, ...parNames].map((name) => ({ delete: name }));
+  const CHUNK = 450;
+  for (let i = 0; i < deletes.length; i += CHUNK) {
+    await commitWrites(idToken, deletes.slice(i, i + CHUNK));
+  }
+  return { prodDeleted: prodNames.length, parDeleted: parNames.length };
+};
+
 const run = async () => {
   const { producao, paradas } = buildData();
   const totalPecas = producao.reduce((acc, p) => acc + Number(p.qtd || 0), 0);
@@ -255,6 +324,8 @@ const run = async () => {
   }
 
   const idToken = await login();
+  const cleanup = await cleanupExistingAccessSync(idToken);
+  console.log(`limpeza ACCESS_SYNC: producao=${cleanup.prodDeleted} paradas=${cleanup.parDeleted}`);
   const CHUNK = 450;
   for (let i = 0; i < writes.length; i += CHUNK) {
     const slice = writes.slice(i, i + CHUNK);
