@@ -123,6 +123,8 @@ const normalizeMachineId = (raw) => {
   const txt = clean(raw).toUpperCase();
   if (!txt) return maquinaId;
   if (txt.includes("CONFORMADORA")) return "CONFORMADORA_TELHAS";
+  if (txt.includes("ONDULADA") && txt.includes("V8")) return "PERF_TELHA_ONDULADA_V8";
+  if (txt.includes("TRAPEZOIDAL") && txt.includes("MARAFON")) return "PERF_TELHA_TRAPEZOIDAL_MARAFON";
   if (txt.includes("BR200")) return "PERFIL_U_BR200_REGIANE";
   if (txt.includes("MARAFON")) return "PERFIL_U_MARAFON";
   if (txt.includes("\"U\" ZL") || txt.includes(" U ZL") || txt.endsWith(" ZL") || txt.includes("PERFIL \"U\" ZL")) {
@@ -133,6 +135,8 @@ const normalizeMachineId = (raw) => {
 
 const machineDisplayById = {
   CONFORMADORA_TELHAS: "Conformadora de Telhas",
+  PERF_TELHA_TRAPEZOIDAL_MARAFON: "Perf. Telha Trapezoidal Marafon",
+  PERF_TELHA_ONDULADA_V8: "Perf. Telha Ondulada V8",
   PERFIL_U_BR200_REGIANE: 'Perfil "U" BR200 Regiane',
   PERFIL_U_MARAFON: 'Perfil "U" Marafon',
   PERFIL_U_ZL: 'Perfil "U" ZL',

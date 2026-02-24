@@ -7,6 +7,8 @@ export const GRUPOS_MAQUINAS = [
     familia: 'Telhas',
     maquinas: [
       'CONFORMADORA_TELHAS',
+      'PERF_TELHA_TRAPEZOIDAL_MARAFON',
+      'PERF_TELHA_ONDULADA_V8',
     ],
   },
   {

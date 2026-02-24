@@ -18,5 +18,15 @@
     "maquinaId": "CONFORMADORA_TELHAS",
     "maquina": "Conformadora de Telhas",
     "capacidade_kg_dia": 15000
+  },
+  {
+    "maquinaId": "PERF_TELHA_TRAPEZOIDAL_MARAFON",
+    "maquina": "Perf. Telha Trapezoidal Marafon",
+    "capacidade_kg_dia": 15000
+  },
+  {
+    "maquinaId": "PERF_TELHA_ONDULADA_V8",
+    "maquina": "Perf. Telha Ondulada V8",
+    "capacidade_kg_dia": 15000
   }
 ]

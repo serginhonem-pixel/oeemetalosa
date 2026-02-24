@@ -51,7 +51,8 @@ export const getProdutosByGrupo = (grupoId) =>
 // -----------------------------------------------------------------------------
 
 const MAPA_MAQ_POR_ID = CATALOGO_MAQUINAS.reduce((acc, m) => {
-  acc[m.id] = m;
+  const key = String(m.maquinaId || m.id || '').trim();
+  if (key) acc[key] = m;
   return acc;
 }, {});
 
