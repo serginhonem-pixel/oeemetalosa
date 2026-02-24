@@ -1,6 +1,6 @@
 ﻿{
     "accessPath":  "C:\\DadosVBA\\BDMETALOSA.accdb",
-    "geradoEm":  "2026-02-24T10:53:56",
+    "geradoEm":  "2026-02-24T15:03:10",
     "producao":  {
                      "total":  319,
                      "arquivo":  ".\\data-import\\import_producao.csv",
