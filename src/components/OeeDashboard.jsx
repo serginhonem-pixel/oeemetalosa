@@ -27,6 +27,12 @@ import { CATALOGO_MAQUINAS } from "../data/catalogoMaquinas";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_VELOCIDADE_M_POR_MIN = 25;
+const META_KPIS = {
+  oeeGlobal: 70,
+  disponibilidade: 85,
+  performance: 75,
+  qualidade: 99,
+};
 const ORIGENS_EXCLUIDAS_OEE = new Set([
   "FINALIZACAO_ORDEM",
   "FINALIZACAO_RAPIDA",
@@ -80,10 +86,24 @@ const clampPercent = (v) => {
   return Math.max(0, Math.min(100, v));
 };
 
+const formatDelta = (value) => {
+  if (!Number.isFinite(value)) return "--";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(1)} p.p.`;
+};
+
+const formatTrend = (value) => {
+  if (!Number.isFinite(value)) return "sem base anterior";
+  if (Math.abs(value) < 0.1) return "estável vs período anterior";
+  return value > 0
+    ? `subiu ${value.toFixed(1)} p.p. vs período anterior`
+    : `caiu ${Math.abs(value).toFixed(1)} p.p. vs período anterior`;
+};
+
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 // ---------- CARDS ----------
-const GaugeCard = ({ label, value, accent, helper }) => {
+const GaugeCard = ({ label, value, accent, helper, target, trend }) => {
   const radius = 30;
   const circumference = 2 * Math.PI * radius;
   const safe = clampPercent(value);
@@ -137,6 +157,14 @@ const GaugeCard = ({ label, value, accent, helper }) => {
         <p className="text-[11px] text-zinc-400 uppercase tracking-[0.18em] font-semibold mb-1">
           {label}
         </p>
+        {Number.isFinite(target) ? (
+          <p className="text-[11px] text-zinc-500 leading-snug">
+            Meta {target.toFixed(0)}% | Desvio {formatDelta(safe - target)}
+          </p>
+        ) : null}
+        {trend ? (
+          <p className="text-[11px] text-zinc-500 leading-snug">{trend}</p>
+        ) : null}
         {helper && (
           <p className="text-[11px] text-zinc-500 leading-snug">{helper}</p>
         )}
@@ -362,6 +390,10 @@ export default function OeeDashboard({
     producaoTotalKg,
     dailyProductionData,
     paretoParadasData,
+    previousSnapshot,
+    principalParada,
+    coberturaParetoTop2,
+    ganhoPotencialKg,
   } = useMemo(() => {
     let startISO = normalizeISODateInput(
       rangeStart || dataInicioInd || todayISO()
@@ -390,6 +422,10 @@ export default function OeeDashboard({
         producaoTotalKg: 0,
         dailyProductionData: [],
         paretoParadasData: [],
+        previousSnapshot: null,
+        principalParada: null,
+        coberturaParetoTop2: 0,
+        ganhoPotencialKg: 0,
       };
     }
 
@@ -403,14 +439,15 @@ export default function OeeDashboard({
         )
       : null;
     const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao || "";
+    const turnoMin = (Number(turnoHoras) || 0) * 60;
 
     // --- FUNÇÃO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
-    const filterData = (item) => {
+    const filterData = (item, rangeStartFilter = startISO, rangeEndFilter = endISO) => {
         // 1. Filtro de Data
         if (!item?.data) return false;
         const itemISO = normalizeISODateInput(item.data);
         const dataOk =
-          ISO_DATE_RE.test(itemISO) && itemISO >= startISO && itemISO <= endISO;
+          ISO_DATE_RE.test(itemISO) && itemISO >= rangeStartFilter && itemISO <= rangeEndFilter;
         
         // 2. Filtro de Máquina (aceita id ou nome)
         const idRegistro = String(item.maquinaId || item.maquinaid || item.maquina || "").trim();
@@ -493,6 +530,124 @@ export default function OeeDashboard({
       return diff > 0 ? diff : 0;
     };
 
+    const summarizePeriod = (snapshotStartISO, snapshotEndISO) => {
+      const snapshotStart = parseISODate(snapshotStartISO);
+      const snapshotEnd = parseISODate(snapshotEndISO);
+      if (!snapshotStart || !snapshotEnd) return null;
+
+      const prod = Array.isArray(historicoProducaoReal)
+        ? historicoProducaoReal.filter((item) =>
+            filterData(item, snapshotStartISO, snapshotEndISO)
+          )
+        : [];
+
+      const prodDays = new Set(
+        prod
+          .map((item) => normalizeISODateInput(item.data))
+          .filter((iso) => ISO_DATE_RE.test(iso))
+      );
+
+      const diasContadosSnapshot = new Set();
+      if (snapshotEnd >= snapshotStart) {
+        for (
+          let dt = new Date(snapshotStart);
+          dt <= snapshotEnd;
+          dt = new Date(dt.getTime() + MS_PER_DAY)
+        ) {
+          const iso = dt.toISOString().split("T")[0];
+          const day = dt.getDay();
+          const isWeekend = day === 0 || day === 6;
+          if (!isWeekend || prodDays.has(iso)) {
+            diasContadosSnapshot.add(iso);
+          }
+        }
+      }
+
+      const paradas = Array.isArray(historicoParadas)
+        ? historicoParadas
+            .filter((item) => filterData(item, snapshotStartISO, snapshotEndISO))
+            .filter((item) => {
+              const iso = normalizeISODateInput(item.data);
+              return ISO_DATE_RE.test(iso) && diasContadosSnapshot.has(iso);
+            })
+        : [];
+
+      const perdas = paradas.filter((p) => {
+        const codMotivo = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
+        return codMotivo !== "TU001";
+      });
+
+      const paradasPorDiaSnapshot = new Map();
+      perdas.forEach((p) => {
+        const iso = normalizeISODateInput(p.data);
+        if (!ISO_DATE_RE.test(iso) || !diasContadosSnapshot.has(iso)) return;
+        paradasPorDiaSnapshot.set(
+          iso,
+          (paradasPorDiaSnapshot.get(iso) || 0) + getDuracaoMin(p)
+        );
+      });
+
+      const diasNoPeriodoSnapshot = new Set([
+        ...prodDays,
+        ...paradasPorDiaSnapshot.keys(),
+      ]).size;
+      const tempoTotalTurnoSnapshot = diasNoPeriodoSnapshot * turnoMin;
+      const tempoParadoSnapshot = perdas.reduce(
+        (acc, p) => acc + getDuracaoMin(p),
+        0
+      );
+      const tempoRodandoSnapshot = Math.max(
+        0,
+        tempoTotalTurnoSnapshot - tempoParadoSnapshot
+      );
+      const disponibilidadeSnapshot =
+        tempoTotalTurnoSnapshot > 0
+          ? (tempoRodandoSnapshot / tempoTotalTurnoSnapshot) * 100
+          : 0;
+
+      let producaoTotalMetrosSnapshot = 0;
+      let producaoTotalKgSnapshot = 0;
+      prod.forEach((item) => {
+        const qtd = Number(item.qtd) || 0;
+        const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
+        const compRegistro = Number(item.comp || item.compMetros || 0);
+        const compCatalogo = Number(prodInfo?.comp || 0);
+        const comp =
+          prodInfo && prodInfo.custom ? compRegistro : compCatalogo || compRegistro;
+        producaoTotalMetrosSnapshot += qtd * comp;
+
+        let peso = Number(item.pesoTotal) || 0;
+        if (!peso && prodInfo) {
+          if (prodInfo.custom) {
+            const kgMetro = Number(prodInfo.kgMetro || 0);
+            peso = qtd * comp * kgMetro;
+          } else {
+            peso = qtd * Number(prodInfo.pesoUnit || 0);
+          }
+        }
+        producaoTotalKgSnapshot += peso;
+      });
+
+      const performanceSnapshot =
+        tempoRodandoSnapshot > 0
+          ? (producaoTotalMetrosSnapshot / (tempoRodandoSnapshot * velocidadeMpm)) * 100
+          : 0;
+      const qualidadeSnapshot = 100;
+      const oeeSnapshot =
+        (disponibilidadeSnapshot / 100) *
+        (performanceSnapshot / 100) *
+        (qualidadeSnapshot / 100) *
+        100;
+
+      return {
+        oeeGlobal: oeeSnapshot,
+        disponibilidade: disponibilidadeSnapshot,
+        performance: performanceSnapshot,
+        qualidade: qualidadeSnapshot,
+        producaoTotalKg: producaoTotalKgSnapshot,
+      };
+    };
+
     const paradasPorDia = new Map();
     perdasDeDisponibilidade.forEach((p) => {
       const iso = normalizeISODateInput(p.data);
@@ -519,7 +674,6 @@ export default function OeeDashboard({
     let producaoTotalKg = 0;
     let producaoTotalMetros = 0;
     const dailyMap = {};
-    const turnoMin = (Number(turnoHoras) || 0) * 60;
 
     if (endDate >= startDate) {
       for (
@@ -622,6 +776,33 @@ export default function OeeDashboard({
     const oeeGlobal =
       (disponibilidade / 100) * (performance / 100) * (qualidade / 100) * 100;
 
+    const diasSpan = Math.max(
+      1,
+      Math.floor((endDate.getTime() - startDate.getTime()) / MS_PER_DAY) + 1
+    );
+    const prevEndDate = new Date(startDate.getTime() - MS_PER_DAY);
+    const prevStartDate = new Date(prevEndDate.getTime() - (diasSpan - 1) * MS_PER_DAY);
+    const prevStartISO = normalizeISODateInput(prevStartDate);
+    const prevEndISO = normalizeISODateInput(prevEndDate);
+    const previousSnapshot = summarizePeriod(prevStartISO, prevEndISO);
+
+    const totalParetoMin = paretoParadasData.reduce(
+      (acc, item) => acc + Number(item.duracao || 0),
+      0
+    );
+    const principalParada = paretoParadasData.length ? paretoParadasData[0] : null;
+    const coberturaParetoTop2 =
+      totalParetoMin > 0
+        ? ((Number(paretoParadasData[0]?.duracao || 0) +
+            Number(paretoParadasData[1]?.duracao || 0)) /
+            totalParetoMin) *
+          100
+        : 0;
+    const ganhoPotencialKg =
+      performance > 0
+        ? Math.max(0, ((40 / performance) - 1) * producaoTotalKg)
+        : 0;
+
     return {
       diasNoPeriodo,
       oeeGlobal,
@@ -635,6 +816,10 @@ export default function OeeDashboard({
       producaoTotalKg,
       dailyProductionData,
       paretoParadasData,
+      previousSnapshot,
+      principalParada,
+      coberturaParetoTop2,
+      ganhoPotencialKg,
     };
   }, [
     rangeStart,
@@ -652,6 +837,11 @@ export default function OeeDashboard({
   const metricLabel =
     metricMode === "pieces" ? "Peças produzidas" : "Peso produzido (kg)";
   const metricKey = metricMode === "pieces" ? "pieces" : "weightKg";
+  const deltaOee = oeeGlobal - Number(previousSnapshot?.oeeGlobal || 0);
+  const deltaDisp = disponibilidade - Number(previousSnapshot?.disponibilidade || 0);
+  const deltaPerf = performance - Number(previousSnapshot?.performance || 0);
+  const deltaQual = qualidade - Number(previousSnapshot?.qualidade || 0);
+  const deltaKg = producaoTotalKg - Number(previousSnapshot?.producaoTotalKg || 0);
 
   // --- LABEL CUSTOMIZADO (BARRAS) ---
   const renderProdLabel = (props) => {
@@ -876,24 +1066,32 @@ export default function OeeDashboard({
           label="OEE Global"
           value={oeeGlobal}
           accent="green"
+          target={META_KPIS.oeeGlobal}
+          trend={formatTrend(deltaOee)}
           helper="Reflete disponibilidade real"
         />
         <GaugeCard
           label="Disponibilidade"
           value={disponibilidade}
           accent="blue"
+          target={META_KPIS.disponibilidade}
+          trend={formatTrend(deltaDisp)}
           helper={`${tempoRodandoMin.toFixed(0)} min produzindo`}
         />
         <GaugeCard
           label="Performance"
           value={performance}
           accent="yellow"
+          target={META_KPIS.performance}
+          trend={formatTrend(deltaPerf)}
           helper={`Base ${velocidadeMpm} m/min`}
         />
         <GaugeCard
           label="Qualidade"
           value={qualidade}
           accent="pink"
+          target={META_KPIS.qualidade}
+          trend={formatTrend(deltaQual)}
           helper="Sem refugo"
         />
       </div>
@@ -926,6 +1124,84 @@ export default function OeeDashboard({
         />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3">
+          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
+            Comparativo OEE
+          </p>
+          <p className="text-lg font-bold text-white mt-1">{formatDelta(deltaOee)}</p>
+          <p className="text-[11px] text-zinc-500 mt-1">
+            Atual {oeeGlobal.toFixed(1)}% | anterior{" "}
+            {Number(previousSnapshot?.oeeGlobal || 0).toFixed(1)}%
+          </p>
+        </div>
+        <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3">
+          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
+            Comparativo Performance
+          </p>
+          <p className="text-lg font-bold text-white mt-1">{formatDelta(deltaPerf)}</p>
+          <p className="text-[11px] text-zinc-500 mt-1">
+            Atual {performance.toFixed(1)}% | anterior{" "}
+            {Number(previousSnapshot?.performance || 0).toFixed(1)}%
+          </p>
+        </div>
+        <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3">
+          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
+            Comparativo Producao
+          </p>
+          <p className="text-lg font-bold text-white mt-1">
+            {deltaKg >= 0 ? "+" : ""}
+            {deltaKg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg
+          </p>
+          <p className="text-[11px] text-zinc-500 mt-1">
+            Atual {producaoTotalKg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-[#050509] border border-white/10 rounded-2xl p-4 mb-6">
+        <h2 className="text-sm font-semibold text-white mb-3">Insights automaticos</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]">
+          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-zinc-300 font-medium">
+              Gargalo principal:{" "}
+              <span className="text-amber-300">
+                {performance <= disponibilidade ? "Performance" : "Disponibilidade"}
+              </span>
+            </p>
+            <p className="text-zinc-500 mt-1">
+              Performance em {performance.toFixed(1)}% contra meta de{" "}
+              {META_KPIS.performance}%.
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-zinc-300 font-medium">
+              Pareto Top 2 cobre {coberturaParetoTop2.toFixed(1)}% das perdas
+            </p>
+            <p className="text-zinc-500 mt-1">
+              Motivo lider:{" "}
+              {principalParada
+                ? `${principalParada.motivo} (${Number(principalParada.duracao || 0).toFixed(0)} min)`
+                : "sem dados no periodo"}.
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-zinc-300 font-medium">
+              Capacidade oculta se performance subir para 40%
+            </p>
+            <p className="text-zinc-500 mt-1">
+              Ganho estimado:{" "}
+              <span className="text-emerald-300">
+                {ganhoPotencialKg.toLocaleString("pt-BR", {
+                  maximumFractionDigits: 1,
+                })}{" "}
+                kg
+              </span>{" "}
+              no mesmo periodo.
+            </p>
+          </div>
+        </div>
+      </div>
       {/* OBSERVAÇÃO */}
       <div className="flex items-start gap-2 text-[11px] text-zinc-500 mb-6">
         <AlertCircle size={14} className="mt-[2px] text-yellow-400" />
@@ -1112,3 +1388,4 @@ export default function OeeDashboard({
     </div>
   );
 }
+
