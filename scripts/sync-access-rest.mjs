@@ -303,6 +303,14 @@ const cleanupExistingAccessSync = async (idToken) => {
 const run = async () => {
   const { producao, paradas } = buildData();
   const totalPecas = producao.reduce((acc, p) => acc + Number(p.qtd || 0), 0);
+
+  // Protege contra "apagao" no dashboard: nunca limpa ACCESS_SYNC se a importacao vier vazia.
+  if (producao.length === 0 && paradas.length === 0) {
+    throw new Error(
+      "Importacao vazia (producao=0, paradas=0). Sincronizacao abortada sem limpar dados anteriores."
+    );
+  }
+
   const writes = [];
 
   for (let i = 0; i < producao.length; i += 1) {
