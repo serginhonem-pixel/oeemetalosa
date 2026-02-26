@@ -1435,6 +1435,15 @@ const isStatusFinalizado = (status) => {
 
 const toISODate = (v) => {
   if (!v) return "";
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const parsed = XLSX?.SSF?.parse_date_code?.(v);
+    if (parsed?.y && parsed?.m && parsed?.d) {
+      const y = String(parsed.y).padStart(4, "0");
+      const m = String(parsed.m).padStart(2, "0");
+      const day = String(parsed.d).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+  }
   // Firestore Timestamp
   if (typeof v === "object" && typeof v.toDate === "function") {
     const d = v.toDate();
@@ -1451,7 +1460,164 @@ const toISODate = (v) => {
     return `${y}-${m}-${day}`;
   }
   // string
-  return String(v);
+  const raw = String(v).trim();
+  const base = raw.includes("T") ? raw.slice(0, 10) : raw;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(base)) return base;
+  const br = base.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})$/);
+  if (br) {
+    const d = br[1];
+    const m = br[2];
+    const yy = br[3];
+    const y = yy.length === 2 ? `20${yy}` : yy;
+    return `${y}-${m}-${d}`;
+  }
+  return raw;
+};
+
+const normalizeMachineToken = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "")
+    .toUpperCase();
+
+const toMinFromHHmm = (hhmm) => {
+  if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return 0;
+  const [h, m] = hhmm.split(":").map((v) => Number(v));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+};
+
+const buildMachineResolver = () => {
+  const map = new Map();
+  (CATALOGO_MAQUINAS || []).forEach((m) => {
+    const id = String(m?.maquinaId || m?.id || "").trim();
+    const nome = String(m?.nomeExibicao || "").trim();
+    if (id) map.set(normalizeMachineToken(id), id);
+    if (nome) map.set(normalizeMachineToken(nome), id);
+  });
+  return (raw) => {
+    const key = normalizeMachineToken(raw);
+    return map.get(key) || String(raw || "").trim() || "";
+  };
+};
+
+const normalizeImportRowKeys = (rows) =>
+  (rows || []).map((row) => {
+    const normalized = {};
+    Object.entries(row || {}).forEach(([k, v]) => {
+      const key = String(k || "")
+        .replace(/\uFEFF/g, "")
+        .replace(/^"+|"+$/g, "")
+        .trim()
+        .toUpperCase();
+      normalized[key] = v;
+    });
+    return normalized;
+  });
+
+const parseAccessRowsFromUrl = async (url) => {
+  const res = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) return [];
+
+  const isCsv = String(url).toLowerCase().endsWith(".csv");
+  if (isCsv) {
+    const text = await res.text();
+    if (!text || !text.trim()) return [];
+    const wb = XLSX.read(text, { type: "string", raw: true, cellDates: false });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+    return normalizeImportRowKeys(rows);
+  }
+
+  const buffer = await res.arrayBuffer();
+  if (!buffer || !buffer.byteLength) return [];
+  const wb = XLSX.read(buffer, { type: "array", raw: true, cellDates: false });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+  return normalizeImportRowKeys(rows);
+};
+
+const parseAccessRowsWithFallback = async (paths) => {
+  for (const p of paths) {
+    try {
+      const rows = await parseAccessRowsFromUrl(p);
+      if (rows.length) return rows;
+    } catch (_) {
+      // tenta o próximo arquivo
+    }
+  }
+  return [];
+};
+
+const loadAccessOeeFromCsv = async () => {
+  const [prodRows, parRows] = await Promise.all([
+    parseAccessRowsWithFallback([
+      "/data-import/import_producao.csv",
+      "/data-import/import_producao.xlsx",
+    ]),
+    parseAccessRowsWithFallback([
+      "/data-import/import_paradas.csv",
+      "/data-import/import_paradas.xlsx",
+    ]),
+  ]);
+  if (!prodRows.length && !parRows.length) return null;
+
+  const resolveMachineId = buildMachineResolver();
+
+  const producao = prodRows
+    .map((row, idx) => {
+      const data = toISODate(row.DATA || row.data || row.Date || "");
+      const cod = String(row.CODIGO || row.cod || row.COD || "").trim();
+      const qtd = Number(row.QTD || row.qtd || 0) || 0;
+      if (!data || !cod || qtd <= 0) return null;
+      const maquinaNome = String(row.MAQUINA || row.maquina || "").trim();
+      return {
+        id: `acc-prod-${idx}-${data}-${cod}`,
+        data,
+        cod,
+        qtd,
+        desc: String(row.DESCRICAO || row.desc || "").trim() || "Item s/ descricao",
+        destino: String(row.DESTINO || row.destino || "Estoque").trim() || "Estoque",
+        maquinaId: resolveMachineId(maquinaNome),
+        maquina: maquinaNome,
+        maquinaNome,
+        origem: "ACCESS_IMPORT",
+      };
+    })
+    .filter(Boolean);
+
+  const paradas = parRows
+    .map((row, idx) => {
+      const data = toISODate(row.DATA || row.data || "");
+      const inicio = String(row.INICIO || row.inicio || "").trim();
+      const fim = String(row.FIM || row.fim || "").trim();
+      const codMotivo = String(row.COD_MOTIVO || row.codMotivo || row.CODIGO || "").trim();
+      if (!data || !codMotivo) return null;
+      const maquinaNome = String(row.MAQUINA || row.maquina || "").trim();
+      const duracao = Math.max(0, toMinFromHHmm(fim) - toMinFromHHmm(inicio));
+      return {
+        id: `acc-par-${idx}-${data}-${codMotivo}`,
+        data,
+        maquinaId: resolveMachineId(maquinaNome),
+        maquina: maquinaNome,
+        maquinaNome,
+        inicio,
+        fim,
+        horaInicio: inicio,
+        horaFim: fim,
+        duracao,
+        duracaoMinutos: duracao,
+        codMotivo,
+        motivoCodigo: codMotivo,
+        descMotivo: String(row.DESC || row.descricao || "").trim(),
+        grupo: String(row.GRUPO || row.grupo || "").trim(),
+        obs: String(row.OBS || row.obs || "").trim(),
+        origem: "ACCESS_IMPORT",
+      };
+    })
+    .filter(Boolean);
+
+  return { producao, paradas };
 };
 
 
@@ -1468,23 +1634,53 @@ useEffect(() => {
       console.log("🏠 Modo Dev detectado... tentando ler do localStorage");
 
       try {
+        const accessData = await loadAccessOeeFromCsv();
+        if (accessData && (accessData.producao.length || accessData.paradas.length)) {
+          const maquinasProd = new Set(
+            accessData.producao.map((r) => r.maquinaId || r.maquina || "").filter(Boolean)
+          ).size;
+          const maquinasPar = new Set(
+            accessData.paradas.map((r) => r.maquinaId || r.maquina || "").filter(Boolean)
+          ).size;
+          console.log("📥 Dados do Access encontrados em data-import, carregando OEE local...", {
+            producao: accessData.producao.length,
+            paradas: accessData.paradas.length,
+            maquinasProducao: maquinasProd,
+            maquinasParadas: maquinasPar,
+          });
+          setHistoricoProducaoReal(accessData.producao);
+          setHistoricoParadas(accessData.paradas);
+          setDadosCarregados(true);
+          return;
+        }
+
         const salvo = localStorage.getItem(DEV_CACHE_KEY);
+        let parsed = null;
 
         if (salvo) {
-          const parsed = JSON.parse(salvo);
+          parsed = JSON.parse(salvo);
           console.log("🔄 Cache local encontrado, carregando...");
 
           setFilaProducao(parsed.romaneios || []);
           setHistoricoProducaoReal(parsed.producao || []);
           setHistoricoParadas(parsed.paradas || []);
+          if (parsed.global) {
+            localStorage.setItem(
+              'local_config',
+              JSON.stringify(parsed.global.config || { diasUteis: 22 })
+            );
+            localStorage.setItem(
+              'local_maquinas',
+              JSON.stringify(parsed.global.maquinas || [])
+            );
+            localStorage.setItem(
+              'local_lancamentos',
+              JSON.stringify(parsed.global.lancamentos || [])
+            );
+          }
           setDadosCarregados(true);
           return; // já carregou do cache, não precisa ir pro JSON nem Firebase
         }
-        if (parsed.global) {
-  localStorage.setItem('local_config', JSON.stringify(parsed.global.config || { diasUteis: 22 }));
-  localStorage.setItem('local_maquinas', JSON.stringify(parsed.global.maquinas || []));
-  localStorage.setItem('local_lancamentos', JSON.stringify(parsed.global.lancamentos || []));
-}
 
       } catch (err) {
         console.error("Erro ao ler cache local:", err);

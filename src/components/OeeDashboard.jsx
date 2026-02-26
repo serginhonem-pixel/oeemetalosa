@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   CalendarDays,
@@ -61,6 +61,22 @@ const parseISODate = (value) => {
   if (!ISO_DATE_RE.test(iso)) return null;
   const dt = new Date(`${iso}T00:00:00`);
   return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const getItemDateISO = (item) => {
+  if (!item || typeof item !== "object") return "";
+  const candidates = [
+    item.data,
+    item.date,
+    item.dataProducao,
+    item.dataApontamento,
+    item.createdAt,
+  ];
+  for (const value of candidates) {
+    const iso = normalizeISODateInput(value);
+    if (ISO_DATE_RE.test(iso)) return iso;
+  }
+  return "";
 };
 
 const normalizeMachineToken = (value) =>
@@ -219,7 +235,7 @@ export default function OeeDashboard({
     String(DEFAULT_VELOCIDADE_M_POR_MIN)
   );
   
-  // NOVO: Estado para filtro de máquina
+  // NOVO: Estado para filtro de mÃ¡quina
   const [maquinaId, setMaquinaId] = useState(""); 
 
   // sincroniza com filtros externos
@@ -260,7 +276,7 @@ export default function OeeDashboard({
     return () => clearTimeout(id);
   }, [rangeStartDraft, rangeEndDraft]);
 
-  // Lista de máquinas ativas
+  // Lista de mÃ¡quinas ativas
   const maquinasCatalogo = useMemo(
     () => CATALOGO_MAQUINAS.filter((m) => m.ativo),
     []
@@ -441,15 +457,21 @@ export default function OeeDashboard({
     const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao || "";
     const turnoMin = (Number(turnoHoras) || 0) * 60;
 
-    // --- FUNÇÃO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
-    const filterData = (item, rangeStartFilter = startISO, rangeEndFilter = endISO) => {
+    // --- FUNÃ‡ÃƒO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
+    const filterData = (
+      item,
+      rangeStartFilter = startISO,
+      rangeEndFilter = endISO,
+      options = {}
+    ) => {
+        const { ignoreOriginExclusion = false } = options;
         // 1. Filtro de Data
-        if (!item?.data) return false;
-        const itemISO = normalizeISODateInput(item.data);
+        const itemISO = getItemDateISO(item);
+        if (!itemISO) return false;
         const dataOk =
           ISO_DATE_RE.test(itemISO) && itemISO >= rangeStartFilter && itemISO <= rangeEndFilter;
         
-        // 2. Filtro de Máquina (aceita id ou nome)
+        // 2. Filtro de MÃ¡quina (aceita id ou nome)
         const idRegistro = String(item.maquinaId || item.maquinaid || item.maquina || "").trim();
         const nomeRegistro = String(item.maquinaNome || item.maquinaExibicao || item.maquina || "").trim();
         const tokenSelecionado = normalizeMachineToken(maquinaId);
@@ -467,18 +489,28 @@ export default function OeeDashboard({
         const isProducao =
           "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
         const origem = String(item.origem || "").toUpperCase();
-        const origemOk = !isProducao || !ORIGENS_EXCLUIDAS_OEE.has(origem);
+        const origemOk =
+          ignoreOriginExclusion ||
+          !isProducao ||
+          !ORIGENS_EXCLUIDAS_OEE.has(origem);
 
         return dataOk && maquinaOk && origemOk;
     };
 
-    const prodFiltrada = Array.isArray(historicoProducaoReal)
+    const prodFiltradaPrincipal = Array.isArray(historicoProducaoReal)
       ? historicoProducaoReal.filter(filterData)
       : [];
+    const prodFiltradaComOrigens = Array.isArray(historicoProducaoReal)
+      ? historicoProducaoReal.filter((item) =>
+          filterData(item, startISO, endISO, { ignoreOriginExclusion: true })
+        )
+      : [];
+    const prodFiltrada =
+      prodFiltradaPrincipal.length > 0 ? prodFiltradaPrincipal : prodFiltradaComOrigens;
 
     const prodDiasSet = new Set(
       prodFiltrada
-        .map((item) => normalizeISODateInput(item.data))
+        .map((item) => getItemDateISO(item))
         .filter((iso) => ISO_DATE_RE.test(iso))
     );
 
@@ -507,8 +539,8 @@ export default function OeeDashboard({
           })
       : [];
 
-    // --- CÁLCULO DE PARADAS ---
-    // Filtra apenas perdas reais (exclui TU001 que é produção)
+    // --- CÃLCULO DE PARADAS ---
+    // Filtra apenas perdas reais (exclui TU001 que Ã© produÃ§Ã£o)
     const perdasDeDisponibilidade = paradasFiltradas.filter(p => {
       const codMotivo = String(p.codMotivo || p.motivoCodigo || '').toUpperCase(); 
       return codMotivo !== 'TU001'; 
@@ -535,15 +567,23 @@ export default function OeeDashboard({
       const snapshotEnd = parseISODate(snapshotEndISO);
       if (!snapshotStart || !snapshotEnd) return null;
 
-      const prod = Array.isArray(historicoProducaoReal)
+      const prodPrincipal = Array.isArray(historicoProducaoReal)
         ? historicoProducaoReal.filter((item) =>
             filterData(item, snapshotStartISO, snapshotEndISO)
           )
         : [];
+      const prodComOrigens = Array.isArray(historicoProducaoReal)
+        ? historicoProducaoReal.filter((item) =>
+            filterData(item, snapshotStartISO, snapshotEndISO, {
+              ignoreOriginExclusion: true,
+            })
+          )
+        : [];
+      const prod = prodPrincipal.length > 0 ? prodPrincipal : prodComOrigens;
 
       const prodDays = new Set(
         prod
-          .map((item) => normalizeISODateInput(item.data))
+          .map((item) => getItemDateISO(item))
           .filter((iso) => ISO_DATE_RE.test(iso))
       );
 
@@ -669,7 +709,7 @@ export default function OeeDashboard({
         ? (tempoRodandoMin / tempoTotalTurnoMin) * 100
         : 0;
             
-    // --- CÁLCULO DE PRODUÇÃO ---
+    // --- CÃLCULO DE PRODUÃ‡ÃƒO ---
     let producaoTotalPcs = 0;
     let producaoTotalKg = 0;
     let producaoTotalMetros = 0;
@@ -695,7 +735,7 @@ export default function OeeDashboard({
     }
 
     prodFiltrada.forEach((item) => {
-      const iso = normalizeISODateInput(item.data);
+      const iso = getItemDateISO(item);
       const qtd = Number(item.qtd) || 0;
       const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
       const compRegistro = Number(item.comp || item.compMetros || 0);
@@ -706,7 +746,7 @@ export default function OeeDashboard({
       producaoTotalPcs += qtd;
       producaoTotalMetros += qtd * comp;
 
-      // Usa peso já salvo no registro; se não houver, calcula a partir do catálogo
+      // Usa peso jÃ¡ salvo no registro; se nÃ£o houver, calcula a partir do catÃ¡logo
       let peso = Number(item.pesoTotal) || 0;
       if (!peso) {
         if (prodInfo) {
@@ -747,17 +787,45 @@ export default function OeeDashboard({
 
     // --- PARETO (TOP 5) ---
     const motivosMap = {};
-    
-    perdasDeDisponibilidade.forEach((p) => { 
+    const perdasParaPareto = perdasDeDisponibilidade.length
+      ? perdasDeDisponibilidade
+      : paradasFiltradas.filter((p) => {
+          const codMotivo = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
+          return codMotivo !== "TU001";
+        });
+
+    perdasParaPareto.forEach((p) => {
       const key = p.descMotivo || p.descNorm || "Motivo não informado";
       const dur = getDuracaoMin(p);
       motivosMap[key] = (motivosMap[key] || 0) + dur;
     });
 
-    const paretoParadasData = Object.entries(motivosMap)
+    let paretoParadasData = Object.entries(motivosMap)
       .map(([motivo, duracao]) => ({ motivo, duracao }))
       .sort((a, b) => b.duracao - a.duracao)
       .slice(0, 5);
+
+    // Fallback defensivo: se o fluxo principal zerar indevidamente,
+    // recalcula o Pareto direto do histórico filtrado por data/máquina.
+    if (!paretoParadasData.length && Array.isArray(historicoParadas)) {
+      const motivosFallback = {};
+      historicoParadas
+        .filter((item) => filterData(item, startISO, endISO, { ignoreOriginExclusion: true }))
+        .forEach((p) => {
+          const codMotivo = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
+          if (codMotivo === "TU001") return;
+          const key = p.descMotivo || p.descNorm || "Motivo não informado";
+          const dur = getDuracaoMin(p);
+          if (dur > 0) {
+            motivosFallback[key] = (motivosFallback[key] || 0) + dur;
+          }
+        });
+
+      paretoParadasData = Object.entries(motivosFallback)
+        .map(([motivo, duracao]) => ({ motivo, duracao }))
+        .sort((a, b) => b.duracao - a.duracao)
+        .slice(0, 5);
+    }
 
     // OEE
     const diasPerformance = new Set([...prodDiasSet, ...paradasPorDia.keys()]);
@@ -830,7 +898,7 @@ export default function OeeDashboard({
     historicoParadas,
     turnoHoras,
     velocidadeMpm,
-    maquinaId, // IMPORTANTE: Recalcula tudo quando troca a máquina
+    maquinaId, // IMPORTANTE: Recalcula tudo quando troca a mÃ¡quina
     maquinasDisponiveis
   ]);
 
@@ -891,7 +959,7 @@ export default function OeeDashboard({
       {/* HEADER */}
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
         
-        {/* TITULO + SELETOR MÁQUINA (JUNTOS) */}
+        {/* TITULO + SELETOR MÃQUINA (JUNTOS) */}
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
             <div>
                 <h1 className="text-3xl font-bold flex items-center gap-3 text-white">
@@ -903,7 +971,7 @@ export default function OeeDashboard({
                 </p>
             </div>
 
-            {/* SELETOR DE MÁQUINA (Aqui do lado, como pediu) */}
+            {/* SELETOR DE MÃQUINA (Aqui do lado, como pediu) */}
             <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-lg">
                 <Filter size={14} className="text-blue-400" />
                 <select 
@@ -927,7 +995,7 @@ export default function OeeDashboard({
         {/* CONTROLES DE DATA (DIREITA) */}
         <div className="flex flex-col gap-3 items-stretch md:items-end">
           
-          {/* BOTÕES DE ATALHO (PRESETS) - MANTIDOS */}
+          {/* BOTÃ•ES DE ATALHO (PRESETS) - MANTIDOS */}
           <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden self-end">
             <button
               onClick={() => handlePreset("today")}
@@ -1096,7 +1164,7 @@ export default function OeeDashboard({
         />
       </div>
 
-      {/* RESUMO NUMÉRICO */}
+      {/* RESUMO NUMÃ‰RICO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-4">
         <StatCard
           icon={BarChart3}
@@ -1159,50 +1227,7 @@ export default function OeeDashboard({
         </div>
       </div>
 
-      <div className="bg-[#050509] border border-white/10 rounded-2xl p-4 mb-6">
-        <h2 className="text-sm font-semibold text-white mb-3">Insights automaticos</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <p className="text-zinc-300 font-medium">
-              Gargalo principal:{" "}
-              <span className="text-amber-300">
-                {performance <= disponibilidade ? "Performance" : "Disponibilidade"}
-              </span>
-            </p>
-            <p className="text-zinc-500 mt-1">
-              Performance em {performance.toFixed(1)}% contra meta de{" "}
-              {META_KPIS.performance}%.
-            </p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <p className="text-zinc-300 font-medium">
-              Pareto Top 2 cobre {coberturaParetoTop2.toFixed(1)}% das perdas
-            </p>
-            <p className="text-zinc-500 mt-1">
-              Motivo lider:{" "}
-              {principalParada
-                ? `${principalParada.motivo} (${Number(principalParada.duracao || 0).toFixed(0)} min)`
-                : "sem dados no periodo"}.
-            </p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <p className="text-zinc-300 font-medium">
-              Capacidade oculta se performance subir para 40%
-            </p>
-            <p className="text-zinc-500 mt-1">
-              Ganho estimado:{" "}
-              <span className="text-emerald-300">
-                {ganhoPotencialKg.toLocaleString("pt-BR", {
-                  maximumFractionDigits: 1,
-                })}{" "}
-                kg
-              </span>{" "}
-              no mesmo periodo.
-            </p>
-          </div>
-        </div>
-      </div>
-      {/* OBSERVAÇÃO */}
+      {/* OBSERVAÃ‡ÃƒO */}
       <div className="flex items-start gap-2 text-[11px] text-zinc-500 mb-6">
         <AlertCircle size={14} className="mt-[2px] text-yellow-400" />
         <p>
@@ -1210,9 +1235,9 @@ export default function OeeDashboard({
         </p>
       </div>
 
-      {/* GRÁFICOS */}
+      {/* GRÃFICOS */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* PRODUÇÃO DIÁRIA */}
+        {/* PRODUÃ‡ÃƒO DIÃRIA */}
         <div className="xl:col-span-2 bg-[#050509] border border-white/10 rounded-2xl p-5">
           <div className="flex justify-between items-center mb-4">
             <div>
@@ -1339,46 +1364,51 @@ export default function OeeDashboard({
             Top 5 motivos de parada
           </h2>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
-              <BarChart
-                data={paretoParadasData}
-                layout="vertical"
-                margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  horizontal={false}
-                  stroke="#27272a"
-                />
-                <XAxis type="number" stroke="#a1a1aa" hide />
-                <YAxis
-                  type="category"
-                  dataKey="motivo"
-                  stroke="#a1a1aa"
-                  width={140}
-                  fontSize={10}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#020617",
-                    border: "1px solid #3f3f46",
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ color: "#e4e4e7" }}
-                  formatter={(value) => [`${value} min`, "Duração"]}
-                />
-                <Bar
-                  dataKey="duracao"
-                  name="Duração (min)"
-                  fill="#f87171"
-                  radius={[0, 4, 4, 0]}
-                  barSize={30}
+            {paretoParadasData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-zinc-500">
+                Sem paradas no período/filtro
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
+                <BarChart
+                  data={paretoParadasData}
+                  layout="vertical"
+                  margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
                 >
-                    {/* RÓTULOS ADICIONADOS AQUI */}
-                   <LabelList content={renderParetoLabel} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    horizontal={false}
+                    stroke="#27272a"
+                  />
+                  <XAxis type="number" stroke="#a1a1aa" hide />
+                  <YAxis
+                    type="category"
+                    dataKey="motivo"
+                    stroke="#a1a1aa"
+                    width={140}
+                    fontSize={10}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#020617",
+                      border: "1px solid #3f3f46",
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: "#e4e4e7" }}
+                    formatter={(value) => [`${value} min`, "Duração"]}
+                  />
+                  <Bar
+                    dataKey="duracao"
+                    name="Duração (min)"
+                    fill="#f87171"
+                    radius={[0, 4, 4, 0]}
+                    barSize={30}
+                  >
+                    <LabelList content={renderParetoLabel} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
           <p className="text-[10px] text-zinc-500 mt-2">
             *Motivos que mais impactam a disponibilidade.
