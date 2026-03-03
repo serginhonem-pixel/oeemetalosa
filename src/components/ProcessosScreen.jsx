@@ -720,33 +720,31 @@ const ProcessosScreen = () => {
         const cornerPctY = y - 10; // levemente acima do topo da barra
         // quando existe porcentagem colocamos o valor um pouco abaixo do topo (para não sobrepor)
         const valY = (pctRaw === null || Number.isNaN(pctRaw)) ? (y - 8) : (y + 14);
+        const mediaY = valY + 18;
+        const trendY = mediaY + 12;
 
         if (pctRaw === null || Number.isNaN(pctRaw)) {
             return (
                 <g>
-                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">
-                        <tspan x={x + width / 2} dy="0">{formatted}</tspan>
-                        {labelHasMedia && (
-                            <>
-                                <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
-                                    {mediaDiaText}
-                                </tspan>
-                                {hasMediaDiaDiffPct && (
-                                    <tspan
-                                        dx="4"
-                                        fill="#22c55e"
-                                        stroke="#000000"
-                                        strokeWidth="0.6"
-                                        paintOrder="stroke"
-                                        fontSize="13"
-                                        fontWeight="900"
-                                    >
-                                        {mediaDiaTrendPctText}
-                                    </tspan>
-                                )}
-                            </>
-                        )}
-                    </text>
+                    <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">{formatted}</text>
+                    {labelHasMedia && (
+                        <text x={x + width / 2} y={mediaY} fill="#FCD34D" fontSize={15} fontWeight={700} textAnchor="middle">{mediaDiaText}</text>
+                    )}
+                    {labelHasMedia && hasMediaDiaDiffPct && (
+                        <text
+                            x={x + width / 2}
+                            y={trendY}
+                            fill="#22c55e"
+                            stroke="#000000"
+                            strokeWidth="0.6"
+                            paintOrder="stroke"
+                            fontSize={11}
+                            fontWeight={900}
+                            textAnchor="middle"
+                        >
+                            {mediaDiaTrendPctText}
+                        </text>
+                    )}
                 </g>
             );
         }
@@ -759,29 +757,25 @@ const ProcessosScreen = () => {
         return (
             <g>
                 <text x={cornerX} y={cornerPctY} fill={color} fontSize={20} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
-                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">
-                    <tspan x={x + width / 2} dy="0">{formatted}</tspan>
-                    {labelHasMedia && (
-                        <>
-                            <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
-                                {mediaDiaText}
-                            </tspan>
-                            {hasMediaDiaDiffPct && (
-                                <tspan
-                                    dx="4"
-                                    fill="#22c55e"
-                                    stroke="#000000"
-                                    strokeWidth="0.6"
-                                    paintOrder="stroke"
-                                    fontSize="13"
-                                    fontWeight="900"
-                                >
-                                    {mediaDiaTrendPctText}
-                                </tspan>
-                            )}
-                        </>
-                    )}
-                </text>
+                <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">{formatted}</text>
+                {labelHasMedia && (
+                    <text x={x + width / 2} y={mediaY} fill="#FCD34D" fontSize={15} fontWeight={700} textAnchor="middle">{mediaDiaText}</text>
+                )}
+                {labelHasMedia && hasMediaDiaDiffPct && (
+                    <text
+                        x={x + width / 2}
+                        y={trendY}
+                        fill="#22c55e"
+                        stroke="#000000"
+                        strokeWidth="0.6"
+                        paintOrder="stroke"
+                        fontSize={11}
+                        fontWeight={900}
+                        textAnchor="middle"
+                    >
+                        {mediaDiaTrendPctText}
+                    </text>
+                )}
             </g>
         );
     };
