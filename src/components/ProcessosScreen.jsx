@@ -757,8 +757,8 @@ const ProcessosScreen = () => {
         const cornerPctY = y - 10; // levemente acima do topo da barra
         // quando existe porcentagem colocamos o valor um pouco abaixo do topo (para não sobrepor)
         const valY = (pctRaw === null || Number.isNaN(pctRaw)) ? (y - 8) : (y + 14);
-        const mediaY = valY + 24;
-        const trendY = mediaY + 18;
+        const mediaY = valY + 26;
+        const trendY = mediaY + 20;
         const centerX = x + width / 2;
         const infoTextLen = Math.max(
             String(mediaDiaText || '').length,
@@ -779,11 +779,12 @@ const ProcessosScreen = () => {
                             y={infoBoxY}
                             width={infoBoxWidth}
                             height={infoBoxHeight}
-                            rx={6}
+                            rx={4}
                             fill="#0B1220"
-                            fillOpacity={0.88}
-                            stroke="#334155"
-                            strokeWidth="1"
+                            fillOpacity={0.45}
+                            stroke="#475569"
+                            strokeOpacity={0.45}
+                            strokeWidth="0.6"
                         />
                     )}
                     {labelHasMedia && (
@@ -794,7 +795,7 @@ const ProcessosScreen = () => {
                             stroke={mediaDiaBaseStroke}
                             strokeWidth="0.5"
                             paintOrder="stroke"
-                            fontSize={17}
+                            fontSize={16}
                             fontWeight={800}
                             textAnchor="middle"
                         >
@@ -809,7 +810,7 @@ const ProcessosScreen = () => {
                             stroke="#000000"
                             strokeWidth="0.6"
                             paintOrder="stroke"
-                            fontSize={13}
+                            fontSize={12}
                             fontWeight={900}
                             textAnchor="middle"
                         >
@@ -835,11 +836,12 @@ const ProcessosScreen = () => {
                         y={infoBoxY}
                         width={infoBoxWidth}
                         height={infoBoxHeight}
-                        rx={6}
+                        rx={4}
                         fill="#0B1220"
-                        fillOpacity={0.88}
-                        stroke="#334155"
-                        strokeWidth="1"
+                        fillOpacity={0.45}
+                        stroke="#475569"
+                        strokeOpacity={0.45}
+                        strokeWidth="0.6"
                     />
                 )}
                 {labelHasMedia && (
@@ -850,7 +852,7 @@ const ProcessosScreen = () => {
                         stroke={mediaDiaBaseStroke}
                         strokeWidth="0.5"
                         paintOrder="stroke"
-                        fontSize={17}
+                        fontSize={16}
                         fontWeight={800}
                         textAnchor="middle"
                     >
@@ -865,7 +867,7 @@ const ProcessosScreen = () => {
                         stroke="#000000"
                         strokeWidth="0.6"
                         paintOrder="stroke"
-                        fontSize={13}
+                        fontSize={12}
                         fontWeight={900}
                         textAnchor="middle"
                     >
