@@ -55,6 +55,30 @@ const ProcessosScreen = () => {
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
     ];
 
+    const MOCK_PROCESSOS_CHART = [
+        { mes: 'Janeiro 2025', quantidade: 61240 },
+        { mes: 'Fevereiro 2025', quantidade: 55210 },
+        { mes: 'MarÃ§o 2025', quantidade: 70480 },
+        { mes: 'Abril 2025', quantidade: 63890 },
+        { mes: 'Maio 2025', quantidade: 76820 },
+        { mes: 'Junho 2025', quantidade: 72110 },
+        { mes: 'Julho 2025', quantidade: 69450 },
+        { mes: 'Agosto 2025', quantidade: 81230 },
+        { mes: 'Setembro 2025', quantidade: 88560 },
+        { mes: 'Outubro 2025', quantidade: 74220 },
+        { mes: 'Novembro 2025', quantidade: 66840 },
+        { mes: 'Dezembro 2025', quantidade: 79930 },
+        { mes: 'Janeiro 2026', quantidade: 86770 },
+        { mes: 'Fevereiro 2026', quantidade: 72410 }
+    ];
+    const showMockProcessosChart = (() => {
+        if (typeof window === 'undefined') return false;
+        const searchParams = new URLSearchParams(window.location.search);
+        const hashQuery = String(window.location.hash || '').split('?')[1] || '';
+        const hashParams = new URLSearchParams(hashQuery);
+        return searchParams.get('mockProcessos') === '1' || hashParams.get('mockProcessos') === '1';
+    })();
+
     const buildDiasUteisDefaults = () => (
         MESES.map((mes) => ({
             id: `default-2025-${mes}`,
@@ -546,6 +570,14 @@ const ProcessosScreen = () => {
 
     // Processar dados para gráficos
     const processChartData = () => {
+        if (showMockProcessosChart) {
+            return MOCK_PROCESSOS_CHART.map(({ mes, quantidade }) => {
+                const diasUteis = getDiasUteisByMesLabel(mes);
+                const mediaDia = diasUteis ? quantidade / diasUteis : null;
+                return { mes, quantidade, diasUteis, mediaDia };
+            });
+        }
+
         const mesMap = {};
         
         dadosProcessos.forEach(item => {
@@ -702,6 +734,8 @@ const ProcessosScreen = () => {
 
         const hasMediaDiaDiffPct = Number.isFinite(mediaDiaDiffPctRaw);
         const mediaDiaTrendPctText = `${mediaDiaDiffPctRaw > 0 ? '+' : ''}${mediaDiaDiffPctRaw.toFixed(1)}%`;
+        const mediaDiaBaseColor = mediaDiaDiffPctRaw < 0 ? '#ef4444' : '#111111';
+        const mediaDiaBaseStroke = mediaDiaDiffPctRaw < 0 ? '#000000' : '#f9fafb';
         const labelHasMedia = Boolean(mediaDiaText);
 
         // tentar obter percentual do payload; se não existir, calcular via dadosComVariacao pelo índice
@@ -728,7 +762,19 @@ const ProcessosScreen = () => {
                 <g>
                     <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">{formatted}</text>
                     {labelHasMedia && (
-                        <text x={x + width / 2} y={mediaY} fill="#FCD34D" fontSize={15} fontWeight={700} textAnchor="middle">{mediaDiaText}</text>
+                        <text
+                            x={x + width / 2}
+                            y={mediaY}
+                            fill={mediaDiaBaseColor}
+                            stroke={mediaDiaBaseStroke}
+                            strokeWidth="0.5"
+                            paintOrder="stroke"
+                            fontSize={18}
+                            fontWeight={800}
+                            textAnchor="middle"
+                        >
+                            {mediaDiaText}
+                        </text>
                     )}
                     {labelHasMedia && hasMediaDiaDiffPct && (
                         <text
@@ -738,7 +784,7 @@ const ProcessosScreen = () => {
                             stroke="#000000"
                             strokeWidth="0.6"
                             paintOrder="stroke"
-                            fontSize={11}
+                            fontSize={14}
                             fontWeight={900}
                             textAnchor="middle"
                         >
@@ -759,7 +805,19 @@ const ProcessosScreen = () => {
                 <text x={cornerX} y={cornerPctY} fill={color} fontSize={20} fontWeight={900} textAnchor="start">{arrowChar} {pctText}</text>
                 <text x={x + width / 2} y={valY} fill="#F9FAFB" fontSize={18} fontWeight={900} textAnchor="middle">{formatted}</text>
                 {labelHasMedia && (
-                    <text x={x + width / 2} y={mediaY} fill="#FCD34D" fontSize={15} fontWeight={700} textAnchor="middle">{mediaDiaText}</text>
+                    <text
+                        x={x + width / 2}
+                        y={mediaY}
+                        fill={mediaDiaBaseColor}
+                        stroke={mediaDiaBaseStroke}
+                        strokeWidth="0.5"
+                        paintOrder="stroke"
+                        fontSize={18}
+                        fontWeight={800}
+                        textAnchor="middle"
+                    >
+                        {mediaDiaText}
+                    </text>
                 )}
                 {labelHasMedia && hasMediaDiaDiffPct && (
                     <text
@@ -769,7 +827,7 @@ const ProcessosScreen = () => {
                         stroke="#000000"
                         strokeWidth="0.6"
                         paintOrder="stroke"
-                        fontSize={11}
+                        fontSize={14}
                         fontWeight={900}
                         textAnchor="middle"
                     >
@@ -1512,7 +1570,7 @@ const ProcessosScreen = () => {
                                             <p>Carregando dados...</p>
                                         </div>
                                     </div>
-                                ) : dadosProcessos.length === 0 ? (
+                                ) : (!showMockProcessosChart && dadosProcessos.length === 0) ? (
                                     <div className="flex items-center justify-center h-64 text-zinc-500">
                                         <div className="text-center">
                                             <BarChart3 size={32} className="mx-auto mb-2 opacity-50" />
@@ -1580,6 +1638,11 @@ const ProcessosScreen = () => {
                                             <h3 className="text-2xl font-bold text-white mb-5">
                                                 {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
                                             </h3>
+                                            {showMockProcessosChart && (
+                                                <div className="mb-3 inline-flex items-center rounded-md border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">
+                                                    MODO MOCK ATIVO (?mockProcessos=1)
+                                                </div>
+                                            )}
                                             <ResponsiveContainer width="100%" height={420}>
                                                 <BarChart data={obterDadosFiltrados()} margin={{ top: 60, right: 20, left: 20, bottom: 60 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
