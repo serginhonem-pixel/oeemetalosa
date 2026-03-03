@@ -701,8 +701,7 @@ const ProcessosScreen = () => {
         }
 
         const hasMediaDiaDiffPct = Number.isFinite(mediaDiaDiffPctRaw);
-        const mediaDiaTrendArrow = mediaDiaDiffPctRaw > 0 ? '▲' : mediaDiaDiffPctRaw < 0 ? '▼' : '▶';
-        const mediaDiaTrendColor = mediaDiaDiffPctRaw > 0 ? '#22c55e' : mediaDiaDiffPctRaw < 0 ? '#ef4444' : '#9CA3AF';
+        const mediaDiaTrendPctText = `${mediaDiaDiffPctRaw > 0 ? '+' : ''}${mediaDiaDiffPctRaw.toFixed(1)}%`;
         const labelHasMedia = Boolean(mediaDiaText);
 
         // tentar obter percentual do payload; se não existir, calcular via dadosComVariacao pelo índice
@@ -733,8 +732,16 @@ const ProcessosScreen = () => {
                                     {mediaDiaText}
                                 </tspan>
                                 {hasMediaDiaDiffPct && (
-                                    <tspan dx="4" fill={mediaDiaTrendColor} fontSize="13" fontWeight="900">
-                                        {mediaDiaTrendArrow}
+                                    <tspan
+                                        dx="4"
+                                        fill="#22c55e"
+                                        stroke="#000000"
+                                        strokeWidth="0.6"
+                                        paintOrder="stroke"
+                                        fontSize="13"
+                                        fontWeight="900"
+                                    >
+                                        {mediaDiaTrendPctText}
                                     </tspan>
                                 )}
                             </>
@@ -760,8 +767,16 @@ const ProcessosScreen = () => {
                                 {mediaDiaText}
                             </tspan>
                             {hasMediaDiaDiffPct && (
-                                <tspan dx="4" fill={mediaDiaTrendColor} fontSize="13" fontWeight="900">
-                                    {mediaDiaTrendArrow}
+                                <tspan
+                                    dx="4"
+                                    fill="#22c55e"
+                                    stroke="#000000"
+                                    strokeWidth="0.6"
+                                    paintOrder="stroke"
+                                    fontSize="13"
+                                    fontWeight="900"
+                                >
+                                    {mediaDiaTrendPctText}
                                 </tspan>
                             )}
                         </>
