@@ -687,6 +687,11 @@ const ProcessosScreen = () => {
         const diasUteis = payload?.diasUteis || getDiasUteisByMesLabel(mesLabel);
         const mediaDiaCalc = payload?.mediaDia ?? (diasUteis ? (Number(value) / diasUteis) : null);
         const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`;
+        const mediaDiaDiffPctRaw = Number(payload?.mediaDiaDiffPct);
+        const hasMediaDiaDiffPct = Number.isFinite(mediaDiaDiffPctRaw);
+        const mediaDiaTrendArrow = mediaDiaDiffPctRaw > 0 ? '▲' : mediaDiaDiffPctRaw < 0 ? '▼' : '▶';
+        const mediaDiaTrendColor = mediaDiaDiffPctRaw > 0 ? '#22c55e' : mediaDiaDiffPctRaw < 0 ? '#ef4444' : '#9CA3AF';
+        const mediaDiaTrendPctText = `${mediaDiaDiffPctRaw > 0 ? '+' : ''}${mediaDiaDiffPctRaw.toFixed(1)}%`;
         const labelHasMedia = Boolean(mediaDiaText);
 
         // tentar obter percentual do payload; se não existir, calcular via dadosComVariacao pelo índice
@@ -714,6 +719,11 @@ const ProcessosScreen = () => {
                         {labelHasMedia && (
                             <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
                                 {mediaDiaText}
+                                {hasMediaDiaDiffPct && (
+                                    <tspan fill={mediaDiaTrendColor}>
+                                        {` ${mediaDiaTrendArrow} ${mediaDiaTrendPctText}`}
+                                    </tspan>
+                                )}
                             </tspan>
                         )}
                     </text>
@@ -734,6 +744,11 @@ const ProcessosScreen = () => {
                     {labelHasMedia && (
                         <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
                             {mediaDiaText}
+                            {hasMediaDiaDiffPct && (
+                                <tspan fill={mediaDiaTrendColor}>
+                                    {` ${mediaDiaTrendArrow} ${mediaDiaTrendPctText}`}
+                                </tspan>
+                            )}
                         </tspan>
                     )}
                 </text>
@@ -906,11 +921,30 @@ const ProcessosScreen = () => {
             });
         }
 
+        const dadosComMediaDia = dadosFiltrados
+            .map(withMediaDia)
+            .map((item, idx, arr) => {
+                const prevMediaDia = arr[idx - 1]?.mediaDia;
+                const mediaDiaAtual = item?.mediaDia;
+                const mediaDiaDiffPct = (
+                    Number.isFinite(Number(prevMediaDia)) &&
+                    Number(prevMediaDia) !== 0 &&
+                    Number.isFinite(Number(mediaDiaAtual))
+                )
+                    ? ((Number(mediaDiaAtual) - Number(prevMediaDia)) / Number(prevMediaDia)) * 100
+                    : null;
+
+                return {
+                    ...item,
+                    prevMediaDia: Number.isFinite(Number(prevMediaDia)) ? Number(prevMediaDia) : null,
+                    mediaDiaDiffPct
+                };
+            });
+
         if (visualizacao === 'anoAtual') {
             // Mostrar apenas meses do ano atual
-            return dadosFiltrados
-                .filter(item => item.mes.includes(anoSelecionado.toString()))
-                .map(withMediaDia);
+            return dadosComMediaDia
+                .filter(item => item.mes.includes(anoSelecionado.toString()));
         } else if (visualizacao === 'comparacao') {
             // Retorna dados separados por ano para mostrar 2 colunas lado a lado (apenas 2025 e 2026)
             const mesesOrdem = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
@@ -937,7 +971,7 @@ const ProcessosScreen = () => {
             return resultado;
         }
         // Retornar todos os dados (visualizacao === 'todos')
-        return dadosFiltrados.map(withMediaDia);
+        return dadosComMediaDia;
     };
 
     const getTop5Processos = () => {
