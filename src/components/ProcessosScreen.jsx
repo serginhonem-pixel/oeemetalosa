@@ -687,11 +687,23 @@ const ProcessosScreen = () => {
         const diasUteis = payload?.diasUteis || getDiasUteisByMesLabel(mesLabel);
         const mediaDiaCalc = payload?.mediaDia ?? (diasUteis ? (Number(value) / diasUteis) : null);
         const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`;
-        const mediaDiaDiffPctRaw = Number(payload?.mediaDiaDiffPct);
+
+        let mediaDiaDiffPctRaw = Number(payload?.mediaDiaDiffPct);
+        if (!Number.isFinite(mediaDiaDiffPctRaw) && typeof index === 'number' && index > 0) {
+            const prevMediaDia = Number(obterDadosFiltrados()?.[index - 1]?.mediaDia);
+            if (
+                Number.isFinite(prevMediaDia) &&
+                prevMediaDia !== 0 &&
+                Number.isFinite(Number(mediaDiaCalc))
+            ) {
+                mediaDiaDiffPctRaw = ((Number(mediaDiaCalc) - prevMediaDia) / prevMediaDia) * 100;
+            }
+        }
+
         const hasMediaDiaDiffPct = Number.isFinite(mediaDiaDiffPctRaw);
         const mediaDiaTrendArrow = mediaDiaDiffPctRaw > 0 ? '▲' : mediaDiaDiffPctRaw < 0 ? '▼' : '▶';
-        const mediaDiaTrendColor = mediaDiaDiffPctRaw > 0 ? '#22c55e' : mediaDiaDiffPctRaw < 0 ? '#ef4444' : '#9CA3AF';
         const mediaDiaTrendPctText = `${mediaDiaDiffPctRaw > 0 ? '+' : ''}${mediaDiaDiffPctRaw.toFixed(1)}%`;
+        const mediaDiaTrendText = hasMediaDiaDiffPct ? `${mediaDiaText} ${mediaDiaTrendArrow} ${mediaDiaTrendPctText}` : mediaDiaText;
         const labelHasMedia = Boolean(mediaDiaText);
 
         // tentar obter percentual do payload; se não existir, calcular via dadosComVariacao pelo índice
@@ -718,12 +730,7 @@ const ProcessosScreen = () => {
                         <tspan x={x + width / 2} dy="0">{formatted}</tspan>
                         {labelHasMedia && (
                             <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
-                                {mediaDiaText}
-                                {hasMediaDiaDiffPct && (
-                                    <tspan fill={mediaDiaTrendColor}>
-                                        {` ${mediaDiaTrendArrow} ${mediaDiaTrendPctText}`}
-                                    </tspan>
-                                )}
+                                {mediaDiaTrendText}
                             </tspan>
                         )}
                     </text>
@@ -743,12 +750,7 @@ const ProcessosScreen = () => {
                     <tspan x={x + width / 2} dy="0">{formatted}</tspan>
                     {labelHasMedia && (
                         <tspan x={x + width / 2} dy="18" fill="#FCD34D" fontSize="15" fontWeight="700">
-                            {mediaDiaText}
-                            {hasMediaDiaDiffPct && (
-                                <tspan fill={mediaDiaTrendColor}>
-                                    {` ${mediaDiaTrendArrow} ${mediaDiaTrendPctText}`}
-                                </tspan>
-                            )}
+                            {mediaDiaTrendText}
                         </tspan>
                     )}
                 </text>
