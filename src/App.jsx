@@ -1738,7 +1738,30 @@ try {
       data: toISODate(d.data), // ✅ normaliza
     };
   });
-  setHistoricoProducaoReal(listaProducao);
+  // Também tenta ler import do Access (CSV/XLSX) em produção para
+  // manter o dropdown de máquinas e os indicadores alinhados com o VBA.
+  let accessDataProd = null;
+  try {
+    accessDataProd = await loadAccessOeeFromCsv();
+  } catch (err) {
+    console.warn("Falha ao carregar Access em produção:", err);
+  }
+
+  const mergeById = (base = [], extra = []) => {
+    const map = new Map();
+    [...base, ...extra].forEach((item, idx) => {
+      const id = String(item?.id || "").trim() || `merged-${idx}`;
+      if (!map.has(id)) map.set(id, item);
+    });
+    return Array.from(map.values());
+  };
+
+  const producaoComAccess =
+    accessDataProd && Array.isArray(accessDataProd.producao)
+      ? mergeById(listaProducao, accessDataProd.producao)
+      : listaProducao;
+
+  setHistoricoProducaoReal(producaoComAccess);
   if (unsubProducao) unsubProducao();
   unsubProducao = onSnapshot(
     collection(db, "producao"),
@@ -1752,7 +1775,11 @@ try {
           data: toISODate(d.data),
         };
       });
-      setHistoricoProducaoReal(listaProducaoRt);
+      const producaoRtComAccess =
+        accessDataProd && Array.isArray(accessDataProd.producao)
+          ? mergeById(listaProducaoRt, accessDataProd.producao)
+          : listaProducaoRt;
+      setHistoricoProducaoReal(producaoRtComAccess);
     },
     (err) => {
       console.error("Erro ao assinar producao:", err);
@@ -1770,12 +1797,16 @@ try {
       data: toISODate(d.data), // ✅ se existir; se não existir fica ""
     };
   });
-  setHistoricoParadas(listaParadas);
+  const paradasComAccess =
+    accessDataProd && Array.isArray(accessDataProd.paradas)
+      ? mergeById(listaParadas, accessDataProd.paradas)
+      : listaParadas;
+  setHistoricoParadas(paradasComAccess);
 
   console.log("✅ Dados da nuvem carregados!", {
     romaneios: listaRomaneios.length,
-    producao: listaProducao.length,
-    paradas: listaParadas.length,
+    producao: producaoComAccess.length,
+    paradas: paradasComAccess.length,
     sampleProducaoData: listaProducao[0]?.data,
   });
 } catch (erro) {
