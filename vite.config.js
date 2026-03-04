@@ -34,8 +34,20 @@ const serveDataImportPlugin = () => ({
   },
 })
 
+const copyDataImportBuildPlugin = () => ({
+  name: 'copy-data-import-build',
+  apply: 'build',
+  closeBundle() {
+    const srcDir = path.resolve(process.cwd(), 'data-import')
+    const outDir = path.resolve(process.cwd(), 'dist', 'data-import')
+    if (!fs.existsSync(srcDir) || !fs.statSync(srcDir).isDirectory()) return
+    fs.mkdirSync(path.dirname(outDir), { recursive: true })
+    fs.cpSync(srcDir, outDir, { recursive: true, force: true })
+  },
+})
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), serveDataImportPlugin()],
+  plugins: [react(), serveDataImportPlugin(), copyDataImportBuildPlugin()],
   assetsInclude: ['**/*.xlsx'],
 })
