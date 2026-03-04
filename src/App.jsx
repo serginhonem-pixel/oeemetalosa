@@ -1149,6 +1149,7 @@ export default function App() {
   
   // Paradas
   const [historicoParadas, setHistoricoParadas] = useState([]);
+  const [maquinasOeeExtras, setMaquinasOeeExtras] = useState([]);
   const [dicionarioLocal, setDicionarioLocal] = useState(DICIONARIO_PARADAS || []);
   const [eventosParada, setEventosParada] = useState([]);
   const [slitterStockExt, setSlitterStockExt] = useState([]);
@@ -1664,6 +1665,7 @@ useEffect(() => {
           setFilaProducao(parsed.romaneios || []);
           setHistoricoProducaoReal(parsed.producao || []);
           setHistoricoParadas(parsed.paradas || []);
+          setMaquinasOeeExtras(parsed?.global?.maquinas || []);
           if (parsed.global) {
             localStorage.setItem(
               'local_config',
@@ -1691,6 +1693,8 @@ useEffect(() => {
 const localConfig = localStorage.getItem('local_config');
 const localMaq = localStorage.getItem('local_maquinas');
 const localLanc = localStorage.getItem('local_lancamentos');
+
+setMaquinasOeeExtras(localMaq ? JSON.parse(localMaq) : []);
 
 setGlobalDevSnapshot({
   config: localConfig ? JSON.parse(localConfig) : null,
@@ -1802,6 +1806,17 @@ try {
       ? mergeById(listaParadas, accessDataProd.paradas)
       : listaParadas;
   setHistoricoParadas(paradasComAccess);
+
+  try {
+    const globalMaqSnapshot = await getDocs(collection(db, "global_maquinas"));
+    const globalMaq = globalMaqSnapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    }));
+    setMaquinasOeeExtras(globalMaq);
+  } catch (err) {
+    console.warn("Falha ao buscar global_maquinas para OEE:", err);
+  }
 
   console.log("✅ Dados da nuvem carregados!", {
     romaneios: listaRomaneios.length,
@@ -6576,6 +6591,7 @@ const handleImportBackup = (json) => {
   <OeeDashboard
     historicoProducaoReal={historicoProducaoReal}
     historicoParadas={historicoParadas}
+    maquinasExtras={maquinasOeeExtras}
     dataInicioInd={dataInicioInd}
     dataFimInd={dataFimInd}
     capacidadeDiaria={capacidadeDiaria}

@@ -212,6 +212,7 @@ const StatCard = ({ icon: Icon, label, value, helper }) => (
 export default function OeeDashboard({
   historicoProducaoReal,
   historicoParadas,
+  maquinasExtras = [],
   dataInicioInd,
   dataFimInd,
   capacidadeDiaria,
@@ -277,10 +278,37 @@ export default function OeeDashboard({
   }, [rangeStartDraft, rangeEndDraft]);
 
   // Lista de mÃ¡quinas ativas
-  const maquinasCatalogo = useMemo(
-    () => CATALOGO_MAQUINAS.filter((m) => m.ativo),
-    []
-  );
+  const maquinasCatalogo = useMemo(() => {
+    const base = CATALOGO_MAQUINAS.filter((m) => m.ativo);
+    const extras = (Array.isArray(maquinasExtras) ? maquinasExtras : []).map((m, idx) => {
+      const nome = String(
+        m?.nomeExibicao || m?.nome || m?.maquina || m?.maquinaNome || ""
+      ).trim();
+      const id = String(m?.maquinaId || m?.id || nome || `EXTRA_${idx + 1}`).trim();
+      return {
+        maquinaId: id,
+        nomeExibicao: nome || id,
+        ativo: true,
+      };
+    });
+
+    const byKey = new Map();
+    [...base, ...extras].forEach((m) => {
+      const id = String(m?.maquinaId || m?.id || "").trim();
+      const nome = String(m?.nomeExibicao || m?.nome || "").trim();
+      const key = normalizeMachineToken(id || nome);
+      if (!key) return;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          maquinaId: id || nome,
+          nomeExibicao: nome || id,
+          ativo: true,
+        });
+      }
+    });
+
+    return Array.from(byKey.values());
+  }, [maquinasExtras]);
 
   const maquinasDisponiveis = useMemo(() => {
     const byId = new Map();
