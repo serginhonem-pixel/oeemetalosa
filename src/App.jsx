@@ -1813,7 +1813,27 @@ try {
       id: docSnap.id,
       ...docSnap.data(),
     }));
-    setMaquinasOeeExtras(globalMaq);
+    let extrasOee = globalMaq;
+
+    if (!extrasOee.length) {
+      const lancSnapshot = await getDocs(collection(db, "global_lancamentos"));
+      const nomes = new Map();
+      lancSnapshot.docs.forEach((docSnap) => {
+        const d = docSnap.data() || {};
+        const nome = String(d.maquina || "").trim();
+        if (!nome) return;
+        const key = normalizeMachineToken(nome);
+        if (!key || nomes.has(key)) return;
+        nomes.set(key, {
+          id: `LANC_${key}`,
+          nome,
+          nomeExibicao: nome,
+        });
+      });
+      extrasOee = Array.from(nomes.values());
+    }
+
+    setMaquinasOeeExtras(extrasOee);
   } catch (err) {
     console.warn("Falha ao buscar global_maquinas para OEE:", err);
   }
