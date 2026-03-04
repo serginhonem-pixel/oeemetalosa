@@ -472,19 +472,26 @@ export default function OeeDashboard({
           ISO_DATE_RE.test(itemISO) && itemISO >= rangeStartFilter && itemISO <= rangeEndFilter;
         
         // 2. Filtro de MÃ¡quina (aceita id ou nome)
-        const idRegistro = String(item.maquinaId || item.maquinaid || item.maquina || "").trim();
-        const nomeRegistro = String(item.maquinaNome || item.maquinaExibicao || item.maquina || "").trim();
+        const machineCandidates = [
+          item.maquinaId,
+          item.maquinaid,
+          item.maquina,
+          item.maquinaNome,
+          item.maquinaExibicao,
+          item.nomeMaquina,
+          item.equipamento,
+          item.eqp,
+        ];
+        const machineTokens = machineCandidates
+          .map((value) => normalizeMachineToken(value))
+          .filter(Boolean);
         const tokenSelecionado = normalizeMachineToken(maquinaId);
         const tokenNomeSelecionado = normalizeMachineToken(nomeSelecionado);
-        const tokenIdRegistro = normalizeMachineToken(idRegistro);
-        const tokenNomeRegistro = normalizeMachineToken(nomeRegistro);
+        const selectedTokens = [tokenSelecionado, tokenNomeSelecionado].filter(Boolean);
 
         const maquinaOk =
           !maquinaId ||
-          tokenIdRegistro === tokenSelecionado ||
-          tokenNomeRegistro === tokenSelecionado ||
-          (!!tokenNomeSelecionado &&
-            (tokenIdRegistro === tokenNomeSelecionado || tokenNomeRegistro === tokenNomeSelecionado));
+          selectedTokens.some((tkSel) => machineTokens.some((tkReg) => tkReg === tkSel));
 
         const isProducao =
           "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
@@ -531,23 +538,31 @@ export default function OeeDashboard({
     }
 
     const paradasFiltradas = Array.isArray(historicoParadas)
-      ? historicoParadas
-          .filter(filterData)
-          .filter((item) => {
-            const iso = normalizeISODateInput(item.data);
-            return ISO_DATE_RE.test(iso) && diasContados.has(iso);
-          })
+      ? historicoParadas.filter(filterData)
       : [];
 
     // --- CÃLCULO DE PARADAS ---
-    // Filtra apenas perdas reais (exclui TU001 que Ã© produÃ§Ã£o)
-    const perdasDeDisponibilidade = paradasFiltradas.filter(p => {
-      const codMotivo = String(p.codMotivo || p.motivoCodigo || '').toUpperCase(); 
-      return codMotivo !== 'TU001'; 
-    });
+    // Filtra apenas perdas reais (exclui TU001 que é produção)
+    const isPerdaReal = (p) => {
+      const codMotivo = String(p.codMotivo || p.motivoCodigo || "")
+        .trim()
+        .toUpperCase();
+      return codMotivo !== "TU001";
+    };
+    const perdasDeDisponibilidade = paradasFiltradas.filter(isPerdaReal);
 
     const getDuracaoMin = (p) => {
-      const direto = Number(p.duracao) || Number(p.duracaoMinutos);
+      const parseMinutes = (value) => {
+        if (value == null) return 0;
+        if (typeof value === "number" && Number.isFinite(value)) return value;
+        const raw = String(value).trim().replace(",", ".");
+        const num = Number(raw);
+        if (Number.isFinite(num)) return num;
+        const match = raw.match(/-?\d+(\.\d+)?/);
+        return match ? Number(match[0]) : 0;
+      };
+
+      const direto = parseMinutes(p.duracao) || parseMinutes(p.duracaoMinutos);
       if (direto) return direto;
 
       const paraMin = (hhmm) => {
@@ -561,6 +576,15 @@ export default function OeeDashboard({
       const diff = paraMin(fim) - paraMin(inicio);
       return diff > 0 ? diff : 0;
     };
+
+    const perdasBase = perdasDeDisponibilidade.length
+      ? perdasDeDisponibilidade
+      : (Array.isArray(historicoParadas)
+          ? historicoParadas.filter((item) =>
+              filterData(item, startISO, endISO, { ignoreOriginExclusion: true })
+            )
+          : []
+        ).filter(isPerdaReal);
 
     const summarizePeriod = (snapshotStartISO, snapshotEndISO) => {
       const snapshotStart = parseISODate(snapshotStartISO);
@@ -604,12 +628,9 @@ export default function OeeDashboard({
       }
 
       const paradas = Array.isArray(historicoParadas)
-        ? historicoParadas
-            .filter((item) => filterData(item, snapshotStartISO, snapshotEndISO))
-            .filter((item) => {
-              const iso = normalizeISODateInput(item.data);
-              return ISO_DATE_RE.test(iso) && diasContadosSnapshot.has(iso);
-            })
+        ? historicoParadas.filter((item) =>
+            filterData(item, snapshotStartISO, snapshotEndISO)
+          )
         : [];
 
       const perdas = paradas.filter((p) => {
@@ -619,8 +640,8 @@ export default function OeeDashboard({
 
       const paradasPorDiaSnapshot = new Map();
       perdas.forEach((p) => {
-        const iso = normalizeISODateInput(p.data);
-        if (!ISO_DATE_RE.test(iso) || !diasContadosSnapshot.has(iso)) return;
+        const iso = getItemDateISO(p);
+        if (!ISO_DATE_RE.test(iso)) return;
         paradasPorDiaSnapshot.set(
           iso,
           (paradasPorDiaSnapshot.get(iso) || 0) + getDuracaoMin(p)
@@ -689,16 +710,16 @@ export default function OeeDashboard({
     };
 
     const paradasPorDia = new Map();
-    perdasDeDisponibilidade.forEach((p) => {
-      const iso = normalizeISODateInput(p.data);
-      if (!ISO_DATE_RE.test(iso) || !diasContados.has(iso)) return;
+    perdasBase.forEach((p) => {
+      const iso = getItemDateISO(p);
+      if (!ISO_DATE_RE.test(iso)) return;
       paradasPorDia.set(iso, (paradasPorDia.get(iso) || 0) + getDuracaoMin(p));
     });
 
     const diasNoPeriodo = new Set([...prodDiasSet, ...paradasPorDia.keys()]).size;
     const tempoTotalTurnoMin = diasNoPeriodo * (Number(turnoHoras) || 0) * 60;
 
-    const tempoParadoMin = perdasDeDisponibilidade.reduce(
+    const tempoParadoMin = perdasBase.reduce(
       (acc, p) => acc + getDuracaoMin(p),
       0
     );
@@ -787,12 +808,7 @@ export default function OeeDashboard({
 
     // --- PARETO (TOP 5) ---
     const motivosMap = {};
-    const perdasParaPareto = perdasDeDisponibilidade.length
-      ? perdasDeDisponibilidade
-      : paradasFiltradas.filter((p) => {
-          const codMotivo = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
-          return codMotivo !== "TU001";
-        });
+    const perdasParaPareto = perdasBase;
 
     perdasParaPareto.forEach((p) => {
       const key = p.descMotivo || p.descNorm || "Motivo não informado";
@@ -800,32 +816,10 @@ export default function OeeDashboard({
       motivosMap[key] = (motivosMap[key] || 0) + dur;
     });
 
-    let paretoParadasData = Object.entries(motivosMap)
+    const paretoParadasData = Object.entries(motivosMap)
       .map(([motivo, duracao]) => ({ motivo, duracao }))
       .sort((a, b) => b.duracao - a.duracao)
       .slice(0, 5);
-
-    // Fallback defensivo: se o fluxo principal zerar indevidamente,
-    // recalcula o Pareto direto do histórico filtrado por data/máquina.
-    if (!paretoParadasData.length && Array.isArray(historicoParadas)) {
-      const motivosFallback = {};
-      historicoParadas
-        .filter((item) => filterData(item, startISO, endISO, { ignoreOriginExclusion: true }))
-        .forEach((p) => {
-          const codMotivo = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
-          if (codMotivo === "TU001") return;
-          const key = p.descMotivo || p.descNorm || "Motivo não informado";
-          const dur = getDuracaoMin(p);
-          if (dur > 0) {
-            motivosFallback[key] = (motivosFallback[key] || 0) + dur;
-          }
-        });
-
-      paretoParadasData = Object.entries(motivosFallback)
-        .map(([motivo, duracao]) => ({ motivo, duracao }))
-        .sort((a, b) => b.duracao - a.duracao)
-        .slice(0, 5);
-    }
 
     // OEE
     const diasPerformance = new Set([...prodDiasSet, ...paradasPorDia.keys()]);
@@ -909,7 +903,6 @@ export default function OeeDashboard({
   const deltaDisp = disponibilidade - Number(previousSnapshot?.disponibilidade || 0);
   const deltaPerf = performance - Number(previousSnapshot?.performance || 0);
   const deltaQual = qualidade - Number(previousSnapshot?.qualidade || 0);
-  const deltaKg = producaoTotalKg - Number(previousSnapshot?.producaoTotalKg || 0);
 
   // --- LABEL CUSTOMIZADO (BARRAS) ---
   const renderProdLabel = (props) => {
@@ -1190,41 +1183,6 @@ export default function OeeDashboard({
           value={`${tempoTotalTurnoMin.toFixed(0)} min`}
           helper={`${turnoHoras}h × ${diasNoPeriodo || 0} dia(s)`}
         />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
-            Comparativo OEE
-          </p>
-          <p className="text-lg font-bold text-white mt-1">{formatDelta(deltaOee)}</p>
-          <p className="text-[11px] text-zinc-500 mt-1">
-            Atual {oeeGlobal.toFixed(1)}% | anterior{" "}
-            {Number(previousSnapshot?.oeeGlobal || 0).toFixed(1)}%
-          </p>
-        </div>
-        <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
-            Comparativo Performance
-          </p>
-          <p className="text-lg font-bold text-white mt-1">{formatDelta(deltaPerf)}</p>
-          <p className="text-[11px] text-zinc-500 mt-1">
-            Atual {performance.toFixed(1)}% | anterior{" "}
-            {Number(previousSnapshot?.performance || 0).toFixed(1)}%
-          </p>
-        </div>
-        <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
-            Comparativo Producao
-          </p>
-          <p className="text-lg font-bold text-white mt-1">
-            {deltaKg >= 0 ? "+" : ""}
-            {deltaKg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg
-          </p>
-          <p className="text-[11px] text-zinc-500 mt-1">
-            Atual {producaoTotalKg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg
-          </p>
-        </div>
       </div>
 
       {/* OBSERVAÃ‡ÃƒO */}
