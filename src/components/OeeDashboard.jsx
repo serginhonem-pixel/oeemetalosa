@@ -86,6 +86,20 @@ const normalizeMachineToken = (value) =>
     .replace(/[^a-zA-Z0-9]+/g, "")
     .toUpperCase();
 
+const normalizeProductCode = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase();
+
+const normalizeTextToken = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
 // ---------- HELPERS ----------
 
 const formatDateBR = (iso) => {
@@ -310,53 +324,23 @@ export default function OeeDashboard({
     return Array.from(byKey.values());
   }, [maquinasExtras]);
 
-  const maquinasDisponiveis = useMemo(() => {
-    const byId = new Map();
-
-    maquinasCatalogo.forEach((m) => {
-      const id = String(m.maquinaId || m.id || m.nomeExibicao || "").trim();
-      if (!id) return;
-      byId.set(id, {
-        id,
-        nomeExibicao: String(m.nomeExibicao || id),
-      });
-    });
-
-    const allRows = [
-      ...(Array.isArray(historicoProducaoReal) ? historicoProducaoReal : []),
-      ...(Array.isArray(historicoParadas) ? historicoParadas : []),
-    ];
-
-    allRows.forEach((item) => {
-      const rawId = String(item?.maquinaId || item?.maquinaid || "").trim();
-      const rawNome = String(
-        item?.maquinaNome || item?.maquinaExibicao || item?.maquina || item?.equipamento || ""
-      ).trim();
-      const resolved = rawId || rawNome;
-      if (!resolved) return;
-
-      const fromCatalog = maquinasCatalogo.find((m) => {
-        const cId = String(m.maquinaId || m.id || "").trim();
-        const cNome = String(m.nomeExibicao || "").trim();
-        const tkRawId = normalizeMachineToken(rawId);
-        const tkRawNome = normalizeMachineToken(rawNome);
-        const tkId = normalizeMachineToken(cId);
-        const tkNome = normalizeMachineToken(cNome);
-        return (
-          (tkRawId && (tkRawId === tkId || tkRawId === tkNome)) ||
-          (tkRawNome && (tkRawNome === tkId || tkRawNome === tkNome))
-        );
-      });
-
-      const id = String(fromCatalog?.maquinaId || fromCatalog?.id || resolved).trim();
-      const nomeExibicao = String(fromCatalog?.nomeExibicao || rawNome || id).trim();
-      byId.set(id, { id, nomeExibicao });
-    });
-
-    return Array.from(byId.values()).sort((a, b) =>
-      String(a.nomeExibicao).localeCompare(String(b.nomeExibicao), "pt-BR")
-    );
-  }, [maquinasCatalogo, historicoProducaoReal, historicoParadas]);
+  const maquinasDisponiveis = useMemo(
+    () =>
+      maquinasCatalogo
+        .map((m) => {
+          const id = String(m.maquinaId || m.id || m.nomeExibicao || "").trim();
+          if (!id) return null;
+          return {
+            id,
+            nomeExibicao: String(m.nomeExibicao || id),
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) =>
+          String(a.nomeExibicao).localeCompare(String(b.nomeExibicao), "pt-BR")
+        ),
+    [maquinasCatalogo]
+  );
 
   const applyVelocidade = () => {
     const parsed = Number(velocidadeDraft);
@@ -484,6 +468,51 @@ export default function OeeDashboard({
       : null;
     const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao || "";
     const turnoMin = (Number(turnoHoras) || 0) * 60;
+    const capacidadeKgDia = Number(capacidadeDiaria) || 0;
+    const capacidadeKgMin = turnoMin > 0 ? capacidadeKgDia / turnoMin : 0;
+    const produtoByCode = new Map(
+      (Array.isArray(CATALOGO_PRODUTOS) ? CATALOGO_PRODUTOS : []).map((p) => [
+        normalizeProductCode(p?.cod),
+        p,
+      ])
+    );
+    const produtoByDesc = new Map(
+      (Array.isArray(CATALOGO_PRODUTOS) ? CATALOGO_PRODUTOS : []).map((p) => [
+        normalizeTextToken(p?.desc),
+        p,
+      ])
+    );
+    const getProdutoInfo = (cod) => produtoByCode.get(normalizeProductCode(cod));
+    const getProdutoFromItem = (item) => {
+      const codeCandidates = [
+        item?.cod,
+        item?.codigo,
+        item?.CODIGO,
+        item?.codProduto,
+        item?.produtoCodigo,
+      ];
+      for (const code of codeCandidates) {
+        const foundByCode = getProdutoInfo(code);
+        if (foundByCode) return foundByCode;
+      }
+      const descCandidates = [item?.desc, item?.descricao, item?.DESCRICAO];
+      for (const desc of descCandidates) {
+        const foundByDesc = produtoByDesc.get(normalizeTextToken(desc));
+        if (foundByDesc) return foundByDesc;
+      }
+      return null;
+    };
+    const calcPerformancePercent = (metros, kg, tempoMin) => {
+      const idealMetros = tempoMin * velocidadeMpm;
+      if (idealMetros > 0 && metros > 0) {
+        return (metros / idealMetros) * 100;
+      }
+      const idealKg = tempoMin * capacidadeKgMin;
+      if (idealKg > 0 && kg > 0) {
+        return (kg / idealKg) * 100;
+      }
+      return 0;
+    };
 
     // --- FUNÃ‡ÃƒO DE FILTRO CENTRALIZADA (CORRIGIDA) ---
     const filterData = (
@@ -698,7 +727,7 @@ export default function OeeDashboard({
       let producaoTotalKgSnapshot = 0;
       prod.forEach((item) => {
         const qtd = Number(item.qtd) || 0;
-        const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
+        const prodInfo = getProdutoFromItem(item);
         const compRegistro = Number(item.comp || item.compMetros || 0);
         const compCatalogo = Number(prodInfo?.comp || 0);
         const comp =
@@ -717,10 +746,11 @@ export default function OeeDashboard({
         producaoTotalKgSnapshot += peso;
       });
 
-      const performanceSnapshot =
-        tempoRodandoSnapshot > 0
-          ? (producaoTotalMetrosSnapshot / (tempoRodandoSnapshot * velocidadeMpm)) * 100
-          : 0;
+      const performanceSnapshot = calcPerformancePercent(
+        producaoTotalMetrosSnapshot,
+        producaoTotalKgSnapshot,
+        tempoRodandoSnapshot
+      );
       const qualidadeSnapshot = 100;
       const oeeSnapshot =
         (disponibilidadeSnapshot / 100) *
@@ -786,7 +816,7 @@ export default function OeeDashboard({
     prodFiltrada.forEach((item) => {
       const iso = getItemDateISO(item);
       const qtd = Number(item.qtd) || 0;
-      const prodInfo = CATALOGO_PRODUTOS.find((p) => p.cod === item.cod);
+      const prodInfo = getProdutoFromItem(item);
       const compRegistro = Number(item.comp || item.compMetros || 0);
       const compCatalogo = Number(prodInfo?.comp || 0);
       const comp =
@@ -857,11 +887,11 @@ export default function OeeDashboard({
       0
     );
     const tempoRodandoMinPerf = Math.max(0, tempoTotalTurnoMinPerf - tempoParadoMinPerf);
-    const producaoIdealMetros = tempoRodandoMinPerf * velocidadeMpm;
-    const performance =
-      producaoIdealMetros > 0
-        ? (producaoTotalMetros / producaoIdealMetros) * 100
-        : 0;
+    const performance = calcPerformancePercent(
+      producaoTotalMetros,
+      producaoTotalKg,
+      tempoRodandoMinPerf
+    );
     const qualidade = 100;
     const oeeGlobal =
       (disponibilidade / 100) * (performance / 100) * (qualidade / 100) * 100;
@@ -918,6 +948,7 @@ export default function OeeDashboard({
     dataFimInd,
     historicoProducaoReal,
     historicoParadas,
+    capacidadeDiaria,
     turnoHoras,
     velocidadeMpm,
     maquinaId, // IMPORTANTE: Recalcula tudo quando troca a mÃ¡quina

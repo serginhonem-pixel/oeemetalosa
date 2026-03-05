@@ -1482,6 +1482,28 @@ const normalizeMachineToken = (value) =>
     .replace(/[^a-zA-Z0-9]+/g, "")
     .toUpperCase();
 
+const buildOeeMachineExtras = (rows = []) => {
+  const byKey = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((item) => {
+    const maquinaId = String(item?.maquinaId || "").trim();
+    const maquinaNome = String(
+      item?.maquinaNome || item?.maquinaExibicao || item?.maquina || item?.equipamento || ""
+    ).trim();
+    const id = maquinaId || maquinaNome;
+    const nomeExibicao = maquinaNome || maquinaId;
+    const key = normalizeMachineToken(id || nomeExibicao);
+    if (!key || byKey.has(key)) return;
+    byKey.set(key, {
+      id: `VBA_${key}`,
+      maquinaId: id,
+      nomeExibicao: nomeExibicao || id,
+      nome: nomeExibicao || id,
+      ativo: true,
+    });
+  });
+  return Array.from(byKey.values());
+};
+
 const toMinFromHHmm = (hhmm) => {
   if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return 0;
   const [h, m] = hhmm.split(":").map((v) => Number(v));
@@ -1651,6 +1673,9 @@ useEffect(() => {
           });
           setHistoricoProducaoReal(accessData.producao);
           setHistoricoParadas(accessData.paradas);
+          setMaquinasOeeExtras(
+            buildOeeMachineExtras([...(accessData.producao || []), ...(accessData.paradas || [])])
+          );
           setDadosCarregados(true);
           return;
         }
@@ -1665,7 +1690,9 @@ useEffect(() => {
           setFilaProducao(parsed.romaneios || []);
           setHistoricoProducaoReal(parsed.producao || []);
           setHistoricoParadas(parsed.paradas || []);
-          setMaquinasOeeExtras(parsed?.global?.maquinas || []);
+          setMaquinasOeeExtras(
+            buildOeeMachineExtras([...(parsed.producao || []), ...(parsed.paradas || [])])
+          );
           if (parsed.global) {
             localStorage.setItem(
               'local_config',
@@ -1694,7 +1721,9 @@ const localConfig = localStorage.getItem('local_config');
 const localMaq = localStorage.getItem('local_maquinas');
 const localLanc = localStorage.getItem('local_lancamentos');
 
-setMaquinasOeeExtras(localMaq ? JSON.parse(localMaq) : []);
+setMaquinasOeeExtras(
+  buildOeeMachineExtras([...(dadosLocais.producao || []), ...(dadosLocais.paradas || [])])
+);
 
 setGlobalDevSnapshot({
   config: localConfig ? JSON.parse(localConfig) : null,
@@ -1807,36 +1836,40 @@ try {
       : listaParadas;
   setHistoricoParadas(paradasComAccess);
 
-  try {
-    const globalMaqSnapshot = await getDocs(collection(db, "global_maquinas"));
-    const globalMaq = globalMaqSnapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...docSnap.data(),
-    }));
-    let extrasOee = globalMaq;
+  const maquinasVba = (() => {
+    const byKey = new Map();
+    const rowsAccess = [
+      ...(Array.isArray(accessDataProd?.producao) ? accessDataProd.producao : []),
+      ...(Array.isArray(accessDataProd?.paradas) ? accessDataProd.paradas : []),
+    ];
+    const rowsFallback = [
+      ...(Array.isArray(producaoComAccess) ? producaoComAccess : []),
+      ...(Array.isArray(paradasComAccess) ? paradasComAccess : []),
+    ];
+    const rows = rowsAccess.length ? rowsAccess : rowsFallback;
 
-    if (!extrasOee.length) {
-      const lancSnapshot = await getDocs(collection(db, "global_lancamentos"));
-      const nomes = new Map();
-      lancSnapshot.docs.forEach((docSnap) => {
-        const d = docSnap.data() || {};
-        const nome = String(d.maquina || "").trim();
-        if (!nome) return;
-        const key = normalizeMachineToken(nome);
-        if (!key || nomes.has(key)) return;
-        nomes.set(key, {
-          id: `LANC_${key}`,
-          nome,
-          nomeExibicao: nome,
-        });
+    rows.forEach((item) => {
+      const maquinaId = String(item?.maquinaId || "").trim();
+      const maquinaNome = String(
+        item?.maquinaNome || item?.maquinaExibicao || item?.maquina || item?.equipamento || ""
+      ).trim();
+      const id = maquinaId || maquinaNome;
+      const nomeExibicao = maquinaNome || maquinaId;
+      const key = normalizeMachineToken(id || nomeExibicao);
+      if (!key || byKey.has(key)) return;
+      byKey.set(key, {
+        id: `VBA_${key}`,
+        maquinaId: id,
+        nomeExibicao: nomeExibicao || id,
+        nome: nomeExibicao || id,
+        ativo: true,
       });
-      extrasOee = Array.from(nomes.values());
-    }
+    });
 
-    setMaquinasOeeExtras(extrasOee);
-  } catch (err) {
-    console.warn("Falha ao buscar global_maquinas para OEE:", err);
-  }
+    return Array.from(byKey.values());
+  })();
+
+  setMaquinasOeeExtras(maquinasVba);
 
   console.log("✅ Dados da nuvem carregados!", {
     romaneios: listaRomaneios.length,
