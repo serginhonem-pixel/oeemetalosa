@@ -29,7 +29,7 @@ import {
   Download, Factory, FileText, History, Layers, Layout,
   LogOut, Package, Pencil, Plus, PlusCircle, Scale, Search, Trash2, User,
   TrendingDown, TrendingUp,
-  Upload, X
+  Upload, X, Zap
 } from 'lucide-react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
@@ -81,6 +81,7 @@ const DEV_VIEW_STORAGE_KEY = `${DEV_CACHE_KEY}:viewMode`;
 
 import ProcessosScreen from './components/ProcessosScreen';
 import CadastroScreen from './components/CadastroScreen';
+import InsightsScreen from './components/InsightsScreen';
 
 const LoginScreen = ({ onLogin, onResetPassword, error, info, pending }) => {
   const [email, setEmail] = useState('');
@@ -5738,6 +5739,9 @@ const handleImportBackup = (json) => {
             {effectiveViewMode !== 'comercial' && (
               <BotaoMenu ativo={abaAtiva === 'oee'} onClick={() => setAbaAtiva('oee')} icon={<Activity size={20} />} label="OEE" />
             )}
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'insights'} onClick={() => setAbaAtiva('insights')} icon={<Zap size={20} />} label="Insights" />
+            )}
 
             {effectiveViewMode !== 'comercial' && (
               <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
@@ -6652,6 +6656,19 @@ const handleImportBackup = (json) => {
   />
 )}
 
+
+          {/* ABA INSIGHTS */}
+          {abaAtiva === 'insights' && (
+  <InsightsScreen
+    historicoProducaoReal={historicoProducaoReal}
+    historicoParadas={historicoParadas}
+    maquinasExtras={maquinasOeeExtras}
+    dataInicioInd={dataInicioInd}
+    dataFimInd={dataFimInd}
+    capacidadeDiaria={capacidadeDiaria}
+    turnoHoras={turnoHoras}
+  />
+)}
 
           {/* ABA CARGA MÁQUINA */}
           {abaAtiva === 'indicadores' && (
