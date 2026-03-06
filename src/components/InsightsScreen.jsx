@@ -191,6 +191,35 @@ export default function InsightsScreen({
     return map;
   }, [maquinasCatalogo]);
 
+  // Map any alias token (from id or display name) to the canonical token (from maquinaId)
+  const aliasToCanonical = useMemo(() => {
+    const map = new Map();
+    maquinasCatalogo.forEach((m) => {
+      const canonical = normalizeMachineToken(m.maquinaId);
+      if (!canonical) return;
+      map.set(canonical, canonical);
+      const nameToken = normalizeMachineToken(m.nomeExibicao);
+      if (nameToken && !map.has(nameToken)) map.set(nameToken, canonical);
+    });
+    return map;
+  }, [maquinasCatalogo]);
+
+  const resolveCanonicalToken = (item) => {
+    const candidates = [item.maquinaId, item.maquinaid, item.maquina, item.maquinaNome, item.maquinaExibicao, item.nomeMaquina, item.equipamento, item.eqp];
+    for (const c of candidates) {
+      const tk = normalizeMachineToken(c);
+      if (!tk) continue;
+      const canonical = aliasToCanonical.get(tk);
+      if (canonical) return canonical;
+    }
+    // fallback: return first non-empty token even if not in catalog
+    for (const c of candidates) {
+      const tk = normalizeMachineToken(c);
+      if (tk) return tk;
+    }
+    return "";
+  };
+
   const getMachineName = (token) => machineTokenToName.get(token) || token;
 
   // ── produto lookup ──
@@ -257,7 +286,7 @@ export default function InsightsScreen({
     };
 
     prod.forEach((item) => {
-      const tk = getItemMachineToken(item);
+      const tk = resolveCanonicalToken(item);
       if (!tk) return;
       const st = ensureMachine(tk);
       const iso = getItemDateISO(item);
@@ -280,7 +309,7 @@ export default function InsightsScreen({
     });
 
     perdas.forEach((p) => {
-      const tk = getItemMachineToken(p);
+      const tk = resolveCanonicalToken(p);
       if (!tk) return;
       const st = ensureMachine(tk);
       const iso = getItemDateISO(p);
@@ -362,7 +391,7 @@ export default function InsightsScreen({
     });
 
     perdas.forEach((p) => {
-      const tk = getItemMachineToken(p);
+      const tk = resolveCanonicalToken(p);
       const motivo = p.descMotivo || p.descNorm || "Motivo não informado";
       if (!heatmapMotivos.includes(motivo)) return;
       const rowIdx = heatmapMachines.indexOf(tk);
