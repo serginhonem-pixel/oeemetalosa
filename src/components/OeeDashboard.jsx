@@ -36,6 +36,8 @@ const META_KPIS = {
 const ORIGENS_EXCLUIDAS_OEE = new Set([
   "FINALIZACAO_ORDEM",
   "FINALIZACAO_RAPIDA",
+  "PCP_ESTOQUE",
+  "AJUSTE_ESTOQUE",
 ]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const BR_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
