@@ -33,11 +33,9 @@ const META_KPIS = {
   performance: 75,
   qualidade: 99,
 };
-const ORIGENS_EXCLUIDAS_OEE = new Set([
-  "FINALIZACAO_ORDEM",
-  "FINALIZACAO_RAPIDA",
-  "PCP_ESTOQUE",
-  "AJUSTE_ESTOQUE",
+const ORIGENS_PERMITIDAS_OEE = new Set([
+  "",
+  "ACCESS_SYNC",
 ]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const BR_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
@@ -558,7 +556,7 @@ export default function OeeDashboard({
         const origemOk =
           ignoreOriginExclusion ||
           !isProducao ||
-          !ORIGENS_EXCLUIDAS_OEE.has(origem);
+          ORIGENS_PERMITIDAS_OEE.has(origem);
 
         return dataOk && maquinaOk && origemOk;
     };
