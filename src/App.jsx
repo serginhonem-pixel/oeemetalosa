@@ -2504,7 +2504,7 @@ const handleDownloadModeloParadas = () => {
     }
   };
 
-  const salvarAjusteEstoque = async ({ cod, desc, comp, qtd }) => {
+  const salvarAjusteEstoque = async ({ cod, desc, comp, qtd, pesoTotalOverride }) => {
     const quantidade = parseNumberBR(qtd);
     if (!Number.isFinite(quantidade) || quantidade === 0) {
       alert('Quantidade invalida.');
@@ -2523,7 +2523,7 @@ const handleDownloadModeloParadas = () => {
         ? (produto.kgMetro || 0) * compNumero
         : produto.pesoUnit || 0
       : 0;
-    const pesoTotal = pesoPorPeca * quantidade;
+    const pesoTotal = pesoTotalOverride != null ? pesoTotalOverride : pesoPorPeca * quantidade;
     const agoraISO = new Date().toISOString();
 
     const obj = {
@@ -2601,18 +2601,20 @@ const handleDownloadModeloParadas = () => {
 
   const excluirItemEstoque = async (item) => {
     const saldoAtual = Number(item?.saldoQtd || 0);
-    if (!saldoAtual) {
+    if (saldoAtual <= 0) {
       alert('Item sem saldo para excluir.');
       return;
     }
     const ok = window.confirm('Excluir este item do estoque? Isso zera o saldo.');
     if (!ok) return;
 
+    const saldoKgAtual = Number(item?.saldoKg || 0);
     const salvou = await salvarAjusteEstoque({
       cod: item?.cod,
       desc: item?.desc,
       comp: item?.comp,
       qtd: -saldoAtual,
+      pesoTotalOverride: -saldoKgAtual,
     });
 
     if (salvou) {
@@ -4571,6 +4573,14 @@ const parseNumberBR = (v) => {
       const peso = Number(item.pesoTotal || 0);
       saldoPorCod[item.cod] = (saldoPorCod[item.cod] || 0) + qtd;
       saldoKgPorCod[item.cod] = (saldoKgPorCod[item.cod] || 0) + peso;
+    });
+
+    // Garante que saldos nunca fiquem negativos
+    Object.keys(saldoPorCod).forEach((cod) => {
+      saldoPorCod[cod] = Math.max(0, saldoPorCod[cod]);
+    });
+    Object.keys(saldoKgPorCod).forEach((cod) => {
+      saldoKgPorCod[cod] = Math.max(0, saldoKgPorCod[cod]);
     });
 
     return { saldoPorCod, saldoKgPorCod };
