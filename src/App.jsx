@@ -4923,7 +4923,9 @@ const parseNumberBR = (v) => {
     }
 
     if (demandaBase > 0) {
-      const diasCobertura = saldoKg / demandaBase;
+      const diasCobertura = usarUnidade
+        ? saldoQtd / demandaBase
+        : saldoKg / demandaBase;
       if (diasCobertura <= 3) {
         return {
           label: 'Critico',
