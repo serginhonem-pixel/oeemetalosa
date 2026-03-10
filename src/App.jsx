@@ -2513,7 +2513,7 @@ const handleDownloadModeloParadas = () => {
 
     const produto = CATALOGO_PRODUTOS?.find((p) => p.cod === cod);
     const compNumero = parseFloat(comp) || produto?.comp || 0;
-    if (produto?.custom && !compNumero) {
+    if (produto?.custom && !compNumero && quantidade > 0) {
       alert('Informe o comprimento (m) para itens sob medida.');
       return false;
     }
