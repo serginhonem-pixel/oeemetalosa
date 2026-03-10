@@ -4884,11 +4884,17 @@ const parseNumberBR = (v) => {
     const demandaBase = Number(estudo.demandaDiaria || 0);
     const estoqueMaxBase = Number(estudo.estoqueMaximo || 0);
     const pesoUnit = Number(item.pesoUnit || 0);
-    const usaConversaoKg = unidade === 'pc' && pesoUnit;
-    const estoqueMaxKg = usaConversaoKg ? estoqueMaxBase * pesoUnit : estoqueMaxBase;
 
-    if (estoqueMaxKg > 0) {
-      const ratio = saldoKg / estoqueMaxKg;
+    // Decide se calcula por kg ou por unidade
+    // Se não há saldoKg confiável (zero mas tem qtd), usa unidade diretamente
+    const usarUnidade = saldoKg === 0 && saldoQtd > 0;
+
+    if (estoqueMaxBase > 0) {
+      const ratio = usarUnidade
+        ? saldoQtd / estoqueMaxBase
+        : (pesoUnit && unidade === 'pc')
+          ? saldoKg / (estoqueMaxBase * pesoUnit)
+          : saldoKg / estoqueMaxBase;
       if (ratio <= 0.25) {
         return {
           label: 'Critico',
