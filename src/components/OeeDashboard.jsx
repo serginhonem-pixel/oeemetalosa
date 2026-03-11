@@ -35,6 +35,7 @@ const META_KPIS = {
 };
 const ORIGENS_PERMITIDAS_OEE = new Set([
   "",
+  "ACCESS_IMPORT",
   "ACCESS_SYNC",
 ]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -114,6 +115,11 @@ const formatDateBR = (iso) => {
 const clampPercent = (v) => {
   if (!Number.isFinite(v)) return 0;
   return Math.max(0, Math.min(100, v));
+};
+
+const clampNonNegative = (value) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, value);
 };
 
 const formatDelta = (value) => {
@@ -726,21 +732,23 @@ export default function OeeDashboard({
       let producaoTotalMetrosSnapshot = 0;
       let producaoTotalKgSnapshot = 0;
       prod.forEach((item) => {
-        const qtd = Number(item.qtd) || 0;
+        const qtd = clampNonNegative(Number(item.qtd) || 0);
         const prodInfo = getProdutoFromItem(item);
         const compRegistro = Number(item.comp || item.compMetros || 0);
         const compCatalogo = Number(prodInfo?.comp || 0);
         const comp =
-          prodInfo && prodInfo.custom ? compRegistro : compCatalogo || compRegistro;
+          clampNonNegative(
+            prodInfo && prodInfo.custom ? compRegistro : compCatalogo || compRegistro
+          );
         producaoTotalMetrosSnapshot += qtd * comp;
 
-        let peso = Number(item.pesoTotal) || 0;
+        let peso = clampNonNegative(Number(item.pesoTotal) || 0);
         if (!peso && prodInfo) {
           if (prodInfo.custom) {
-            const kgMetro = Number(prodInfo.kgMetro || 0);
+            const kgMetro = clampNonNegative(Number(prodInfo.kgMetro || 0));
             peso = qtd * comp * kgMetro;
           } else {
-            peso = qtd * Number(prodInfo.pesoUnit || 0);
+            peso = qtd * clampNonNegative(Number(prodInfo.pesoUnit || 0));
           }
         }
         producaoTotalKgSnapshot += peso;
@@ -815,25 +823,27 @@ export default function OeeDashboard({
 
     prodFiltrada.forEach((item) => {
       const iso = getItemDateISO(item);
-      const qtd = Number(item.qtd) || 0;
+      const qtd = clampNonNegative(Number(item.qtd) || 0);
       const prodInfo = getProdutoFromItem(item);
       const compRegistro = Number(item.comp || item.compMetros || 0);
       const compCatalogo = Number(prodInfo?.comp || 0);
       const comp =
-        prodInfo && prodInfo.custom ? compRegistro : compCatalogo || compRegistro;
+        clampNonNegative(
+          prodInfo && prodInfo.custom ? compRegistro : compCatalogo || compRegistro
+        );
 
       producaoTotalPcs += qtd;
       producaoTotalMetros += qtd * comp;
 
       // Usa peso jÃ¡ salvo no registro; se nÃ£o houver, calcula a partir do catÃ¡logo
-      let peso = Number(item.pesoTotal) || 0;
+      let peso = clampNonNegative(Number(item.pesoTotal) || 0);
       if (!peso) {
         if (prodInfo) {
           if (prodInfo.custom) {
-            const kgMetro = Number(prodInfo.kgMetro || 0);
+            const kgMetro = clampNonNegative(Number(prodInfo.kgMetro || 0));
             peso = qtd * comp * kgMetro;
           } else {
-            peso = qtd * Number(prodInfo.pesoUnit || 0);
+            peso = qtd * clampNonNegative(Number(prodInfo.pesoUnit || 0));
           }
         }
       }
