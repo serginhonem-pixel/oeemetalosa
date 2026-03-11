@@ -68,6 +68,17 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 };
 
+const toNumberLike = (v) => {
+  const raw = clean(v);
+  if (!raw) return 0;
+  const normalized =
+    raw.includes(",") && raw.includes(".")
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : raw.replace(",", ".");
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const excelSerialToIso = (n) => {
   const parsed = XLSX.SSF.parse_date_code(Number(n));
   if (!parsed || !parsed.y || !parsed.m || !parsed.d) return "";
@@ -182,6 +193,8 @@ const buildData = () => {
       const destino = clean(getField(r, ["DESTINO"])) || "Estoque";
       const maqRaw = getField(r, ["MAQUINA"]);
       const maqId = normalizeMachineId(maqRaw);
+      const comp = toNumberLike(getField(r, ["COMP", "COMP_METROS", "COMPRIMENTO", "METROS"]));
+      const pesoTotal = toNumberLike(getField(r, ["PESO_TOTAL", "PESOTOTAL", "PESO", "KG"]));
       const createdAt = `${data}T12:00:00.000Z`;
       if (!data || !cod || qtd <= 0) return null;
       return {
@@ -190,8 +203,14 @@ const buildData = () => {
         qtd,
         desc,
         destino,
+        comp,
+        compMetros: comp,
+        pesoTotal,
+        pesoPorPeca: qtd > 0 && pesoTotal > 0 ? pesoTotal / qtd : 0,
+        m2Total: comp * qtd,
         maquinaId: maqId,
         maquina: machineDisplayById[maqId] || clean(maqRaw) || maqId,
+        maquinaNome: clean(maqRaw) || machineDisplayById[maqId] || maqId,
         createdAt,
         origem: "ACCESS_SYNC",
       };
@@ -216,13 +235,19 @@ const buildData = () => {
         data,
         inicio,
         fim,
+        horaInicio: inicio,
+        horaFim: fim,
         duracao,
+        duracaoMinutos: duracao,
         codMotivo,
+        motivoCodigo: codMotivo,
         descMotivo,
+        descNorm: descMotivo,
         grupo,
         obs,
         maquinaId: maqId,
         maquina: machineDisplayById[maqId] || clean(maqRaw) || maqId,
+        maquinaNome: clean(maqRaw) || machineDisplayById[maqId] || maqId,
         createdAt,
         origem: "ACCESS_SYNC",
       };

@@ -96,6 +96,17 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 };
 
+const toNumberLike = (v) => {
+  const raw = clean(v);
+  if (!raw) return 0;
+  const normalized =
+    raw.includes(",") && raw.includes(".")
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : raw.replace(",", ".");
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const hhmmToMin = (hhmm) => {
   const txt = clean(hhmm);
   if (!txt.includes(":")) return 0;
@@ -145,7 +156,22 @@ const buildProducao = (rows) =>
       const desc = clean(getField(r, ["DESCRICAO", "DESC"])) || "Item s/ descricao";
       const destino = clean(getField(r, ["DESTINO"])) || "Estoque";
       if (!data || !cod || qtd <= 0) return null;
-      return { data, cod, qtd, desc, destino, maquinaId, origem: "ACCESS_SYNC" };
+      const comp = toNumberLike(getField(r, ["COMP", "COMP_METROS", "COMPRIMENTO", "METROS"]));
+      const pesoTotal = toNumberLike(getField(r, ["PESO_TOTAL", "PESOTOTAL", "PESO", "KG"]));
+      return {
+        data,
+        cod,
+        qtd,
+        desc,
+        destino,
+        comp,
+        compMetros: comp,
+        pesoTotal,
+        pesoPorPeca: qtd > 0 && pesoTotal > 0 ? pesoTotal / qtd : 0,
+        m2Total: comp * qtd,
+        maquinaId,
+        origem: "ACCESS_SYNC",
+      };
     })
     .filter(Boolean);
 
@@ -165,9 +191,14 @@ const buildParadas = (rows) =>
         data,
         inicio,
         fim,
+        horaInicio: inicio,
+        horaFim: fim,
         duracao,
+        duracaoMinutos: duracao,
         codMotivo,
+        motivoCodigo: codMotivo,
         descMotivo,
+        descNorm: descMotivo,
         grupo,
         obs,
         maquinaId,

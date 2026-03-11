@@ -1525,6 +1525,17 @@ const buildMachineResolver = () => {
   };
 };
 
+const toNumberLike = (value) => {
+  if (value == null || value === "") return 0;
+  const raw = String(value).trim();
+  const normalized =
+    raw.includes(",") && raw.includes(".")
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : raw.replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const normalizeImportRowKeys = (rows) =>
   (rows || []).map((row) => {
     const normalized = {};
@@ -1595,6 +1606,11 @@ const loadAccessOeeFromCsv = async () => {
       const qtd = Number(row.QTD || row.qtd || 0) || 0;
       if (!data || !cod || qtd <= 0) return null;
       const maquinaNome = String(row.MAQUINA || row.maquina || "").trim();
+      const comp = toNumberLike(row.COMP || row.comp || row.COMP_METROS || row.compMetros || 0);
+      const pesoTotal = toNumberLike(
+        row.PESO_TOTAL || row.pesoTotal || row.PESO || row.peso || 0
+      );
+      const pesoPorPeca = qtd > 0 && pesoTotal > 0 ? pesoTotal / qtd : 0;
       return {
         id: `acc-prod-${idx}-${data}-${cod}`,
         data,
@@ -1602,6 +1618,11 @@ const loadAccessOeeFromCsv = async () => {
         qtd,
         desc: String(row.DESCRICAO || row.desc || "").trim() || "Item s/ descricao",
         destino: String(row.DESTINO || row.destino || "Estoque").trim() || "Estoque",
+        comp,
+        compMetros: comp,
+        pesoTotal,
+        pesoPorPeca,
+        m2Total: comp * qtd,
         maquinaId: resolveMachineId(maquinaNome),
         maquina: maquinaNome,
         maquinaNome,
@@ -1634,6 +1655,7 @@ const loadAccessOeeFromCsv = async () => {
         codMotivo,
         motivoCodigo: codMotivo,
         descMotivo: String(row.DESC || row.descricao || "").trim(),
+        descNorm: String(row.DESC || row.descricao || "").trim(),
         grupo: String(row.GRUPO || row.grupo || "").trim(),
         obs: String(row.OBS || row.obs || "").trim(),
         origem: "ACCESS_IMPORT",
