@@ -2526,8 +2526,13 @@ const handleDownloadModeloParadas = () => {
     }
   };
 
-  const salvarAjusteEstoque = async ({ cod, desc, comp, qtd, pesoTotalOverride }) => {
-    const quantidade = parseNumberBR(qtd);
+  const salvarAjusteEstoque = async ({ cod, desc, comp, qtd, pesoTotalOverride, saldoFinal }) => {
+    const saldoAtualItem = Number(
+      estoqueComercialBase.find((item) => String(item.cod) === String(cod))?.saldoQtd || 0
+    );
+    const quantidade =
+      saldoFinal != null ? parseNumberBR(saldoFinal) - saldoAtualItem : parseNumberBR(qtd);
+
     if (!Number.isFinite(quantidade) || quantidade === 0) {
       alert('Quantidade invalida.');
       return false;
@@ -2597,10 +2602,10 @@ const handleDownloadModeloParadas = () => {
       return;
     }
 
-    const delta =
-      ajusteEstoqueModo === 'editar'
-        ? novaQtd - ajusteEstoqueSaldoAtual
-        : novaQtd;
+    const saldoAtualItem = Number(
+      estoqueComercialBase.find((item) => String(item.cod) === String(ajusteEstoqueCod))?.saldoQtd || 0
+    );
+    const delta = ajusteEstoqueModo === 'editar' ? novaQtd - saldoAtualItem : novaQtd;
 
     if (!delta) {
       alert('Nada a ajustar.');
@@ -2611,7 +2616,8 @@ const handleDownloadModeloParadas = () => {
       cod: ajusteEstoqueCod,
       desc: ajusteEstoqueDesc,
       comp: ajusteEstoqueComp,
-      qtd: delta,
+      qtd: ajusteEstoqueModo === 'editar' ? undefined : delta,
+      saldoFinal: ajusteEstoqueModo === 'editar' ? novaQtd : undefined,
     });
 
     if (ok) {
@@ -8388,6 +8394,11 @@ const handleImportBackup = (json) => {
                           />
                         </div>
                       </div>
+                      {ajusteEstoqueModo === 'editar' && (
+                        <div className="text-xs text-zinc-500">
+                          Digite o saldo final desejado para o item.
+                        </div>
+                      )}
                       {ajusteEstoqueModo === 'editar' && (
                         <div className="text-xs text-zinc-500">
                           Saldo atual: {Number(ajusteEstoqueSaldoAtual || 0).toLocaleString()}
