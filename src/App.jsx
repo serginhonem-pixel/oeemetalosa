@@ -2527,11 +2527,20 @@ const handleDownloadModeloParadas = () => {
   };
 
   const salvarAjusteEstoque = async ({ cod, desc, comp, qtd, pesoTotalOverride, saldoFinal }) => {
-    const saldoAtualItem = Number(
-      estoqueComercialBase.find((item) => String(item.cod) === String(cod))?.saldoQtd || 0
-    );
-    const quantidade =
-      saldoFinal != null ? parseNumberBR(saldoFinal) - saldoAtualItem : parseNumberBR(qtd);
+    let quantidade;
+    if (saldoFinal != null) {
+      // Calcula a soma bruta real (sem clamp) para obter o delta exato
+      const rawSaldoAtual = historicoProducaoReal
+        .filter((item) => {
+          const destino = String(item?.destino || '').toLowerCase();
+          const origem = String(item?.origem || '').toLowerCase();
+          return destino.includes('estoque') && origem !== 'pcp_estoque' && String(item?.cod) === String(cod);
+        })
+        .reduce((sum, item) => sum + Number(item?.qtd || 0), 0);
+      quantidade = parseNumberBR(saldoFinal) - rawSaldoAtual;
+    } else {
+      quantidade = parseNumberBR(qtd);
+    }
 
     if (!Number.isFinite(quantidade) || quantidade === 0) {
       alert('Quantidade invalida.');
@@ -2576,7 +2585,10 @@ const handleDownloadModeloParadas = () => {
 
       const docRef = await safeAddDoc('producao', obj);
       const newId = docRef?.id || `local-${Date.now()}`;
-      setHistoricoProducaoReal((prev) => [{ id: newId, ...obj }, ...prev]);
+      setHistoricoProducaoReal((prev) => {
+        if (prev.some((item) => item.id === newId)) return prev;
+        return [{ id: newId, ...obj }, ...prev];
+      });
       return true;
     } catch (err) {
       console.error('Erro ao ajustar estoque:', err);
