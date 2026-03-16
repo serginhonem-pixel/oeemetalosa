@@ -61,8 +61,9 @@ import { db } from '../services/firebase';
 import { IS_LOCALHOST } from '../utils/env';
 
 // ===== Helpers =====
-const calcKPIsFor = (maquinaNome, maquinasArg, lancamentosArg, diasUteisArg) => {
+const calcKPIsFor = (maquinaNome, maquinasArg, lancamentosArg, diasUteisArg, unitModeOverride) => {
   const diasUteisVal = Number(diasUteisArg) || 22;
+  const useU2 = unitModeOverride === 'secundaria';
 
   let metaDia = 0;
   let unidade = 'un';
@@ -83,8 +84,13 @@ const calcKPIsFor = (maquinaNome, maquinasArg, lancamentosArg, diasUteisArg) => 
     }
   } else {
     const maq = (maquinasArg || []).find((m) => m.nome === maquinaNome);
-    metaDia = Number(maq?.meta) || 0;
-    unidade = maq?.unidade || 'un';
+    if (useU2 && maq?.unidade2) {
+      metaDia = Number(maq?.meta2) || 0;
+      unidade = maq?.unidade2 || 'un';
+    } else {
+      metaDia = Number(maq?.meta) || 0;
+      unidade = maq?.unidade || 'un';
+    }
   }
 
   metaMes = metaDia * diasUteisVal;
@@ -94,15 +100,16 @@ const calcKPIsFor = (maquinaNome, maquinasArg, lancamentosArg, diasUteisArg) => 
       ? (lancamentosArg || [])
       : (lancamentosArg || []).filter((l) => l.maquina === maquinaNome);
 
+  const realKey = useU2 ? 'real2' : 'real';
   const byDay = new Map();
   for (const l of lanc) {
     const dia = l.dia || '';
-    const v = Number(l.real) || 0;
+    const v = Number(l[realKey]) || 0;
     byDay.set(dia, (byDay.get(dia) || 0) + v);
   }
 
   const diasTrabalhados = Array.from(byDay.keys()).filter(Boolean).length;
-  const total = lanc.reduce((s, l) => s + (Number(l.real) || 0), 0);
+  const total = lanc.reduce((s, l) => s + (Number(l[realKey]) || 0), 0);
   const mediaDia = diasTrabalhados ? total / diasTrabalhados : 0;
 
   const projetado = diasTrabalhados ? Math.round(mediaDia * diasUteisVal) : 0;
@@ -1658,36 +1665,46 @@ const GlobalScreen = () => {
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
 
+      const unitModeOriginal = unitMode;
+      let pageIndex = 0;
       for (let i = 0; i < maquinas.length; i++) {
         const m = maquinas[i];
-        setFiltroMaquina(m.nome);
+        const modes = [{ mode: 'primaria', label: '' }];
+        if (m.unidade2) modes.push({ mode: 'secundaria', label: ' (U2)' });
 
-        await sleep(500);
-        await new Promise((r) => requestAnimationFrame(r));
+        for (const um of modes) {
+          setFiltroMaquina(m.nome);
+          setUnitMode(um.mode);
 
-        const imgData = await captureChartPNG();
+          await sleep(500);
+          await new Promise((r) => requestAnimationFrame(r));
 
-        if (i > 0) pdf.addPage();
+          const imgData = await captureChartPNG();
 
-        pdf.setFillColor(9, 9, 11);
-        pdf.rect(0, 0, pageW, pageH, 'F');
+          if (pageIndex > 0) pdf.addPage();
+          pageIndex++;
 
-        const margin = 20;
-        const imgW = pageW - margin * 2;
-        const imgProps = pdf.getImageProperties(imgData);
-        const imgH = (imgProps.height * imgW) / imgProps.width;
+          pdf.setFillColor(9, 9, 11);
+          pdf.rect(0, 0, pageW, pageH, 'F');
 
-        pdf.addImage(imgData, 'PNG', margin, 60, imgW, imgH);
+          const margin = 20;
+          const imgW = pageW - margin * 2;
+          const imgProps = pdf.getImageProperties(imgData);
+          const imgH = (imgProps.height * imgW) / imgProps.width;
 
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFontSize(18);
-        pdf.text(`Gráfico de Performance: ${m.nome}`, margin, 36);
+          pdf.addImage(imgData, 'PNG', margin, 60, imgW, imgH);
 
-        pdf.setTextColor(156, 163, 175);
-        pdf.setFontSize(10);
-        pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 50);
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFontSize(18);
+          pdf.text(`Gráfico de Performance: ${m.nome}${um.label}`, margin, 36);
+
+          pdf.setTextColor(156, 163, 175);
+          pdf.setFontSize(10);
+          pdf.text(`Mês: ${monthLabel(mesRef)}`, margin, 50);
+        }
       }
 
+      setUnitMode(unitModeOriginal);
       pdf.save(`Graficos_${mesRef}.pdf`);
       toast('PDF baixado ✅');
     } catch (error) {
@@ -1798,38 +1815,47 @@ const kAll = calcKPIsFor('TODAS', maquinasPptx, lancamentosPptx, config?.diasUte
     // =========================
     // SLIDES: POR MÁQUINA
     // =========================
+    const unitModeOriginal = unitMode;
     for (const m of maquinas) {
-      setFiltroMaquina(m.nome);
-      await sleep(650);
-      await new Promise((r) => requestAnimationFrame(r));
+      // Gera slide(s) para cada modo de unidade da máquina
+      const modes = [{ mode: 'primaria', label: '' }];
+      if (m.unidade2) modes.push({ mode: 'secundaria', label: ' (U2)' });
 
-      const img = await captureChartPNG();
-const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis);
+      for (const um of modes) {
+        setFiltroMaquina(m.nome);
+        setUnitMode(um.mode);
+        await sleep(650);
+        await new Promise((r) => requestAnimationFrame(r));
 
-      const s = pptx.addSlide('MASTER_DARK');
-      s.addText(`Performance – ${m.nome}`, {
-        x: 0.3,
-        y: 0.25,
-        w: 12.9,
-        fontSize: 26,
-        bold: true,
-        color: 'FFFFFF',
-        fontFace: 'Calibri',
-      });
+        const img = await captureChartPNG();
+        const k = calcKPIsFor(m.nome, maquinasPptx, lancamentosPptx, config?.diasUteis, um.mode);
 
-      addKpiBox(s, 0.3, 0.85, 'Pace', formatPct0(k.pace));
-      addKpiBox(s, 3.45, 0.85, 'Média/dia', `${formatCompact(k.mediaDia)}${unitOrBlank(k)}`);
-      addKpiBox(s, 6.60, 0.85, 'Meta/dia', `${formatCompact(k.metaDia)}${unitOrBlank(k)}`);
-      addKpiBox(s, 9.75, 0.85, 'Projeção', `${formatCompact(k.projetado)}${unitOrBlank(k)}`);
+        const s = pptx.addSlide('MASTER_DARK');
+        s.addText(`Performance – ${m.nome}${um.label}`, {
+          x: 0.3,
+          y: 0.25,
+          w: 12.9,
+          fontSize: 26,
+          bold: true,
+          color: 'FFFFFF',
+          fontFace: 'Calibri',
+        });
 
-      addKpiBox(s, 0.3, 1.82, 'Realizado', `${formatCompact(k.total)}${unitOrBlank(k)}`);
-      addKpiBox(s, 3.45, 1.82, 'Meta mês', `${formatCompact(k.metaMes)}${unitOrBlank(k)}`);
-      addKpiBox(s, 6.60, 1.82, 'Ating.', formatPct0(k.ating));
-      addKpiBox(s, 9.75, 1.82, 'Nec/dia', `${formatCompact(k.necessarioDia)}${unitOrBlank(k)}`);
+        addKpiBox(s, 0.3, 0.85, 'Pace', formatPct0(k.pace));
+        addKpiBox(s, 3.45, 0.85, 'Média/dia', `${formatCompact(k.mediaDia)}${unitOrBlank(k)}`);
+        addKpiBox(s, 6.60, 0.85, 'Meta/dia', `${formatCompact(k.metaDia)}${unitOrBlank(k)}`);
+        addKpiBox(s, 9.75, 0.85, 'Projeção', `${formatCompact(k.projetado)}${unitOrBlank(k)}`);
 
-      s.addImage({ data: img, x: 0.3, y: 2.75, w: 12.95, h: 4.40 });
+        addKpiBox(s, 0.3, 1.82, 'Realizado', `${formatCompact(k.total)}${unitOrBlank(k)}`);
+        addKpiBox(s, 3.45, 1.82, 'Meta mês', `${formatCompact(k.metaMes)}${unitOrBlank(k)}`);
+        addKpiBox(s, 6.60, 1.82, 'Ating.', formatPct0(k.ating));
+        addKpiBox(s, 9.75, 1.82, 'Nec/dia', `${formatCompact(k.necessarioDia)}${unitOrBlank(k)}`);
+
+        s.addImage({ data: img, x: 0.3, y: 2.75, w: 12.95, h: 4.40 });
+      }
     }
 
+    setUnitMode(unitModeOriginal);
     setFiltroMaquina(filtroOriginal);
     await pptx.writeFile({ fileName: `Relatorio_Global_${mesRef}.pptx` });
 
