@@ -36,6 +36,7 @@ import {
   CheckCircle2,
   XCircle,
   Crown,
+  Pencil,
 } from 'lucide-react';
 
 import html2canvas from 'html2canvas';
@@ -55,6 +56,7 @@ import {
   updateDoc,
   where,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 
 import { db } from '../services/firebase';
@@ -343,6 +345,10 @@ const GlobalScreen = () => {
   const [inputSupervisorMaquina, setInputSupervisorMaquina] = useState('');
   const [inputUnidadeMaquina, setInputUnidadeMaquina] = useState('pç');
   const [inputUnidadeMaquina2, setInputUnidadeMaquina2] = useState('');
+
+  // Renomear máquina
+  const [renamingMaquina, setRenamingMaquina] = useState(null); // nome da máquina em edição
+  const [renameValue, setRenameValue] = useState('');
 
   const [unitMode, setUnitMode] = useState('primaria');
 
@@ -1493,6 +1499,70 @@ const GlobalScreen = () => {
     }
   };
 
+  const handleRenameMaquina = async (nomeAntigo, nomeNovo) => {
+    const novo = String(nomeNovo || '').trim();
+    if (!novo || novo === nomeAntigo) {
+      setRenamingMaquina(null);
+      return;
+    }
+    if (maquinas.some((m) => m.nome === novo)) {
+      toast('Já existe uma máquina com esse nome!');
+      return;
+    }
+
+    if (IS_LOCALHOST) {
+      setMaquinas((prev) => prev.map((m) => (m.nome === nomeAntigo ? { ...m, nome: novo } : m)));
+      setLancamentos((prev) =>
+        prev.map((l) => (l.maquina === nomeAntigo ? { ...l, maquina: novo } : l))
+      );
+      // Atualizar também lancamentos de outros meses no localStorage
+      const localLanc = localStorage.getItem('local_lancamentos');
+      if (localLanc) {
+        const all = JSON.parse(localLanc);
+        const updated = all.map((l) => (l.maquina === nomeAntigo ? { ...l, maquina: novo } : l));
+        localStorage.setItem('local_lancamentos', JSON.stringify(updated));
+      }
+      setRenamingMaquina(null);
+      toast('Máquina renomeada (Local) ✅');
+      return;
+    }
+
+    const maq = maquinas.find((m) => m.nome === nomeAntigo);
+    if (!maq?.id) return;
+
+    try {
+      setBusy(true);
+      toast('Renomeando máquina e atualizando histórico...', 0);
+
+      // 1) Atualizar o doc da máquina
+      await updateDoc(doc(db, 'global_maquinas', maq.id), { nome: novo });
+
+      // 2) Buscar TODOS os lançamentos com o nome antigo e atualizar em batch
+      const lancSnap = await getDocs(
+        query(collection(db, 'global_lancamentos'), where('maquina', '==', nomeAntigo))
+      );
+
+      if (!lancSnap.empty) {
+        // Firestore batch suporta até 500 operações; dividir se necessário
+        const docs = lancSnap.docs;
+        for (let i = 0; i < docs.length; i += 499) {
+          const batch = writeBatch(db);
+          const slice = docs.slice(i, i + 499);
+          slice.forEach((d) => batch.update(d.ref, { maquina: novo }));
+          await batch.commit();
+        }
+      }
+
+      setRenamingMaquina(null);
+      toast(`Máquina renomeada! ${lancSnap.size} lançamento(s) atualizado(s) ✅`, 4000);
+    } catch (error) {
+      console.error('Erro ao renomear máquina:', error);
+      toast('Erro ao renomear máquina ❌');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleRemoveMaquina = async (nomeParaRemover) => {
     const maq = maquinas.find((m) => m.nome === nomeParaRemover);
     if (!maq) return;
@@ -2467,7 +2537,34 @@ const kAll = calcKPIsFor('TODAS', maquinasPptx, lancamentosPptx, config?.diasUte
                     <tbody className="divide-y divide-zinc-800/50">
                       {maquinas.map((m) => (
                         <tr key={m.id || m.nome} className="group hover:bg-white/[0.02] transition-colors">
-                          <td className="px-6 py-2 font-medium text-zinc-200">{m.nome}</td>
+                          <td className="px-6 py-2 font-medium text-zinc-200">
+                            {renamingMaquina === m.nome ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={() => handleRenameMaquina(m.nome, renameValue)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleRenameMaquina(m.nome, renameValue);
+                                  if (e.key === 'Escape') setRenamingMaquina(null);
+                                }}
+                                className="w-full bg-black border border-blue-500 rounded px-2 py-1 text-sm text-white outline-none"
+                              />
+                            ) : (
+                              <span
+                                className="cursor-pointer hover:text-blue-400 inline-flex items-center gap-1.5 group/rename"
+                                onClick={() => {
+                                  setRenamingMaquina(m.nome);
+                                  setRenameValue(m.nome);
+                                }}
+                                title="Clique para renomear"
+                              >
+                                {m.nome}
+                                <Pencil size={12} className="text-zinc-600 opacity-0 group-hover/rename:opacity-100 transition-opacity" />
+                              </span>
+                            )}
+                          </td>
                           <td className="px-6 py-2">
                             <input
                               type="text"
