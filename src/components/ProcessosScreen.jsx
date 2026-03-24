@@ -993,6 +993,104 @@ const ProcessosScreen = () => {
     };
 
     // Label customizado para gráfico empilhado - mostra total da coluna e variação
+    const ComparisonMonthBarShape = ({ x, y, width, height, fill, payload, value, index, ano, mostrarComparacaoAno = false }) => {
+        if (!payload || !Number.isFinite(Number(value))) return null;
+
+        const mediaDia = Number(payload[`mediaDia_${ano}`]);
+        const dadosComparacao = obterDadosFiltrados();
+        const prevMediaDia = index > 0 ? Number(dadosComparacao?.[index - 1]?.[`mediaDia_${ano}`]) : null;
+        const mediaDiaDiffPct = (
+            Number.isFinite(mediaDia) &&
+            Number.isFinite(prevMediaDia) &&
+            prevMediaDia !== 0
+        )
+            ? ((mediaDia - prevMediaDia) / prevMediaDia) * 100
+            : null;
+
+        const formatted = Number(value).toLocaleString('pt-BR');
+        const mediaDiaText = Number.isFinite(mediaDia)
+            ? `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`
+            : '';
+        const hasTrend = Number.isFinite(mediaDiaDiffPct);
+        const trendText = hasTrend ? `${mediaDiaDiffPct > 0 ? '+' : ''}${mediaDiaDiffPct.toFixed(1)}%` : '';
+        const trendColor = mediaDiaDiffPct > 0 ? '#22c55e' : mediaDiaDiffPct < 0 ? '#ef4444' : '#9CA3AF';
+
+        const valor2025 = Number(payload.quantidade_2025) || 0;
+        const valor2026 = Number(payload.quantidade_2026) || 0;
+        const percentual = valor2025 > 0 ? ((valor2026 - valor2025) / valor2025) * 100 : null;
+        const pctText = Number.isFinite(percentual) ? `${percentual > 0 ? '+' : ''}${percentual.toFixed(1)}%` : '';
+        const pctColor = percentual > 0 ? '#22c55e' : percentual < 0 ? '#ef4444' : '#9CA3AF';
+        const pctArrow = percentual > 0 ? '▲' : percentual < 0 ? '▼' : '▶';
+
+        const centerX = x + width / 2;
+        const valueY = y - 8;
+        const mediaY = valueY + 18;
+        const trendY = mediaY + 16;
+        const boxWidth = Math.max(84, mediaDiaText.length * 6.5 + 18);
+        const boxHeight = hasTrend ? 34 : 18;
+        const boxX = centerX - boxWidth / 2;
+        const boxY = mediaY - 12;
+        const pctY = y - 30;
+
+        return (
+            <g>
+                <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />
+                {mostrarComparacaoAno && Number.isFinite(percentual) && (
+                    <text x={centerX} y={pctY} fill={pctColor} fontSize={13} fontWeight={900} textAnchor="middle">
+                        {pctArrow} {pctText}
+                    </text>
+                )}
+                <text x={centerX} y={valueY} fill="#F9FAFB" fontSize={12} fontWeight={800} textAnchor="middle">
+                    {formatted}
+                </text>
+                {mediaDiaText && (
+                    <>
+                        <rect
+                            x={boxX}
+                            y={boxY}
+                            width={boxWidth}
+                            height={boxHeight}
+                            rx={4}
+                            fill="#0B1220"
+                            fillOpacity={0.55}
+                            stroke="#475569"
+                            strokeOpacity={0.5}
+                            strokeWidth="0.6"
+                        />
+                        <text
+                            x={centerX}
+                            y={mediaY}
+                            fill={trendColor}
+                            stroke="#000000"
+                            strokeWidth="0.45"
+                            paintOrder="stroke"
+                            fontSize={11}
+                            fontWeight={800}
+                            textAnchor="middle"
+                        >
+                            {mediaDiaText}
+                        </text>
+                        {hasTrend && (
+                            <text
+                                x={centerX}
+                                y={trendY}
+                                fill={trendColor}
+                                stroke="#000000"
+                                strokeWidth="0.45"
+                                paintOrder="stroke"
+                                fontSize={9}
+                                fontWeight={900}
+                                textAnchor="middle"
+                            >
+                                {trendText}
+                            </text>
+                        )}
+                    </>
+                )}
+            </g>
+        );
+    };
+
     const CustomStackedLabel = ({ x, y, width, payload }) => {
         if (!payload) return null;
         
@@ -1804,19 +1902,14 @@ const ProcessosScreen = () => {
                                                                 fill="#8B5CF6"
                                                                 radius={[4, 4, 0, 0]}
                                                                 isAnimationActive={!exportandoPptx}
-                                                                label={(props) => <CustomAvgDiaComparacaoLabel {...props} ano="2025" />}
+                                                                shape={(props) => <ComparisonMonthBarShape {...props} ano="2025" />}
                                                             />
                                                             <Bar
                                                                 dataKey="quantidade_2026"
                                                                 fill="#06B6D4"
                                                                 radius={[4, 4, 0, 0]}
                                                                 isAnimationActive={!exportandoPptx}
-                                                                label={(props) => (
-                                                                    <>
-                                                                        <CustomAvgDiaComparacaoLabel {...props} ano="2026" />
-                                                                        <CustomComparacaoLabel {...props} />
-                                                                    </>
-                                                                )}
+                                                                shape={(props) => <ComparisonMonthBarShape {...props} ano="2026" mostrarComparacaoAno />}
                                                             />
                                                         </>
                                                     ) : (
