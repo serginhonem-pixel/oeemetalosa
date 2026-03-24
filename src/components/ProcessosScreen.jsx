@@ -878,20 +878,81 @@ const ProcessosScreen = () => {
         );
     };
 
-    const CustomAvgDiaComparacaoLabel = ({ x, y, width, value, payload }) => {
-        if (!payload) return null;
-        const diasUteis = getDiasUteisByMesLabel(payload.mes);
-        if (!diasUteis || !value) return null;
+    const CustomAvgDiaComparacaoLabel = ({ x, y, width, value, payload, dataKey, index }) => {
+        if (!payload || !value) return null;
 
-        const mediaDia = Number(value) / diasUteis;
+        const ano = String(dataKey || '').replace('quantidade_', '');
+        const mediaDia = Number(payload[`mediaDia_${ano}`]);
+        if (!Number.isFinite(mediaDia)) return null;
+
+        const dadosComparacao = obterDadosFiltrados();
+        const prevMediaDia = index > 0 ? Number(dadosComparacao?.[index - 1]?.[`mediaDia_${ano}`]) : null;
+        const mediaDiaDiffPct = (
+            Number.isFinite(prevMediaDia) &&
+            prevMediaDia !== 0
+        )
+            ? ((mediaDia - prevMediaDia) / prevMediaDia) * 100
+            : null;
+
+        const formatted = Number(value).toLocaleString('pt-BR');
         const mediaDiaText = `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`;
-        const textY = y + 16;
+        const hasTrend = Number.isFinite(mediaDiaDiffPct);
+        const trendText = hasTrend ? `${mediaDiaDiffPct > 0 ? '+' : ''}${mediaDiaDiffPct.toFixed(1)}%` : '';
+        const trendColor = mediaDiaDiffPct > 0 ? '#22c55e' : mediaDiaDiffPct < 0 ? '#ef4444' : '#9CA3AF';
+        const centerX = x + width / 2;
+        const valueY = y - 8;
+        const mediaY = valueY + 18;
+        const trendY = mediaY + 16;
+        const boxWidth = Math.max(84, mediaDiaText.length * 6.5 + 18);
+        const boxHeight = hasTrend ? 34 : 18;
+        const boxX = centerX - boxWidth / 2;
+        const boxY = mediaY - 12;
 
         return (
             <g>
-                <text x={x + width / 2} y={textY} fill="#E5E7EB" fontSize={11} fontWeight={700} textAnchor="middle">
+                <text x={centerX} y={valueY} fill="#F9FAFB" fontSize={12} fontWeight={800} textAnchor="middle">
+                    {formatted}
+                </text>
+                <rect
+                    x={boxX}
+                    y={boxY}
+                    width={boxWidth}
+                    height={boxHeight}
+                    rx={4}
+                    fill="#0B1220"
+                    fillOpacity={0.55}
+                    stroke="#475569"
+                    strokeOpacity={0.5}
+                    strokeWidth="0.6"
+                />
+                <text
+                    x={centerX}
+                    y={mediaY}
+                    fill={trendColor}
+                    stroke="#000000"
+                    strokeWidth="0.45"
+                    paintOrder="stroke"
+                    fontSize={11}
+                    fontWeight={800}
+                    textAnchor="middle"
+                >
                     {mediaDiaText}
                 </text>
+                {hasTrend && (
+                    <text
+                        x={centerX}
+                        y={trendY}
+                        fill={trendColor}
+                        stroke="#000000"
+                        strokeWidth="0.45"
+                        paintOrder="stroke"
+                        fontSize={9}
+                        fontWeight={900}
+                        textAnchor="middle"
+                    >
+                        {trendText}
+                    </text>
+                )}
             </g>
         );
     };
@@ -1084,7 +1145,11 @@ const ProcessosScreen = () => {
                         const [mesItem, anoItem] = d.mes.split(' ');
                         return mesItem === mes && (anoItem || new Date().getFullYear().toString()) === ano;
                     });
-                    dadosMes[`quantidade_${ano}`] = item?.quantidade || 0;
+                    const quantidade = item?.quantidade || 0;
+                    const diasUteis = getDiasUteisByMesLabel(`${mes} ${ano}`);
+                    dadosMes[`quantidade_${ano}`] = quantidade;
+                    dadosMes[`diasUteis_${ano}`] = diasUteis || null;
+                    dadosMes[`mediaDia_${ano}`] = diasUteis ? (quantidade / diasUteis) : null;
                 });
                 
                 resultado.push(dadosMes);
@@ -1684,7 +1749,7 @@ const ProcessosScreen = () => {
                                                 </div>
                                             )}
                                             <ResponsiveContainer width="100%" height={420}>
-                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 60, right: 20, left: 20, bottom: 60 }}>
+                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 84, right: 20, left: 20, bottom: 60 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                     <XAxis 
                                                         dataKey="mes" 
@@ -1714,7 +1779,12 @@ const ProcessosScreen = () => {
                                                         formatter={(value, name, props) => {
                                                             if (visualizacao === 'comparacao') {
                                                                 // Para comparação, mostrar o nome do ano
-                                                                return [value.toLocaleString('pt-BR'), name.replace('quantidade_', 'Ano ')];
+                                                                const ano = String(name).replace('quantidade_', '');
+                                                                const mediaDia = Number(props?.payload?.[`mediaDia_${ano}`]);
+                                                                const mediaDiaTexto = Number.isFinite(mediaDia)
+                                                                    ? ` | ${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`
+                                                                    : '';
+                                                                return [`${value.toLocaleString('pt-BR')}${mediaDiaTexto}`, name.replace('quantidade_', 'Ano ')];
                                                             } else if (name === 'quantidade') {
                                                                 const item = props.payload;
                                                                 let variacaoText = '';
@@ -1731,11 +1801,9 @@ const ProcessosScreen = () => {
                                                     {visualizacao === 'comparacao' ? (
                                                         <>
                                                             <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
-                                                                <LabelList dataKey="quantidade_2025" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
                                                                 <LabelList dataKey="quantidade_2025" content={CustomAvgDiaComparacaoLabel} />
                                                             </Bar>
                                                             <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
-                                                                <LabelList dataKey="quantidade_2026" position="top" formatter={(value) => value.toLocaleString('pt-BR')} fill="#F9FAFB" fontSize={12} fontWeight={600} />
                                                                 <LabelList dataKey="quantidade_2026" content={CustomAvgDiaComparacaoLabel} />
                                                                 <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
                                                             </Bar>
