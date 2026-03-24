@@ -878,10 +878,9 @@ const ProcessosScreen = () => {
         );
     };
 
-    const CustomAvgDiaComparacaoLabel = ({ x, y, width, value, payload, dataKey, index }) => {
+    const CustomAvgDiaComparacaoLabel = ({ x, y, width, value, payload, index, ano }) => {
         if (!payload || !value) return null;
 
-        const ano = String(dataKey || '').replace('quantidade_', '');
         const mediaDia = Number(payload[`mediaDia_${ano}`]);
         if (!Number.isFinite(mediaDia)) return null;
 
@@ -1801,10 +1800,10 @@ const ProcessosScreen = () => {
                                                     {visualizacao === 'comparacao' ? (
                                                         <>
                                                             <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
-                                                                <LabelList dataKey="quantidade_2025" content={CustomAvgDiaComparacaoLabel} />
+                                                                <LabelList dataKey="quantidade_2025" content={(props) => <CustomAvgDiaComparacaoLabel {...props} ano="2025" />} />
                                                             </Bar>
                                                             <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
-                                                                <LabelList dataKey="quantidade_2026" content={CustomAvgDiaComparacaoLabel} />
+                                                                <LabelList dataKey="quantidade_2026" content={(props) => <CustomAvgDiaComparacaoLabel {...props} ano="2026" />} />
                                                                 <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
                                                             </Bar>
                                                         </>
