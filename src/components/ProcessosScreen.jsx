@@ -1799,13 +1799,25 @@ const ProcessosScreen = () => {
                                                     />
                                                     {visualizacao === 'comparacao' ? (
                                                         <>
-                                                            <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
-                                                                <LabelList dataKey="quantidade_2025" content={(props) => <CustomAvgDiaComparacaoLabel {...props} ano="2025" />} />
-                                                            </Bar>
-                                                            <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
-                                                                <LabelList dataKey="quantidade_2026" content={(props) => <CustomAvgDiaComparacaoLabel {...props} ano="2026" />} />
-                                                                <LabelList dataKey="quantidade_2026" content={CustomComparacaoLabel} />
-                                                            </Bar>
+                                                            <Bar
+                                                                dataKey="quantidade_2025"
+                                                                fill="#8B5CF6"
+                                                                radius={[4, 4, 0, 0]}
+                                                                isAnimationActive={!exportandoPptx}
+                                                                label={(props) => <CustomAvgDiaComparacaoLabel {...props} ano="2025" />}
+                                                            />
+                                                            <Bar
+                                                                dataKey="quantidade_2026"
+                                                                fill="#06B6D4"
+                                                                radius={[4, 4, 0, 0]}
+                                                                isAnimationActive={!exportandoPptx}
+                                                                label={(props) => (
+                                                                    <>
+                                                                        <CustomAvgDiaComparacaoLabel {...props} ano="2026" />
+                                                                        <CustomComparacaoLabel {...props} />
+                                                                    </>
+                                                                )}
+                                                            />
                                                         </>
                                                     ) : (
                                                         <Bar dataKey="quantidade" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
