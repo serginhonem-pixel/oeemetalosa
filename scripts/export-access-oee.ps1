@@ -56,7 +56,9 @@ function To-HhMm {
   }
 }
 
-$connString = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$AccessPath;Mode=Share Deny None;Persist Security Info=False;"
+$tempPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "bdmetalosa_sync_tmp.accdb")
+Copy-Item -Path $AccessPath -Destination $tempPath -Force
+$connString = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$tempPath;Persist Security Info=False;"
 $conn = New-Object System.Data.OleDb.OleDbConnection($connString)
 $conn.Open()
 
@@ -177,4 +179,5 @@ try {
 }
 finally {
   $conn.Close()
+  if (Test-Path $tempPath) { Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }
 }
