@@ -284,32 +284,42 @@ const commitWrites = async (idToken, writes) => {
 
 const queryAccessSyncDocNames = async (idToken, collectionId) => {
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-  const body = {
-    structuredQuery: {
-      from: [{ collectionId }],
-      where: {
-        fieldFilter: {
-          field: { fieldPath: "origem" },
-          op: "EQUAL",
-          value: { stringValue: "ACCESS_SYNC" },
+  const PAGE = 500;
+  const allNames = [];
+  let offset = 0;
+  while (true) {
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "origem" },
+            op: "EQUAL",
+            value: { stringValue: "ACCESS_SYNC" },
+          },
         },
+        offset,
+        limit: PAGE,
       },
-      limit: 2000,
-    },
-  };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`runQuery ${collectionId} falhou: ${res.status} ${await res.text()}`);
+    };
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`runQuery ${collectionId} falhou: ${res.status} ${await res.text()}`);
+    }
+    const arr = await res.json();
+    const page = arr.filter((x) => x.document?.name).map((x) => x.document.name);
+    allNames.push(...page);
+    if (page.length < PAGE) break;
+    offset += PAGE;
   }
-  const arr = await res.json();
-  return arr.filter((x) => x.document?.name).map((x) => x.document.name);
+  return allNames;
 };
 
 const cleanupExistingAccessSync = async (idToken) => {
