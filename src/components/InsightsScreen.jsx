@@ -330,9 +330,11 @@ export default function InsightsScreen({
         const idealKg = tempoRodando * capacidadeKgMin;
         if (idealKg > 0 && st.totalProdKg > 0) performance = (st.totalProdKg / idealKg) * 100;
       }
+      // sem ciclo definido: performance não calculável → OEE = disponibilidade
+      const performanceEfetiva = performance > 0 ? performance : 100;
 
       const qualidade = 100;
-      const oee = (disponibilidade / 100) * (performance / 100) * (qualidade / 100) * 100;
+      const oee = (disponibilidade / 100) * (performanceEfetiva / 100) * (qualidade / 100) * 100;
 
       machineKPIs.push({
         token,
@@ -455,8 +457,9 @@ export default function InsightsScreen({
         let perf = 0;
         if (idealM > 0 && metros > 0) perf = (metros / idealM) * 100;
         else { const idealKg = tr * capacidadeKgMin; if (idealKg > 0 && kg > 0) perf = (kg / idealKg) * 100; }
+        const perfEfetiva = perf > 0 ? perf : 100;
 
-        const oee = (disp / 100) * (perf / 100) * 1 * 100;
+        const oee = (disp / 100) * (perfEfetiva / 100) * 1 * 100;
         return {
           label: formatBucketLabel(bk),
           disponibilidade: Number(clampPercent(disp).toFixed(1)),
