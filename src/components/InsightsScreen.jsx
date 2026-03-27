@@ -2,16 +2,11 @@ import React, { useMemo, useState } from "react";
 import {
   Activity,
   AlertOctagon,
-  ArrowDown,
-  ArrowUp,
   BarChart3,
-  CalendarDays,
   Clock,
   Factory,
   Filter,
-  Layers,
   TrendingUp,
-  Trophy,
   Zap,
 } from "lucide-react";
 import {
@@ -518,15 +513,13 @@ export default function InsightsScreen({
   return (
     <div className="flex-1 bg-[#09090b] p-4 md:p-8 overflow-y-auto">
       {/* HEADER */}
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3 text-white">
             <Zap className="text-yellow-400" size={30} />
             Insights Industriais
           </h1>
-          <p className="text-xs text-zinc-500 mt-1">
-            Visão analítica consolidada de todas as máquinas
-          </p>
+          <p className="text-xs text-zinc-500 mt-1">Visão analítica consolidada de todas as máquinas</p>
         </div>
         <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden">
           {[
@@ -546,65 +539,119 @@ export default function InsightsScreen({
         </div>
       </header>
 
-      {/* CARDS RESUMO */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <SummaryCard icon={Clock} label="Total Horas Paradas" value={`${totalHorasParadas.toFixed(1)}h`} desc={`${(totalHorasParadas * 60).toFixed(0)} min no período`} accent="red" />
-        <SummaryCard icon={Activity} label="OEE Médio Geral" value={`${mediaOEE.toFixed(1)}%`} desc={`Disp. média: ${mediaDisp.toFixed(1)}%`} accent="green" />
-        <SummaryCard icon={Trophy} label="Máq. Mais Produtiva" value={maquinaMaisProdutiva ? maquinaMaisProdutiva.nome : "–"} desc={maquinaMaisProdutiva ? `OEE ${maquinaMaisProdutiva.oee.toFixed(1)}% | ${maquinaMaisProdutiva.totalProdPcs.toLocaleString("pt-BR")} pç` : ""} accent="blue" />
-        <SummaryCard icon={AlertOctagon} label="Máq. Mais Parada" value={maquinaMaisParada ? maquinaMaisParada.nome : "–"} desc={maquinaMaisParada ? `${maquinaMaisParada.totalParadasMin.toFixed(0)} min parados` : ""} accent="orange" />
-      </div>
-
-      {/* SEGUNDA LINHA DE CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      {/* KPI CARDS — 4 métricas principais */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <SummaryCard icon={Clock} label="Horas Paradas" value={`${totalHorasParadas.toFixed(1)}h`} desc={`${(totalHorasParadas * 60).toFixed(0)} min no período`} accent="red" />
+        <SummaryCard icon={Activity} label="OEE Médio Geral" value={`${mediaOEE.toFixed(1)}%`} desc={`Disponib. média: ${mediaDisp.toFixed(1)}%`} accent="green" />
         <SummaryCard icon={BarChart3} label="Produção Total" value={`${totalProdPcs.toLocaleString("pt-BR")} pç`} desc={`${totalProdKg.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg estimados`} accent="emerald" />
-        <SummaryCard icon={Factory} label="Máquinas Ativas" value={`${machineKPIs.length}`} desc={`Com registros no período`} accent="purple" />
-        <SummaryCard icon={Layers} label="Motivos de Parada" value={`${paretoGeral.length}`} desc={`distintos registrados`} accent="yellow" />
+        <SummaryCard icon={Factory} label="Máquinas Ativas" value={`${machineKPIs.length}`} desc="Com registros no período" accent="purple" />
       </div>
 
-      {/* RANKING DISPONIBILIDADE + RANKING OEE */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
-        {/* Ranking Disponibilidade */}
-        <div className="bg-[#050509] border border-white/10 rounded-2xl p-5">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-            <Clock size={18} className="text-blue-400" />
-            Ranking de Disponibilidade
-          </h2>
-          {rankDisp.length === 0 ? (
-            <p className="text-sm text-zinc-500">Sem dados no período</p>
-          ) : (
-            <div className="space-y-2">
-              {rankDisp.map((m, idx) => (
-                <RankBar key={m.token} rank={idx + 1} label={m.nome} value={m.disponibilidade} suffix="%" color={m.disponibilidade >= 85 ? "#22c55e" : m.disponibilidade >= 60 ? "#eab308" : "#ef4444"} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Ranking OEE */}
-        <div className="bg-[#050509] border border-white/10 rounded-2xl p-5">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-            <Activity size={18} className="text-emerald-400" />
-            Ranking de OEE
-          </h2>
-          {rankOEE.length === 0 ? (
-            <p className="text-sm text-zinc-500">Sem dados no período</p>
-          ) : (
-            <div className="space-y-2">
-              {rankOEE.map((m, idx) => (
-                <RankBar key={m.token} rank={idx + 1} label={m.nome} value={m.oee} suffix="%" color={m.oee >= 70 ? "#22c55e" : m.oee >= 40 ? "#eab308" : "#ef4444"} />
-              ))}
-            </div>
-          )}
-        </div>
+      {/* EVOLUÇÃO TEMPORAL */}
+      <div className="bg-[#050509] border border-white/10 rounded-2xl p-5 mb-6">
+        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+          <TrendingUp size={18} className="text-emerald-400" />
+          Evolução {granularityLabel}
+        </h2>
+        {timelineOEE.length === 0 ? (
+          <div className="h-52 flex items-center justify-center text-zinc-500 text-sm">Sem dados suficientes no período</div>
+        ) : (
+          <div className="h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={timelineOEE} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={10} />
+                <YAxis stroke="#a1a1aa" domain={[0, 100]} fontSize={10} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    return (
+                      <div className="bg-[#020617] border border-zinc-700 rounded-lg shadow-xl p-3 text-xs min-w-[160px]">
+                        <div className="text-zinc-400 mb-2 border-b border-zinc-800 pb-1">{label}</div>
+                        {payload.map((p) => (
+                          <div key={p.dataKey} className="flex justify-between gap-4" style={{ color: p.color }}>
+                            <span>{p.name}</span>
+                            <span className="font-semibold">{p.value}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line type="monotone" dataKey="oee" name="OEE" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="disponibilidade" name="Disponibilidade" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="performance" name="Performance" stroke="#eab308" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
-      {/* PARETO GERAL + PARADAS POR GRUPO */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
-        {/* Top 10 motivos */}
+      {/* PERFORMANCE POR MÁQUINA */}
+      <div className="bg-[#050509] border border-white/10 rounded-2xl p-5 mb-6">
+        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-2">
+          <Factory size={18} className="text-cyan-400" />
+          Performance por Máquina
+        </h2>
+        {machineKPIs.length === 0 ? (
+          <p className="text-sm text-zinc-500 mt-3">Sem dados no período</p>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {[...machineKPIs].sort((a, b) => b.oee - a.oee).map((m, idx) => (
+              <div key={m.token} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 py-4">
+                {/* rank + nome */}
+                <div className="flex items-center gap-3 w-full sm:w-56 shrink-0">
+                  <span className="text-[10px] font-bold text-zinc-600 w-5 text-right shrink-0">{idx + 1}º</span>
+                  <span className="text-sm font-medium text-zinc-200 truncate">{m.nome}</span>
+                </div>
+                {/* barras */}
+                <div className="flex-1 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-zinc-500 w-20 shrink-0">Disponib.</span>
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${m.disponibilidade}%`,
+                          backgroundColor: m.disponibilidade >= 85 ? "#22c55e" : m.disponibilidade >= 60 ? "#eab308" : "#ef4444",
+                        }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-zinc-300 font-semibold w-12 text-right shrink-0">{m.disponibilidade.toFixed(1)}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-zinc-500 w-20 shrink-0">OEE</span>
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${m.oee}%`,
+                          backgroundColor: m.oee >= 70 ? "#22c55e" : m.oee >= 40 ? "#eab308" : "#ef4444",
+                        }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-zinc-300 font-semibold w-12 text-right shrink-0">{m.oee.toFixed(1)}%</span>
+                  </div>
+                </div>
+                {/* stats */}
+                <div className="flex sm:flex-col items-center sm:items-end gap-4 sm:gap-0.5 shrink-0">
+                  <span className="text-sm font-semibold text-white">{m.totalProdPcs.toLocaleString("pt-BR")} pç</span>
+                  <span className="text-xs text-zinc-500">{m.totalParadasMin.toFixed(0)} min parados</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ANÁLISE DE PARADAS */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Top 10 motivos — 2/3 */}
         <div className="xl:col-span-2 bg-[#050509] border border-white/10 rounded-2xl p-5">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
             <AlertOctagon size={18} className="text-red-400" />
-            Top 10 Motivos de Parada (Geral)
+            Top 10 Motivos de Parada
           </h2>
           {paretoGeral.length === 0 ? (
             <div className="h-64 flex items-center justify-center text-zinc-500 text-sm">Sem paradas no período</div>
@@ -639,7 +686,7 @@ export default function InsightsScreen({
           )}
         </div>
 
-        {/* Paradas por Categoria */}
+        {/* Paradas por Categoria — 1/3 */}
         <div className="bg-[#050509] border border-white/10 rounded-2xl p-5">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
             <Filter size={18} className="text-purple-400" />
@@ -667,144 +714,6 @@ export default function InsightsScreen({
             </div>
           )}
         </div>
-      </div>
-
-      {/* EVOLUÇÃO TEMPORAL */}
-      <div className="bg-[#050509] border border-white/10 rounded-2xl p-5 mb-8">
-        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-          <TrendingUp size={18} className="text-emerald-400" />
-          Evolução {granularityLabel}
-        </h2>
-        {timelineOEE.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-zinc-500 text-sm">Sem dados suficientes</div>
-        ) : (
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timelineOEE} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={10} />
-                <YAxis stroke="#a1a1aa" domain={[0, 100]} fontSize={10} />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload?.length) return null;
-                    return (
-                      <div className="bg-[#020617] border border-zinc-700 rounded-lg shadow-xl p-3 text-xs min-w-[160px]">
-                        <div className="text-zinc-400 mb-2 border-b border-zinc-800 pb-1">{label}</div>
-                        {payload.map((p) => (
-                          <div key={p.dataKey} className="flex justify-between gap-4" style={{ color: p.color }}>
-                            <span>{p.name}</span>
-                            <span className="font-semibold">{p.value}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="oee" name="OEE" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="disponibilidade" name="Disponibilidade" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="performance" name="Performance" stroke="#eab308" strokeWidth={2} dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* HEATMAP − MÁQUINA × MOTIVO */}
-      <div className="bg-[#050509] border border-white/10 rounded-2xl p-5 mb-8 overflow-x-auto">
-        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-          <Layers size={18} className="text-orange-400" />
-          Mapa de Paradas: Máquina × Motivo
-        </h2>
-        {heatmapData.length === 0 ? (
-          <p className="text-sm text-zinc-500">Sem dados no período</p>
-        ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr>
-                <th className="text-left text-zinc-400 font-semibold py-2 px-2 sticky left-0 bg-[#050509]">Máquina</th>
-                {heatmapMotivos.map((m) => (
-                  <th key={m} className="text-center text-zinc-400 font-semibold py-2 px-2 max-w-[120px]" title={m}>
-                    {m.length > 20 ? m.slice(0, 18) + "…" : m}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {heatmapData.map((row, idx) => (
-                <tr key={idx} className="border-t border-white/5">
-                  <td className="text-zinc-300 py-2 px-2 whitespace-nowrap sticky left-0 bg-[#050509]">{row.maquina}</td>
-                  {heatmapMotivos.map((motivo) => {
-                    const val = Math.round(row[motivo] || 0);
-                    const maxVal = Math.max(...heatmapData.map((r) => r[motivo] || 0), 1);
-                    const intensity = val / maxVal;
-                    return (
-                      <td key={motivo} className="text-center py-2 px-2">
-                        <div
-                          className="rounded px-2 py-1 mx-auto inline-block min-w-[40px] font-medium"
-                          style={{
-                            backgroundColor: val > 0 ? `rgba(239, 68, 68, ${0.15 + intensity * 0.65})` : "transparent",
-                            color: val > 0 ? "#fecaca" : "#3f3f46",
-                          }}
-                        >
-                          {val > 0 ? `${val}m` : "–"}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* TABELA DETALHADA POR MÁQUINA */}
-      <div className="bg-[#050509] border border-white/10 rounded-2xl p-5">
-        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-          <Factory size={18} className="text-cyan-400" />
-          Resumo Detalhado por Máquina
-        </h2>
-        {machineKPIs.length === 0 ? (
-          <p className="text-sm text-zinc-500">Sem dados</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-zinc-400 uppercase text-[10px] tracking-wider">
-                  <th className="text-left py-2 px-3">Máquina</th>
-                  <th className="text-center py-2 px-3">Dias</th>
-                  <th className="text-center py-2 px-3">Produção (pç)</th>
-                  <th className="text-center py-2 px-3">Peso (kg)</th>
-                  <th className="text-center py-2 px-3">Paradas (min)</th>
-                  <th className="text-center py-2 px-3">Disp.</th>
-                  <th className="text-center py-2 px-3">Perf.</th>
-                  <th className="text-center py-2 px-3">OEE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...machineKPIs].sort((a, b) => b.oee - a.oee).map((m) => (
-                  <tr key={m.token} className="border-t border-white/5 hover:bg-white/[0.02]">
-                    <td className="text-zinc-200 font-medium py-2 px-3 whitespace-nowrap">{m.nome}</td>
-                    <td className="text-center text-zinc-400 py-2 px-3">{m.dias}</td>
-                    <td className="text-center text-zinc-300 py-2 px-3">{m.totalProdPcs.toLocaleString("pt-BR")}</td>
-                    <td className="text-center text-zinc-300 py-2 px-3">{m.totalProdKg.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</td>
-                    <td className="text-center text-zinc-300 py-2 px-3">{m.totalParadasMin.toFixed(0)}</td>
-                    <td className="text-center py-2 px-3">
-                      <KpiPill value={m.disponibilidade} thresholds={[85, 60]} />
-                    </td>
-                    <td className="text-center py-2 px-3">
-                      <KpiPill value={m.performance} thresholds={[75, 50]} />
-                    </td>
-                    <td className="text-center py-2 px-3">
-                      <KpiPill value={m.oee} thresholds={[70, 40]} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -834,24 +743,4 @@ const SummaryCard = ({ icon: Icon, label, value, desc, accent = "green" }) => {
       </div>
     </div>
   );
-};
-
-const RankBar = ({ rank, label, value, suffix = "", color = "#22c55e" }) => (
-  <div className="flex items-center gap-2">
-    <span className="text-[10px] text-zinc-500 font-bold w-5 text-right">{rank}º</span>
-    <div className="flex-1 min-w-0">
-      <div className="flex justify-between text-xs mb-0.5">
-        <span className="text-zinc-300 truncate">{label}</span>
-        <span className="text-zinc-200 font-semibold ml-2">{value.toFixed(1)}{suffix}</span>
-      </div>
-      <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${Math.min(value, 100)}%`, backgroundColor: color }} />
-      </div>
-    </div>
-  </div>
-);
-
-const KpiPill = ({ value, thresholds = [70, 40] }) => {
-  const color = value >= thresholds[0] ? "text-emerald-400 bg-emerald-500/10" : value >= thresholds[1] ? "text-yellow-400 bg-yellow-500/10" : "text-red-400 bg-red-500/10";
-  return <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${color}`}>{value.toFixed(1)}%</span>;
 };
