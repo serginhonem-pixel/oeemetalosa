@@ -269,17 +269,41 @@ const login = async () => {
   return json.idToken;
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithRetry = async (url, options, label, maxRetries = 5) => {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const res = await fetch(url, options);
+    if (res.ok) return res;
+
+    const text = await res.text();
+    const retryable = res.status === 429 || res.status === 500 || res.status === 503;
+    lastError = new Error(`${label} falhou: ${res.status} ${text}`);
+
+    if (!retryable || attempt === maxRetries) {
+      throw lastError;
+    }
+
+    const waitMs = Math.min(30000, 1500 * 2 ** attempt);
+    console.warn(`${label}: tentativa ${attempt + 1}/${maxRetries + 1} recebeu ${res.status}. Aguardando ${waitMs}ms...`);
+    await sleep(waitMs);
+  }
+
+  throw lastError;
+};
+
 const commitWrites = async (idToken, writes) => {
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       Authorization: `Bearer ${idToken}`,
     },
     body: JSON.stringify({ writes }),
-  });
-  if (!res.ok) throw new Error(`commit falhou: ${res.status} ${await res.text()}`);
+  }, "commit");
 };
 
 const queryAccessSyncDocNames = async (idToken, collectionId) => {
@@ -302,17 +326,14 @@ const queryAccessSyncDocNames = async (idToken, collectionId) => {
         limit: PAGE,
       },
     };
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         Authorization: `Bearer ${idToken}`,
       },
       body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      throw new Error(`runQuery ${collectionId} falhou: ${res.status} ${await res.text()}`);
-    }
+    }, `runQuery ${collectionId}`);
     const arr = await res.json();
     const page = arr.filter((x) => x.document?.name).map((x) => x.document.name);
     allNames.push(...page);
