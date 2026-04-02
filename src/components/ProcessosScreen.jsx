@@ -1166,7 +1166,6 @@ const ProcessosScreen = () => {
     const pieChartData = processPieData();
     const tipoPorMesData = processTipoPorMesData();
     const dadosComVariacao = calcularVariacaoMensal();
-    const dadosGraficoFiltrados = obterDadosFiltrados();
 
     // Funções para novos gráficos e insights
     const calcularKPIs = () => {
@@ -1258,6 +1257,8 @@ const ProcessosScreen = () => {
         // Retornar todos os dados (visualizacao === 'todos')
         return dadosComMediaDia;
     };
+
+    const dadosGraficoFiltrados = obterDadosFiltrados();
 
     const getTop5Processos = () => {
         const tipoMap = {};
