@@ -724,7 +724,7 @@ const ProcessosScreen = () => {
 
         let mediaDiaDiffPctRaw = Number(payload?.mediaDiaDiffPct);
         if (!Number.isFinite(mediaDiaDiffPctRaw) && typeof index === 'number' && index > 0) {
-            const prevMediaDia = Number(obterDadosFiltrados()?.[index - 1]?.mediaDia);
+            const prevMediaDia = Number(dadosGraficoFiltrados?.[index - 1]?.mediaDia);
             if (
                 Number.isFinite(prevMediaDia) &&
                 prevMediaDia !== 0 &&
@@ -1166,6 +1166,7 @@ const ProcessosScreen = () => {
     const pieChartData = processPieData();
     const tipoPorMesData = processTipoPorMesData();
     const dadosComVariacao = calcularVariacaoMensal();
+    const dadosGraficoFiltrados = obterDadosFiltrados();
 
     // Funções para novos gráficos e insights
     const calcularKPIs = () => {
@@ -1883,13 +1884,21 @@ const ProcessosScreen = () => {
                                                                     : '';
                                                                 return [`${value.toLocaleString('pt-BR')}${mediaDiaTexto}`, name.replace('quantidade_', 'Ano ')];
                                                             } else if (name === 'quantidade') {
-                                                                const item = props.payload;
+                                                                const item = props?.payload || {};
+                                                                const mediaDia = Number(item.mediaDia);
+                                                                const mediaDiaText = Number.isFinite(mediaDia)
+                                                                    ? `\nMedia/dia: ${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`
+                                                                    : '';
+                                                                const mediaDiaDiffPct = Number(item.mediaDiaDiffPct);
+                                                                const mediaDiaTrendText = Number.isFinite(mediaDiaDiffPct)
+                                                                    ? `\nRitmo vs mes anterior: ${mediaDiaDiffPct > 0 ? '+' : ''}${mediaDiaDiffPct.toFixed(1)}%`
+                                                                    : '';
                                                                 let variacaoText = '';
-                                                                if (item.variacao !== null) {
+                                                                if (item.variacao !== null && item.variacao !== undefined) {
                                                                     const sinal = item.variacao > 0 ? '+' : '';
                                                                     variacaoText = `\nVariação: ${sinal}${item.variacao.toLocaleString('pt-BR')} (${item.percentual > 0 ? '+' : ''}${item.percentual.toFixed(1)}%) ${item.simbolo}`;
                                                                 }
-                                                                return [value.toLocaleString('pt-BR') + variacaoText, 'Quantidade'];
+                                                                return [value.toLocaleString('pt-BR') + mediaDiaText + mediaDiaTrendText + variacaoText, 'Quantidade'];
                                                             }
                                                             return [value.toLocaleString('pt-BR'), name];
                                                         }}
