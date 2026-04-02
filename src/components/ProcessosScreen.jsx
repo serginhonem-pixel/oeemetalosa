@@ -50,6 +50,35 @@ const ProcessosScreen = () => {
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase();
 
+    const getMesKey = (mesNome) => {
+        const raw = normalizeMesNome(mesNome);
+        if (!raw) return '';
+
+        const aliases = [
+            ['janeiro', ['jan']],
+            ['fevereiro', ['fev']],
+            ['marco', ['mar', 'mara']],
+            ['abril', ['abr']],
+            ['maio', ['mai']],
+            ['junho', ['jun']],
+            ['julho', ['jul']],
+            ['agosto', ['ago']],
+            ['setembro', ['set']],
+            ['outubro', ['out']],
+            ['novembro', ['nov']],
+            ['dezembro', ['dez']]
+        ];
+
+        for (const [key, starts] of aliases) {
+            if (starts.some((prefix) => raw.startsWith(prefix))) {
+                return key;
+            }
+        }
+
+        const match = raw.match(/[a-z]+/);
+        return match ? match[0] : '';
+    };
+
     const MESES = [
         'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
@@ -92,16 +121,15 @@ const ProcessosScreen = () => {
     const [novoDiaMes, setNovoDiaMes] = useState({ mes: 'Janeiro', ano: 2025, diasUteis: 0 });
 
     const getDiasUteisByMesLabel = (mesLabel) => {
-        const raw = normalizeMesNome(mesLabel);
-        if (!raw) return null;
-        const match = raw.match(/[a-z]+/);
-        const key = match ? match[0] : '';
+        const key = getMesKey(mesLabel);
+        if (!key) return null;
         const anoMatch = String(mesLabel || '').match(/(\d{4})/);
         const ano = anoMatch ? Number(anoMatch[1]) : null;
 
-        const fromState = diasUteisMes.find((item) => (
-            normalizeMesNome(item.mes) === key && (ano ? Number(item.ano) === ano : true)
+        const matches = diasUteisMes.filter((item) => (
+            getMesKey(item.mes) === key && (ano ? Number(item.ano) === ano : true)
         ));
+        const fromState = matches.length ? matches[matches.length - 1] : null;
 
         if (fromState && Number.isFinite(Number(fromState.diasUteis))) {
             return Number(fromState.diasUteis);
