@@ -114,6 +114,20 @@ const ProcessosScreen = () => {
         return null;
     };
 
+    const getMediaDiaByMesLabel = (mesLabel, quantidade) => {
+        const diasUteis = getDiasUteisByMesLabel(mesLabel);
+        const quantidadeNum = Number(quantidade);
+
+        if (!diasUteis || !Number.isFinite(quantidadeNum)) {
+            return { diasUteis, mediaDia: null };
+        }
+
+        return {
+            diasUteis,
+            mediaDia: quantidadeNum / diasUteis
+        };
+    };
+
     const [novoProcesso, setNovoProcesso] = useState({
         nome: ''
     });
@@ -718,8 +732,7 @@ const ProcessosScreen = () => {
     const CustomBarLabel = ({ x, y, width, height, value, payload, index }) => {
         const formatted = Number(value).toLocaleString('pt-BR');
         const mesLabel = payload?.mes ?? dadosComVariacao?.[index]?.mes ?? '';
-        const diasUteis = payload?.diasUteis || getDiasUteisByMesLabel(mesLabel);
-        const mediaDiaCalc = payload?.mediaDia ?? (diasUteis ? (Number(value) / diasUteis) : null);
+        const { diasUteis, mediaDia: mediaDiaCalc } = getMediaDiaByMesLabel(mesLabel, value);
         const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`;
 
         let mediaDiaDiffPctRaw = Number(payload?.mediaDiaDiffPct);
@@ -1191,8 +1204,7 @@ const ProcessosScreen = () => {
     const obterDadosFiltrados = () => {
         const withMediaDia = (item) => {
             if (!item || item.quantidade === undefined || item.quantidade === null) return item;
-            const diasUteis = getDiasUteisByMesLabel(item.mes);
-            const mediaDia = diasUteis ? (Number(item.quantidade) / diasUteis) : null;
+            const { diasUteis, mediaDia } = getMediaDiaByMesLabel(item.mes, item.quantidade);
             return { ...item, diasUteis, mediaDia };
         };
         // Aplica filtro de tipo em todos os dados primeiro
@@ -1247,10 +1259,10 @@ const ProcessosScreen = () => {
                         return mesItem === mes && (anoItem || new Date().getFullYear().toString()) === ano;
                     });
                     const quantidade = item?.quantidade || 0;
-                    const diasUteis = getDiasUteisByMesLabel(`${mes} ${ano}`);
+                    const { diasUteis, mediaDia } = getMediaDiaByMesLabel(`${mes} ${ano}`, quantidade);
                     dadosMes[`quantidade_${ano}`] = quantidade;
                     dadosMes[`diasUteis_${ano}`] = diasUteis || null;
-                    dadosMes[`mediaDia_${ano}`] = diasUteis ? (quantidade / diasUteis) : null;
+                    dadosMes[`mediaDia_${ano}`] = mediaDia;
                 });
                 
                 resultado.push(dadosMes);
@@ -1890,7 +1902,7 @@ const ProcessosScreen = () => {
                                                                 return [`${value.toLocaleString('pt-BR')}${mediaDiaTexto}`, name.replace('quantidade_', 'Ano ')];
                                                             } else if (name === 'quantidade') {
                                                                 const item = props?.payload || {};
-                                                                const mediaDia = Number(item.mediaDia);
+                                                                const { mediaDia } = getMediaDiaByMesLabel(item.mes, value);
                                                                 const mediaDiaText = Number.isFinite(mediaDia)
                                                                     ? `\nMedia/dia: ${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`
                                                                     : '';
