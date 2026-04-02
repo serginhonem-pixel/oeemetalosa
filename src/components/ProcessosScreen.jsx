@@ -1170,17 +1170,21 @@ const ProcessosScreen = () => {
     // Funções para novos gráficos e insights
     const calcularKPIs = () => {
         if (dadosComVariacao.length === 0) {
-            return { total: 0, media: 0, maiorMes: 0, maiorMesNome: '', menorMes: 0, menorMesNome: '' };
+            return { total: 0, media: 0, mediaDia: 0, maiorMes: 0, maiorMesNome: '', menorMes: 0, menorMesNome: '' };
         }
         
         const total = dadosComVariacao.reduce((acc, d) => acc + d.quantidade, 0);
         const media = Math.round(total / dadosComVariacao.length);
+        const itensComMediaDia = dadosGraficoFiltrados.filter((item) => Number.isFinite(Number(item?.mediaDia)));
+        const mediaDia = itensComMediaDia.length
+            ? itensComMediaDia.reduce((acc, item) => acc + Number(item.mediaDia), 0) / itensComMediaDia.length
+            : 0;
         const maiorMes = Math.max(...dadosComVariacao.map(d => d.quantidade));
         const maiorMesNome = dadosComVariacao.find(d => d.quantidade === maiorMes)?.mes || '';
         const menorMes = Math.min(...dadosComVariacao.map(d => d.quantidade));
         const menorMesNome = dadosComVariacao.find(d => d.quantidade === menorMes)?.mes || '';
         
-        return { total, media, maiorMes, maiorMesNome, menorMes, menorMesNome };
+        return { total, media, mediaDia, maiorMes, maiorMesNome, menorMes, menorMesNome };
     };
 
     // Função para filtrar dados de visualização
@@ -1997,6 +2001,7 @@ const ProcessosScreen = () => {
                                     <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-5 shadow-lg">
                                         <div className="text-green-300 text-base font-bold mb-2 tracking-wide">MÉDIA MENSAL</div>
                                         <div className="text-white text-5xl font-black mb-1">{kpis.media.toLocaleString('pt-BR')}</div>
+                                        <div className="text-green-300 text-sm font-bold mb-1">{Number(kpis.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
                                         <div className="text-green-400 text-sm font-semibold">Produção por mês</div>
                                     </div>
                                     <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-5 shadow-lg">
