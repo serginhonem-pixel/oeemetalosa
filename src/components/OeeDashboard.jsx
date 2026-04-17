@@ -138,6 +138,38 @@ const formatTrend = (value) => {
     : `caiu ${Math.abs(value).toFixed(1)} p.p. vs período anterior`;
 };
 
+const sanitizeMojibakeText = (value) => {
+  const s = String(value || "");
+  const fixed = s
+    .replace(/\uFFFD/g, "")
+    .replace(/Ã¡/g, "á")
+    .replace(/Ã /g, "à")
+    .replace(/Ã¢/g, "â")
+    .replace(/Ã£/g, "ã")
+    .replace(/Ã©/g, "é")
+    .replace(/Ãª/g, "ê")
+    .replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó")
+    .replace(/Ã´/g, "ô")
+    .replace(/Ãµ/g, "õ")
+    .replace(/Ãº/g, "ú")
+    .replace(/Ã§/g, "ç")
+    .replace(/Ã/g, "Á")
+    .replace(/Ã€/g, "À")
+    .replace(/Ã‚/g, "Â")
+    .replace(/Ãƒ/g, "Ã")
+    .replace(/Ã‰/g, "É")
+    .replace(/ÃŠ/g, "Ê")
+    .replace(/Ã/g, "Í")
+    .replace(/Ã“/g, "Ó")
+    .replace(/Ã”/g, "Ô")
+    .replace(/Ã•/g, "Õ")
+    .replace(/Ãš/g, "Ú")
+    .replace(/Ã‡/g, "Ç");
+
+  return fixed.replace(/\s+/g, " ").trim();
+};
+
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 // ---------- CARDS ----------
@@ -913,7 +945,9 @@ export default function OeeDashboard({
 
     const motivosRegistrosMap = {};
     perdasParaPareto.forEach((p) => {
-      const key = p.descMotivo || p.descNorm || "Motivo não informado";
+      const key = sanitizeMojibakeText(
+        p.descMotivo || p.descNorm || "Motivo não informado"
+      );
       const dur = getDuracaoMin(p);
       motivosMap[key] = (motivosMap[key] || 0) + dur;
       if (!motivosRegistrosMap[key]) motivosRegistrosMap[key] = [];
