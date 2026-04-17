@@ -7,6 +7,8 @@ import {
   AlertOctagon,
   Download,
   Upload,
+  X,
+  Info,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -124,6 +126,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
   const [motivoCodigo, setMotivoCodigo] = useState("");
 
   const [importando, setImportando] = useState(false);
+  const [paradaSelecionada, setParadaSelecionada] = useState(null);
   const fileInputRef = useRef(null);
 
   const motivosDisponiveis = useMemo(() => DICIONARIO_PARADAS, []);
@@ -542,7 +545,8 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
             paradasDoDia.map((p, idx) => (
               <div
                 key={`${p.data}-${p.inicioNorm}-${idx}`}
-                className={`group flex flex-col md:grid md:grid-cols-[140px_1fr_180px_60px] gap-3 md:gap-4 items-start md:items-center px-4 py-4 rounded-xl border transition-all
+                onClick={() => setParadaSelecionada(p)}
+                className={`group flex flex-col md:grid md:grid-cols-[140px_1fr_180px_60px] gap-3 md:gap-4 items-start md:items-center px-4 py-4 rounded-xl border transition-all cursor-pointer
                   ${
                     p.isCritico
                       ? "bg-red-950/20 border-red-500/30 hover:border-red-500/50"
@@ -602,7 +606,7 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
                 <div className="flex justify-end md:justify-center w-full">
                   {deletarParada && (
                     <button
-                      onClick={() => deletarParada(p.id)}
+                      onClick={(e) => { e.stopPropagation(); deletarParada(p.id); }}
                       className="p-2.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                       title="Excluir Registro"
                     >
@@ -615,6 +619,70 @@ export const ParadasScreen = ({ eventosParada = [], onRegistrarParada, deletarPa
           )}
         </div>
       </div>
+
+      {/* MODAL DETALHES */}
+      {paradaSelecionada && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setParadaSelecionada(null)}
+        >
+          <div
+            className="bg-zinc-950 border border-zinc-700 rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  paradaSelecionada.isCritico ? "bg-red-500/20 text-red-400" :
+                  paradaSelecionada.isProducao ? "bg-emerald-500/20 text-emerald-400" :
+                  "bg-zinc-800 text-zinc-400"
+                }`}>
+                  <Info size={18} />
+                </div>
+                <h3 className="text-lg font-bold text-zinc-100">Detalhes da Parada</h3>
+              </div>
+              <button
+                onClick={() => setParadaSelecionada(null)}
+                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { label: "Data", value: formatarDataVisual(paradaSelecionada.data) },
+                { label: "Máquina", value: getNomeMaquina(paradaSelecionada.maquinaNorm) },
+                { label: "Horário", value: `${paradaSelecionada.inicioNorm || "-"} → ${paradaSelecionada.fimNorm || "-"}` },
+                { label: "Duração", value: `${paradaSelecionada.duracaoMinutos || 0} min` },
+                { label: "Código", value: paradaSelecionada.motivoNorm || "-" },
+                { label: "Motivo", value: paradaSelecionada.descNorm || "-" },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-start justify-between gap-4 py-2 border-b border-zinc-800 last:border-0">
+                  <span className="text-xs font-bold text-zinc-500 uppercase tracking-wide w-24 shrink-0">{label}</span>
+                  <span className="text-sm text-zinc-200 text-right">{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {paradaSelecionada.isCritico && (
+              <div className="mt-4 flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
+                <AlertTriangle size={15} className="text-red-400 shrink-0" />
+                <span className="text-xs text-red-300 font-medium">Parada crítica — duração ≥ 30 min</span>
+              </div>
+            )}
+
+            {deletarParada && (
+              <button
+                onClick={() => { deletarParada(paradaSelecionada.id); setParadaSelecionada(null); }}
+                className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors text-sm font-semibold"
+              >
+                <Trash2 size={15} /> Excluir este registro
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
