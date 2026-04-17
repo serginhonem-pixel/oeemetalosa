@@ -170,6 +170,22 @@ const sanitizeMojibakeText = (value) => {
   return fixed.replace(/\s+/g, " ").trim();
 };
 
+const getMotivoGroupKey = (parada) => {
+  const code = String(
+    parada?.motivoCodigo || parada?.codMotivo || parada?.motivoNorm || parada?.motivo || ""
+  )
+    .trim()
+    .toUpperCase();
+
+  if (code) return `COD:${code}`;
+
+  const rawDesc = sanitizeMojibakeText(
+    parada?.descMotivo || parada?.descNorm || "Motivo não informado"
+  );
+  const normalizedDesc = normalizeTextToken(rawDesc).replace(/[^A-Z0-9]/g, "");
+  return `TXT:${normalizedDesc || "MOTIVONAOINFORMADO"}`;
+};
+
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 // ---------- CARDS ----------
@@ -941,21 +957,30 @@ export default function OeeDashboard({
 
     // --- PARETO (TOP 5) ---
     const motivosMap = {};
+    const motivosLabelMap = {};
     const perdasParaPareto = perdasBase;
 
     const motivosRegistrosMap = {};
     perdasParaPareto.forEach((p) => {
-      const key = sanitizeMojibakeText(
-        p.descMotivo || p.descNorm || "Motivo não informado"
+      const key = getMotivoGroupKey(p);
+      const label = sanitizeMojibakeText(
+        p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Motivo não informado"
       );
       const dur = getDuracaoMin(p);
       motivosMap[key] = (motivosMap[key] || 0) + dur;
+      if (!motivosLabelMap[key] || label.length > motivosLabelMap[key].length) {
+        motivosLabelMap[key] = label;
+      }
       if (!motivosRegistrosMap[key]) motivosRegistrosMap[key] = [];
       motivosRegistrosMap[key].push(p);
     });
 
     const paretoParadasData = Object.entries(motivosMap)
-      .map(([motivo, duracao]) => ({ motivo, duracao, registros: motivosRegistrosMap[motivo] || [] }))
+      .map(([key, duracao]) => ({
+        motivo: motivosLabelMap[key] || "Motivo não informado",
+        duracao,
+        registros: motivosRegistrosMap[key] || [],
+      }))
       .sort((a, b) => b.duracao - a.duracao)
       .slice(0, 5);
 
