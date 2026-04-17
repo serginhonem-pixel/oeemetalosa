@@ -8,6 +8,8 @@ import {
   AlertCircle,
   BarChart3,
   Filter,
+  DollarSign,
+  Flame,
   X,
 } from "lucide-react";
 import {
@@ -137,6 +139,13 @@ const formatTrend = (value) => {
     : `caiu ${Math.abs(value).toFixed(1)} p.p. vs período anterior`;
 };
 
+const formatCurrencyBR = (value) =>
+  Number(value || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  });
+
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 // ---------- CARDS ----------
@@ -257,9 +266,14 @@ export default function OeeDashboard({
   const [velocidadeDraft, setVelocidadeDraft] = useState(
     String(DEFAULT_VELOCIDADE_M_POR_MIN)
   );
+  const [valorKgPerdaDraft, setValorKgPerdaDraft] = useState("0");
   
   // NOVO: Estado para filtro de mÃ¡quina
   const [maquinaId, setMaquinaId] = useState(""); 
+
+  const valorKgPerda = clampNonNegative(
+    Number(String(valorKgPerdaDraft || "0").replace(",", ".")) || 0
+  );
 
   // sincroniza com filtros externos
   useEffect(() => {
@@ -430,6 +444,10 @@ export default function OeeDashboard({
     principalParada,
     coberturaParetoTop2,
     ganhoPotencialKg,
+    perdaKgEstimada,
+    custoPerdaEstimado,
+    janelaCriticaData,
+    janelaCriticaPrincipal,
   } = useMemo(() => {
     let startISO = normalizeISODateInput(
       rangeStart || dataInicioInd || todayISO()
@@ -462,6 +480,10 @@ export default function OeeDashboard({
         principalParada: null,
         coberturaParetoTop2: 0,
         ganhoPotencialKg: 0,
+        perdaKgEstimada: 0,
+        custoPerdaEstimado: 0,
+        janelaCriticaData: [],
+        janelaCriticaPrincipal: { slot: "--", duracao: 0, ocorrencias: 0 },
       };
     }
 
@@ -797,6 +819,32 @@ export default function OeeDashboard({
       tempoTotalTurnoMin > 0
         ? (tempoRodandoMin / tempoTotalTurnoMin) * 100
         : 0;
+
+    const janelaDuracaoMap = new Map();
+    const janelaOcorrenciasMap = new Map();
+    perdasBase.forEach((p) => {
+      const ini = p.horaInicio || p.inicio || p.inicioNorm;
+      const rawHour = String(ini || "").split(":")[0];
+      const hour = Number(rawHour);
+      if (!Number.isFinite(hour) || hour < 0 || hour > 23) return;
+      const slot = `${String(hour).padStart(2, "0")}:00`;
+      const dur = getDuracaoMin(p);
+      janelaDuracaoMap.set(slot, (janelaDuracaoMap.get(slot) || 0) + dur);
+      janelaOcorrenciasMap.set(slot, (janelaOcorrenciasMap.get(slot) || 0) + 1);
+    });
+
+    const janelaCriticaData = Array.from({ length: 24 }, (_, hour) => {
+      const slot = `${String(hour).padStart(2, "0")}:00`;
+      return {
+        slot,
+        duracao: Number((janelaDuracaoMap.get(slot) || 0).toFixed(1)),
+        ocorrencias: janelaOcorrenciasMap.get(slot) || 0,
+      };
+    });
+    const janelaCriticaPrincipal = janelaCriticaData.reduce(
+      (max, item) => (item.duracao > max.duracao ? item : max),
+      { slot: "--", duracao: 0, ocorrencias: 0 }
+    );
             
     // --- CÃLCULO DE PRODUÃ‡ÃƒO ---
     let producaoTotalPcs = 0;
@@ -875,6 +923,11 @@ export default function OeeDashboard({
         qualidadeDia: 100,
         weightKg: Number(d.weightKg.toFixed(1)),
       }));
+
+    const taxaMediaKgPorMin =
+      tempoRodandoMin > 0 ? producaoTotalKg / tempoRodandoMin : 0;
+    const perdaKgEstimada = Math.max(0, tempoParadoMin * taxaMediaKgPorMin);
+    const custoPerdaEstimado = Math.max(0, perdaKgEstimada * valorKgPerda);
 
     // --- PARETO (TOP 5) ---
     const motivosMap = {};
@@ -955,6 +1008,10 @@ export default function OeeDashboard({
       principalParada,
       coberturaParetoTop2,
       ganhoPotencialKg,
+      perdaKgEstimada,
+      custoPerdaEstimado,
+      janelaCriticaData,
+      janelaCriticaPrincipal,
     };
   }, [
     rangeStart,
@@ -966,6 +1023,7 @@ export default function OeeDashboard({
     capacidadeDiaria,
     turnoHoras,
     velocidadeMpm,
+    valorKgPerda,
     maquinaId, // IMPORTANTE: Recalcula tudo quando troca a mÃ¡quina
     maquinasDisponiveis
   ]);
@@ -1187,6 +1245,21 @@ export default function OeeDashboard({
             </button>
           </div>
 
+          <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-lg self-end">
+            <span className="text-[10px] text-zinc-400 uppercase tracking-[0.18em] font-semibold">
+              R$/kg perda
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={valorKgPerdaDraft}
+              onChange={(e) => setValorKgPerdaDraft(e.target.value)}
+              className="w-16 bg-transparent text-white text-sm font-medium outline-none text-right"
+            />
+            <span className="text-zinc-500 text-[11px]">estimado</span>
+          </div>
+
           {/* INPUTS DE DATA (VISUAL MELHORADO) */}
           <div className="flex items-center gap-3 bg-zinc-900 px-4 py-2 rounded-2xl border border-white/10 text-xs shadow-sm">
             <CalendarDays className="text-zinc-400" size={16} />
@@ -1289,7 +1362,7 @@ export default function OeeDashboard({
       </div>
 
       {/* RESUMO NUMÃ‰RICO */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-4">
         <StatCard
           icon={BarChart3}
           label="Produção (período)"
@@ -1313,6 +1386,18 @@ export default function OeeDashboard({
           label="Tempo total de turno"
           value={`${tempoTotalTurnoMin.toFixed(0)} min`}
           helper={`${turnoHoras}h × ${diasNoPeriodo || 0} dia(s)`}
+        />
+        <StatCard
+          icon={DollarSign}
+          label="Custo da perda"
+          value={formatCurrencyBR(custoPerdaEstimado)}
+          helper={`${perdaKgEstimada.toFixed(1)} kg perdidos estimados`}
+        />
+        <StatCard
+          icon={Flame}
+          label="Janela crítica"
+          value={`${janelaCriticaPrincipal.slot}`}
+          helper={`${janelaCriticaPrincipal.duracao.toFixed(0)} min em ${janelaCriticaPrincipal.ocorrencias} parada(s)`}
         />
       </div>
 
@@ -1503,6 +1588,57 @@ export default function OeeDashboard({
           </div>
           <p className="text-[10px] text-zinc-500 mt-2">
             *Clique em uma barra para ver os registros. Motivos que mais impactam a disponibilidade.
+          </p>
+        </div>
+
+        <div className="xl:col-span-3 bg-[#050509] border border-white/10 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Clock size={18} className="text-amber-400" />
+              Janela crítica por horário
+            </h2>
+            <span className="text-xs text-zinc-400">
+              Pico: {janelaCriticaPrincipal.slot} ({janelaCriticaPrincipal.duracao.toFixed(0)} min)
+            </span>
+          </div>
+
+          <div className="h-56">
+            {janelaCriticaData.every((p) => Number(p.duracao || 0) === 0) ? (
+              <div className="h-full flex items-center justify-center text-sm text-zinc-500">
+                Sem paradas com horário válido no período.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
+                <BarChart data={janelaCriticaData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis dataKey="slot" stroke="#a1a1aa" interval={2} fontSize={10} />
+                  <YAxis stroke="#a1a1aa" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#020617",
+                      border: "1px solid #3f3f46",
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: "#e4e4e7" }}
+                    formatter={(value, key, payload) => {
+                      if (key === "duracao") return [`${value} min`, "Paradas"];
+                      return [value, payload?.name || key];
+                    }}
+                  />
+                  <Bar dataKey="duracao" name="Paradas (min)" radius={[4, 4, 0, 0]}>
+                    {janelaCriticaData.map((entry) => (
+                      <Cell
+                        key={`janela-${entry.slot}`}
+                        fill={entry.slot === janelaCriticaPrincipal.slot ? "#f59e0b" : "#334155"}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <p className="text-[10px] text-zinc-500 mt-2">
+            *Acima mostra em quais horas do dia as paradas mais concentraram minutos.
           </p>
         </div>
       </div>
