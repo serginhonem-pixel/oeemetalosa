@@ -1022,6 +1022,7 @@ export default function OeeDashboard({
   };
 
   return (
+    <>
     <div className="flex-1 bg-[#09090b] p-8 overflow-y-auto">
       {/* HEADER */}
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
@@ -1451,8 +1452,8 @@ export default function OeeDashboard({
       </div>
     </div>
 
-    {/* MODAL DRILL-DOWN PARETO */}
-    {paretoModal && (
+      {/* MODAL DRILL-DOWN PARETO */}
+      {paretoModal && (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
         onClick={() => setParetoModal(null)}
@@ -1513,6 +1514,7 @@ export default function OeeDashboard({
         </div>
       </div>
     )}
+    </>
   );
 }
 
