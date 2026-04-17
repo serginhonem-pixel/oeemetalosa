@@ -7,7 +7,8 @@ import {
   AlertOctagon,
   AlertCircle,
   BarChart3,
-  Filter
+  Filter,
+  X,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -245,6 +246,7 @@ export default function OeeDashboard({
   const lastValidStartRef = useRef(normalizeISODateInput(dataInicioInd || todayISO()));
   const lastValidEndRef = useRef(normalizeISODateInput(dataFimInd || todayISO()));
   const [selectedDayISO, setSelectedDayISO] = useState("");
+  const [paretoModal, setParetoModal] = useState(null); // { motivo, registros }
   const lastRangeStartRef = useRef(dataInicioInd || todayISO());
   const lastRangeEndRef = useRef(dataFimInd || todayISO());
   const [metricMode, setMetricMode] = useState("pieces"); // 'pieces' | 'weight'
@@ -878,14 +880,17 @@ export default function OeeDashboard({
     const motivosMap = {};
     const perdasParaPareto = perdasBase;
 
+    const motivosRegistrosMap = {};
     perdasParaPareto.forEach((p) => {
       const key = p.descMotivo || p.descNorm || "Motivo não informado";
       const dur = getDuracaoMin(p);
       motivosMap[key] = (motivosMap[key] || 0) + dur;
+      if (!motivosRegistrosMap[key]) motivosRegistrosMap[key] = [];
+      motivosRegistrosMap[key].push(p);
     });
 
     const paretoParadasData = Object.entries(motivosMap)
-      .map(([motivo, duracao]) => ({ motivo, duracao }))
+      .map(([motivo, duracao]) => ({ motivo, duracao, registros: motivosRegistrosMap[motivo] || [] }))
       .sort((a, b) => b.duracao - a.duracao)
       .slice(0, 5);
 
@@ -1430,6 +1435,8 @@ export default function OeeDashboard({
                     fill="#f87171"
                     radius={[0, 4, 4, 0]}
                     barSize={30}
+                    style={{ cursor: "pointer" }}
+                    onClick={(data) => setParetoModal({ motivo: data.motivo, registros: data.registros || [] })}
                   >
                     <LabelList content={renderParetoLabel} />
                   </Bar>
@@ -1438,11 +1445,74 @@ export default function OeeDashboard({
             )}
           </div>
           <p className="text-[10px] text-zinc-500 mt-2">
-            *Motivos que mais impactam a disponibilidade.
+            *Clique em uma barra para ver os registros. Motivos que mais impactam a disponibilidade.
           </p>
         </div>
       </div>
     </div>
+
+    {/* MODAL DRILL-DOWN PARETO */}
+    {paretoModal && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        onClick={() => setParetoModal(null)}
+      >
+        <div
+          className="bg-zinc-950 border border-zinc-700 rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-500/20 flex items-center justify-center">
+                <AlertOctagon size={18} className="text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-zinc-100 leading-tight">{paretoModal.motivo}</h3>
+                <p className="text-xs text-zinc-500">{paretoModal.registros.length} registro(s)</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setParetoModal(null)}
+              className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="overflow-y-auto flex-1 space-y-2">
+            {paretoModal.registros.length === 0 ? (
+              <p className="text-sm text-zinc-500 text-center py-8">Nenhum registro encontrado.</p>
+            ) : (
+              [...paretoModal.registros]
+                .sort((a, b) => (a.data || "").localeCompare(b.data || "") || (a.horaInicio || a.inicio || "").localeCompare(b.horaInicio || b.inicio || ""))
+                .map((p, i) => {
+                  const ini = p.horaInicio || p.inicio || p.inicioNorm || "-";
+                  const fim = p.horaFim || p.fim || p.fimNorm || "-";
+                  const dur = p.duracaoMinutos || p.duracao || 0;
+                  const maq = p.maquinaId || p.maquinaNorm || p.maquina || "-";
+                  const dataFmt = (p.data || "").split("-").reverse().join("/") || "-";
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="text-xs font-mono text-zinc-400">{dataFmt} &nbsp;{ini} → {fim}</span>
+                        <span className="text-xs text-zinc-500 truncate">{maq}</span>
+                      </div>
+                      <span className="text-sm font-bold text-red-400 shrink-0">{dur}m</span>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+
+          <div className="mt-4 shrink-0 pt-3 border-t border-zinc-800 flex justify-between items-center">
+            <span className="text-xs text-zinc-500">Total</span>
+            <span className="text-sm font-bold text-zinc-200">
+              {paretoModal.registros.reduce((acc, p) => acc + Number(p.duracaoMinutos || p.duracao || 0), 0)} min
+            </span>
+          </div>
+        </div>
+      </div>
+    )}
   );
 }
 
