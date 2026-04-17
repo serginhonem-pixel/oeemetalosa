@@ -978,6 +978,62 @@ export default function OeeDashboard({
   const deltaPerf = performance - Number(previousSnapshot?.performance || 0);
   const deltaQual = qualidade - Number(previousSnapshot?.qualidade || 0);
 
+  const parseHoraParaMin = (hhmm) => {
+    if (!hhmm || !String(hhmm).includes(":")) return null;
+    const [h, m] = String(hhmm).split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return h * 60 + m;
+  };
+
+  const getDuracaoRegistro = (p) => {
+    const direto = Number(p?.duracaoMinutos ?? p?.duracao);
+    if (Number.isFinite(direto) && direto > 0) return direto;
+
+    const ini = p?.horaInicio || p?.inicio || p?.inicioNorm;
+    const fim = p?.horaFim || p?.fim || p?.fimNorm;
+    const iniMin = parseHoraParaMin(ini);
+    const fimMin = parseHoraParaMin(fim);
+    if (!Number.isFinite(iniMin) || !Number.isFinite(fimMin)) return 0;
+
+    const diff = fimMin - iniMin;
+    return diff > 0 ? diff : 0;
+  };
+
+  const paretoInsights = useMemo(() => {
+    const registros = paretoModal?.registros || [];
+    if (!registros.length) {
+      return {
+        total: 0,
+        media: 0,
+        max: 0,
+        min: 0,
+        maquinasAfetadas: 0,
+      };
+    }
+
+    const duracoes = registros
+      .map((p) => getDuracaoRegistro(p))
+      .filter((v) => Number.isFinite(v) && v > 0);
+
+    const total = duracoes.reduce((acc, v) => acc + v, 0);
+    const media = duracoes.length ? total / duracoes.length : 0;
+    const max = duracoes.length ? Math.max(...duracoes) : 0;
+    const min = duracoes.length ? Math.min(...duracoes) : 0;
+    const maquinasAfetadas = new Set(
+      registros
+        .map((p) => p?.maquinaId || p?.maquinaNorm || p?.maquina)
+        .filter(Boolean)
+    ).size;
+
+    return {
+      total,
+      media,
+      max,
+      min,
+      maquinasAfetadas,
+    };
+  }, [paretoModal]);
+
   // --- LABEL CUSTOMIZADO (BARRAS) ---
   const renderProdLabel = (props) => {
     const { x, y, width, height, value, payload } = props;
@@ -1480,6 +1536,25 @@ export default function OeeDashboard({
             </button>
           </div>
 
+          <div className="grid grid-cols-2 gap-2 mb-4 shrink-0">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Média</p>
+              <p className="text-sm font-bold text-zinc-100">{paretoInsights.media.toFixed(1)} min</p>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Maior parada</p>
+              <p className="text-sm font-bold text-red-300">{paretoInsights.max.toFixed(0)} min</p>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Menor parada</p>
+              <p className="text-sm font-bold text-emerald-300">{paretoInsights.min.toFixed(0)} min</p>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Máquinas afetadas</p>
+              <p className="text-sm font-bold text-zinc-100">{paretoInsights.maquinasAfetadas}</p>
+            </div>
+          </div>
+
           <div className="overflow-y-auto flex-1 space-y-2">
             {paretoModal.registros.length === 0 ? (
               <p className="text-sm text-zinc-500 text-center py-8">Nenhum registro encontrado.</p>
@@ -1489,7 +1564,7 @@ export default function OeeDashboard({
                 .map((p, i) => {
                   const ini = p.horaInicio || p.inicio || p.inicioNorm || "-";
                   const fim = p.horaFim || p.fim || p.fimNorm || "-";
-                  const dur = p.duracaoMinutos || p.duracao || 0;
+                  const dur = getDuracaoRegistro(p);
                   const maq = p.maquinaId || p.maquinaNorm || p.maquina || "-";
                   const dataFmt = (p.data || "").split("-").reverse().join("/") || "-";
                   return (
@@ -1508,7 +1583,7 @@ export default function OeeDashboard({
           <div className="mt-4 shrink-0 pt-3 border-t border-zinc-800 flex justify-between items-center">
             <span className="text-xs text-zinc-500">Total</span>
             <span className="text-sm font-bold text-zinc-200">
-              {paretoModal.registros.reduce((acc, p) => acc + Number(p.duracaoMinutos || p.duracao || 0), 0)} min
+              {paretoInsights.total.toFixed(0)} min
             </span>
           </div>
         </div>
