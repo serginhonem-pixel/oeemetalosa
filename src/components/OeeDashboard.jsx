@@ -8,7 +8,6 @@ import {
   AlertCircle,
   BarChart3,
   Filter,
-  DollarSign,
   Flame,
   X,
 } from "lucide-react";
@@ -139,13 +138,6 @@ const formatTrend = (value) => {
     : `caiu ${Math.abs(value).toFixed(1)} p.p. vs período anterior`;
 };
 
-const formatCurrencyBR = (value) =>
-  Number(value || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  });
-
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 // ---------- CARDS ----------
@@ -266,14 +258,9 @@ export default function OeeDashboard({
   const [velocidadeDraft, setVelocidadeDraft] = useState(
     String(DEFAULT_VELOCIDADE_M_POR_MIN)
   );
-  const [valorKgPerdaDraft, setValorKgPerdaDraft] = useState("0");
   
   // NOVO: Estado para filtro de mÃ¡quina
   const [maquinaId, setMaquinaId] = useState(""); 
-
-  const valorKgPerda = clampNonNegative(
-    Number(String(valorKgPerdaDraft || "0").replace(",", ".")) || 0
-  );
 
   // sincroniza com filtros externos
   useEffect(() => {
@@ -444,8 +431,6 @@ export default function OeeDashboard({
     principalParada,
     coberturaParetoTop2,
     ganhoPotencialKg,
-    perdaKgEstimada,
-    custoPerdaEstimado,
     janelaCriticaData,
     janelaCriticaPrincipal,
   } = useMemo(() => {
@@ -480,8 +465,6 @@ export default function OeeDashboard({
         principalParada: null,
         coberturaParetoTop2: 0,
         ganhoPotencialKg: 0,
-        perdaKgEstimada: 0,
-        custoPerdaEstimado: 0,
         janelaCriticaData: [],
         janelaCriticaPrincipal: { slot: "--", duracao: 0, ocorrencias: 0 },
       };
@@ -924,11 +907,6 @@ export default function OeeDashboard({
         weightKg: Number(d.weightKg.toFixed(1)),
       }));
 
-    const taxaMediaKgPorMin =
-      tempoRodandoMin > 0 ? producaoTotalKg / tempoRodandoMin : 0;
-    const perdaKgEstimada = Math.max(0, tempoParadoMin * taxaMediaKgPorMin);
-    const custoPerdaEstimado = Math.max(0, perdaKgEstimada * valorKgPerda);
-
     // --- PARETO (TOP 5) ---
     const motivosMap = {};
     const perdasParaPareto = perdasBase;
@@ -1008,8 +986,6 @@ export default function OeeDashboard({
       principalParada,
       coberturaParetoTop2,
       ganhoPotencialKg,
-      perdaKgEstimada,
-      custoPerdaEstimado,
       janelaCriticaData,
       janelaCriticaPrincipal,
     };
@@ -1023,7 +999,6 @@ export default function OeeDashboard({
     capacidadeDiaria,
     turnoHoras,
     velocidadeMpm,
-    valorKgPerda,
     maquinaId, // IMPORTANTE: Recalcula tudo quando troca a mÃ¡quina
     maquinasDisponiveis
   ]);
@@ -1245,21 +1220,6 @@ export default function OeeDashboard({
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-lg self-end">
-            <span className="text-[10px] text-zinc-400 uppercase tracking-[0.18em] font-semibold">
-              R$/kg perda
-            </span>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={valorKgPerdaDraft}
-              onChange={(e) => setValorKgPerdaDraft(e.target.value)}
-              className="w-16 bg-transparent text-white text-sm font-medium outline-none text-right"
-            />
-            <span className="text-zinc-500 text-[11px]">estimado</span>
-          </div>
-
           {/* INPUTS DE DATA (VISUAL MELHORADO) */}
           <div className="flex items-center gap-3 bg-zinc-900 px-4 py-2 rounded-2xl border border-white/10 text-xs shadow-sm">
             <CalendarDays className="text-zinc-400" size={16} />
@@ -1362,7 +1322,7 @@ export default function OeeDashboard({
       </div>
 
       {/* RESUMO NUMÃ‰RICO */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-4">
         <StatCard
           icon={BarChart3}
           label="Produção (período)"
@@ -1386,12 +1346,6 @@ export default function OeeDashboard({
           label="Tempo total de turno"
           value={`${tempoTotalTurnoMin.toFixed(0)} min`}
           helper={`${turnoHoras}h × ${diasNoPeriodo || 0} dia(s)`}
-        />
-        <StatCard
-          icon={DollarSign}
-          label="Custo da perda"
-          value={formatCurrencyBR(custoPerdaEstimado)}
-          helper={`${perdaKgEstimada.toFixed(1)} kg perdidos estimados`}
         />
         <StatCard
           icon={Flame}
