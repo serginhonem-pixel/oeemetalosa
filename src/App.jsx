@@ -1613,7 +1613,7 @@ const loadAccessOeeFromCsv = async () => {
       );
       const pesoPorPeca = qtd > 0 && pesoTotal > 0 ? pesoTotal / qtd : 0;
       return {
-        id: `acc-prod-${idx}-${data}-${cod}`,
+        id: `acc_prod_${data}_${cod}_${qtd}___${idx}`.replace(/[^a-zA-Z0-9_\-]/g, ""),
         data,
         cod,
         qtd,
@@ -1642,7 +1642,7 @@ const loadAccessOeeFromCsv = async () => {
       const maquinaNome = String(row.MAQUINA || row.maquina || "").trim();
       const duracao = Math.max(0, toMinFromHHmm(fim) - toMinFromHHmm(inicio));
       return {
-        id: `acc-par-${idx}-${data}-${codMotivo}`,
+        id: `acc_par_${data}_${codMotivo}_${duracao}_${inicio}_${fim}_${idx}`.replace(/[^a-zA-Z0-9_\-]/g, ""),
         data,
         maquinaId: resolveMachineId(maquinaNome),
         maquina: maquinaNome,
