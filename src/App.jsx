@@ -1696,7 +1696,7 @@ useEffect(() => {
             maquinasParadas: maquinasPar,
           });
           setHistoricoProducaoReal(accessData.producao);
-          setHistoricoParadas(accessData.paradas);
+          setHistoricoParadas(deduplicateParadas(accessData.paradas));
           setMaquinasOeeExtras(
             buildOeeMachineExtras([...(accessData.producao || []), ...(accessData.paradas || [])])
           );
@@ -1713,7 +1713,7 @@ useEffect(() => {
 
           setFilaProducao(parsed.romaneios || []);
           setHistoricoProducaoReal(parsed.producao || []);
-          setHistoricoParadas(parsed.paradas || []);
+          setHistoricoParadas(deduplicateParadas(parsed.paradas || []));
           setMaquinasOeeExtras(
             buildOeeMachineExtras([...(parsed.producao || []), ...(parsed.paradas || [])])
           );
@@ -1758,7 +1758,7 @@ setGlobalDevSnapshot({
       console.log("📁 Sem cache local, carregando do backup JSON...");
       setFilaProducao(dadosLocais.romaneios || []);
       setHistoricoProducaoReal(dadosLocais.producao || []);
-      setHistoricoParadas(dadosLocais.paradas || []);
+      setHistoricoParadas(deduplicateParadas(dadosLocais.paradas || []));
       setDadosCarregados(true);
       return; // importante: não ir para o bloco do Firebase
     }
@@ -1813,6 +1813,22 @@ try {
     return Array.from(map.values());
   };
 
+  const deduplicateParadas = (list) => {
+    const seen = new Set();
+    return list.filter((p) => {
+      const key = [
+        String(p.data || ""),
+        String(p.horaInicio || p.inicio || ""),
+        String(p.horaFim || p.fim || ""),
+        String(p.codMotivo || p.motivoCodigo || "").toUpperCase(),
+        String(p.maquinaId || p.maquina || "").toUpperCase(),
+      ].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const producaoComAccess =
     accessDataProd && Array.isArray(accessDataProd.producao)
       ? mergeById(listaProducao, accessDataProd.producao)
@@ -1854,10 +1870,11 @@ try {
       data: toISODate(d.data), // ✅ se existir; se não existir fica ""
     };
   });
-  const paradasComAccess =
+  const paradasComAccess = deduplicateParadas(
     accessDataProd && Array.isArray(accessDataProd.paradas)
       ? mergeById(listaParadas, accessDataProd.paradas)
-      : listaParadas;
+      : listaParadas
+  );
   setHistoricoParadas(paradasComAccess);
 
   const maquinasVba = (() => {
