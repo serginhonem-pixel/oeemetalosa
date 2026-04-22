@@ -10,13 +10,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [2/4] Sincronizando com Firebase...
-node .\scripts\sync-access-rest.mjs --email "pcp@metalosa.com.br" --senha "Steaml4d@" --maquinaId "CONFORMADORA_TELHAS" --inputDir ".\data-import"
-if errorlevel 1 (
-  echo [FALHA] Sincronizacao com Firebase falhou.
-  pause
-  exit /b 1
-)
+echo [2/4] Copiando CSVs para public/data-import...
+if not exist ".\public\data-import" mkdir ".\public\data-import"
+copy /Y ".\data-import\import_producao.csv" ".\public\data-import\import_producao.csv" >nul
+copy /Y ".\data-import\import_paradas.csv" ".\public\data-import\import_paradas.csv" >nul
+echo [OK] CSVs copiados.
 
 set "COMMIT_MSG=%~1"
 if "%COMMIT_MSG%"=="" set "COMMIT_MSG=chore: atualiza dados do Access"
@@ -27,7 +25,7 @@ if exist ".git\index.lock" (
   exit /b 1
 )
 
-echo [3/4] Preparando commit...
+echo [3/3] Preparando commit...
 git add -A
 if errorlevel 1 (
   echo [FALHA] git add falhou.
@@ -42,7 +40,7 @@ if %errorlevel%==0 (
   exit /b 0
 )
 
-echo [4/4] Criando commit...
+echo [3/3] Criando commit...
 git commit -m "%COMMIT_MSG%"
 if errorlevel 1 (
   echo [FALHA] git commit falhou.

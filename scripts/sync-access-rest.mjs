@@ -306,54 +306,30 @@ const commitWrites = async (idToken, writes) => {
   }, "commit");
 };
 
-const queryAccessSyncDocNames = async (idToken, collectionId) => {
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-  const PAGE = 500;
-  const allNames = [];
-  let offset = 0;
-  while (true) {
-    const body = {
-      structuredQuery: {
-        from: [{ collectionId }],
-        where: {
-          fieldFilter: {
-            field: { fieldPath: "origem" },
-            op: "EQUAL",
-            value: { stringValue: "ACCESS_SYNC" },
-          },
-        },
-        offset,
-        limit: PAGE,
-      },
-    };
-    const res = await fetchWithRetry(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify(body),
-    }, `runQuery ${collectionId}`);
-    const arr = await res.json();
-    const page = arr.filter((x) => x.document?.name).map((x) => x.document.name);
-    allNames.push(...page);
-    if (page.length < PAGE) break;
-    offset += PAGE;
-  }
-  return allNames;
+const LAST_IDS_FILE = path.resolve(inputDir, "last-sync-ids.json");
+
+const loadLastIds = () => {
+  try {
+    if (fs.existsSync(LAST_IDS_FILE)) {
+      return JSON.parse(fs.readFileSync(LAST_IDS_FILE, "utf8"));
+    }
+  } catch (_) {}
+  return { producao: [], paradas: [] };
 };
 
-const cleanupExistingAccessSync = async (idToken) => {
-  const [prodNames, parNames] = await Promise.all([
-    queryAccessSyncDocNames(idToken, "producao"),
-    queryAccessSyncDocNames(idToken, "paradas"),
-  ]);
-  const deletes = [...prodNames, ...parNames].map((name) => ({ delete: name }));
-  const CHUNK = 450;
+const saveLastIds = (producaoIds, paradasIds) => {
+  fs.writeFileSync(LAST_IDS_FILE, JSON.stringify({ producao: producaoIds, paradas: paradasIds }, null, 2), "utf8");
+};
+
+const deleteByIds = async (idToken, collection, ids) => {
+  const names = ids.map((id) => `projects/${projectId}/databases/(default)/documents/${collection}/${id}`);
+  const deletes = names.map((name) => ({ delete: name }));
+  const CHUNK = 300;
   for (let i = 0; i < deletes.length; i += CHUNK) {
     await commitWrites(idToken, deletes.slice(i, i + CHUNK));
+    if (i + CHUNK < deletes.length) await sleep(400);
   }
-  return { prodDeleted: prodNames.length, parDeleted: parNames.length };
+  return ids.length;
 };
 
 const run = async () => {
@@ -367,11 +343,14 @@ const run = async () => {
     );
   }
 
+  const newProdIds = [];
+  const newParIds = [];
   const writes = [];
 
   for (let i = 0; i < producao.length; i += 1) {
     const row = producao[i];
     const id = makeId("acc_prod", row, i);
+    newProdIds.push(id);
     writes.push({
       update: {
         name: `projects/${projectId}/databases/(default)/documents/producao/${id}`,
@@ -383,6 +362,7 @@ const run = async () => {
   for (let i = 0; i < paradas.length; i += 1) {
     const row = paradas[i];
     const id = makeId("acc_par", row, i);
+    newParIds.push(id);
     writes.push({
       update: {
         name: `projects/${projectId}/databases/(default)/documents/paradas/${id}`,
@@ -391,15 +371,27 @@ const run = async () => {
     });
   }
 
+  const lastIds = loadLastIds();
+
   const idToken = await login();
-  const cleanup = await cleanupExistingAccessSync(idToken);
-  console.log(`limpeza ACCESS_SYNC: producao=${cleanup.prodDeleted} paradas=${cleanup.parDeleted}`);
-  const CHUNK = 450;
+
+  // Deleta documentos da sync anterior usando IDs salvos localmente (sem queries ao Firestore)
+  const prodDeleted = await deleteByIds(idToken, "producao", lastIds.producao);
+  if (lastIds.paradas.length > 0) await sleep(400);
+  const parDeleted = await deleteByIds(idToken, "paradas", lastIds.paradas);
+  console.log(`limpeza ACCESS_SYNC: producao=${prodDeleted} paradas=${parDeleted}`);
+
+  if (writes.length > 0) await sleep(400);
+
+  const CHUNK = 300;
   for (let i = 0; i < writes.length; i += CHUNK) {
     const slice = writes.slice(i, i + CHUNK);
     await commitWrites(idToken, slice);
     console.log(`progresso: ${Math.min(i + CHUNK, writes.length)}/${writes.length}`);
+    if (i + CHUNK < writes.length) await sleep(400);
   }
+
+  saveLastIds(newProdIds, newParIds);
 
   console.log("Sincronizacao concluida.");
   console.log(`producao: ${producao.length} | pecas: ${totalPecas}`);
