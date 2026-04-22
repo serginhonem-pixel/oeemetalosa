@@ -854,6 +854,8 @@ export default function OeeDashboard({
     const janelaDuracaoMap = new Map();
     const janelaOcorrenciasMap = new Map();
     perdasBase.forEach((p) => {
+      const cod = String(p.codMotivo || p.motivoCodigo || "").trim().toUpperCase();
+      if (cod === "PP006") return;
       const ini = p.horaInicio || p.inicio || p.inicioNorm;
       const rawHour = String(ini || "").split(":")[0];
       const hour = Number(rawHour);
