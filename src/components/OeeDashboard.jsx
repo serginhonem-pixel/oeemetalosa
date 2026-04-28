@@ -44,6 +44,8 @@ const ORIGENS_PERMITIDAS_OEE = new Set([
   "ACCESS_IMPORT",
   "ACCESS_SYNC",
 ]);
+// paradas só são válidas se vieram do CSV (ACCESS_IMPORT) ou do sync (ACCESS_SYNC)
+const ORIGENS_PARADAS_CSV = new Set(["ACCESS_IMPORT", "ACCESS_SYNC"]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const BR_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 
@@ -617,11 +619,13 @@ export default function OeeDashboard({
 
         const isProducao =
           "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
+        const isParada = !isProducao && ("codMotivo" in item || "motivoCodigo" in item);
         const origem = String(item.origem || "").toUpperCase();
+        // produção: respeita ignoreOriginExclusion; parada: sempre exige origem do CSV
         const origemOk =
-          ignoreOriginExclusion ||
-          !isProducao ||
-          ORIGENS_PERMITIDAS_OEE.has(origem);
+          (isProducao && (ignoreOriginExclusion || ORIGENS_PERMITIDAS_OEE.has(origem))) ||
+          (isParada && ORIGENS_PARADAS_CSV.has(origem)) ||
+          (!isProducao && !isParada); // registros neutros passam livre
 
         return dataOk && maquinaOk && origemOk;
     };
@@ -1213,6 +1217,7 @@ export default function OeeDashboard({
       if (!ISO_DATE_RE.test(iso)) return false;
       const d = new Date(`${iso}T00:00:00`);
       if (d < startDate || d > endDate) return false;
+      if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return false;
       const cod = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
       return cod !== "TU001";
     });
@@ -1650,6 +1655,7 @@ export default function OeeDashboard({
       if (!ISO_DATE_RE.test(iso)) return false;
       const d = new Date(`${iso}T00:00:00`);
       if (d < startDate || d > endDate) return false;
+      if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return false;
       return String(p.codMotivo || p.motivoCodigo || "").toUpperCase() !== "TU001";
     });
 
