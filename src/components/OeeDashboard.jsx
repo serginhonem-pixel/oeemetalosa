@@ -29,6 +29,7 @@ import {
 
 import { CATALOGO_PRODUTOS } from "../data/catalogoProdutos";
 import { CATALOGO_MAQUINAS } from "../data/catalogoMaquinas";
+import { DICIONARIO_PARADAS } from "../data/dicionarioParadas";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_VELOCIDADE_M_POR_MIN = 25;
@@ -1538,6 +1539,14 @@ export default function OeeDashboard({
     const PptxGenJS = (await import("pptxgenjs")).default;
     const prs = new PptxGenJS();
 
+    // lookup dicionário: código → descrição correta (acentuada)
+    const _dicMap = new Map(DICIONARIO_PARADAS.map((d) => [d.codigo.toUpperCase(), d.evento]));
+    const resolveMotivoDesc = (p) => {
+      const cod = String(p.codMotivo || p.motivoCodigo || "").trim().toUpperCase();
+      if (cod && _dicMap.has(cod)) return _dicMap.get(cod);
+      return sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
+    };
+
     prs.layout = "LAYOUT_WIDE"; // 33.87 × 19.05 cm  (16:9)
     prs.title = "Análise de Paradas OEE";
     prs.author = "OEE Analytics";
@@ -1663,7 +1672,7 @@ export default function OeeDashboard({
       const minVal = duracoes.length ? Math.min(...duracoes) : 0;
       const porTipo = new Map();
       paradas.forEach((p) => {
-        const desc = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
+        const desc = resolveMotivoDesc(p);
         const dur = getDurMin(p);
         if (!porTipo.has(desc)) porTipo.set(desc, { total: 0, qtd: 0, max: 0 });
         const t = porTipo.get(desc);
@@ -1679,7 +1688,7 @@ export default function OeeDashboard({
     // Agrega motivos globais (pareto geral)
     const motivoGlobalMap = new Map();
     paradasValidas.forEach((p) => {
-      const desc = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
+      const desc = resolveMotivoDesc(p);
       const dur = getDurMin(p);
       if (!motivoGlobalMap.has(desc)) motivoGlobalMap.set(desc, { total: 0, qtd: 0 });
       motivoGlobalMap.get(desc).total += dur;
@@ -1702,85 +1711,7 @@ export default function OeeDashboard({
       .reduce((a, b) => a + b, 0);
 
     // ═══════════════════════════════════════════════════════════
-    // SLIDE 1 — CAPA
-    // ═══════════════════════════════════════════════════════════
-    {
-      const sl = prs.addSlide();
-
-      // fundo escuro esquerda
-      sl.addShape(prs.ShapeType.rect, {
-        x: 0, y: 0, w: 13.33, h: 7.5,
-        fill: { color: PAL.dark },
-        line: { type: "none" },
-      });
-
-      // faixa accent lateral direita
-      sl.addShape(prs.ShapeType.rect, {
-        x: 9.2, y: 0, w: 4.17, h: 7.5,
-        fill: { color: PAL.accent },
-        line: { type: "none" },
-      });
-
-      // padrão geométrico sutil no accent (linhas)
-      for (let i = 0; i < 8; i++) {
-        sl.addShape(prs.ShapeType.line, {
-          x: 9.2, y: 0.9 * i, w: 4.17, h: 0.9 * i,
-          line: { color: "FFFFFF", width: 0.3, transparency: 80 },
-        });
-      }
-
-      // pill "CONFIDENCIAL"
-      sl.addShape(prs.ShapeType.rect, {
-        x: 0.5, y: 0.42, w: 1.6, h: 0.25,
-        fill: { color: PAL.accent },
-        line: { type: "none" },
-        rounding: 0.1,
-      });
-      sl.addText("CONFIDENCIAL", {
-        x: 0.5, y: 0.42, w: 1.6, h: 0.25,
-        fontSize: 7, bold: true, color: PAL.white, align: "center", valign: "middle",
-      });
-
-      // título
-      sl.addText("Análise de\nParadas Industriais", {
-        x: 0.5, y: 1.0, w: 8.3, h: 2.0,
-        fontSize: 46, bold: true, color: PAL.white,
-        lineSpacingMultiple: 1.1,
-      });
-
-      // subtítulo
-      sl.addText("Performance · Disponibilidade · Plano de Ação", {
-        x: 0.5, y: 3.1, w: 8.3, h: 0.4,
-        fontSize: 14, color: "A5B4FC", charSpacing: 1,
-      });
-
-      // linha
-      sl.addShape(prs.ShapeType.line, {
-        x: 0.5, y: 3.65, w: 7.8, h: 0, line: { color: "4F46E5", width: 1.2 },
-      });
-
-      // período
-      sl.addText(`Período: ${periodoLabel}`, {
-        x: 0.5, y: 3.85, w: 8.0, h: 0.3,
-        fontSize: 12, color: "94A3B8",
-      });
-
-      // data geração
-      sl.addText(`Gerado em ${geradoEm}`, {
-        x: 0.5, y: 6.9, w: 5, h: 0.25,
-        fontSize: 9, color: "475569",
-      });
-
-      // label lateral
-      sl.addText("OEE ANALYTICS", {
-        x: 9.3, y: 3.5, w: 3.8, h: 0.4,
-        fontSize: 11, bold: true, color: PAL.white, align: "center", charSpacing: 3,
-        rotate: 0,
-      });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 2 — EXECUTIVE SUMMARY (KPIs + insight crítico)
+    // SLIDE 1 — EXECUTIVE SUMMARY (KPIs + insight crítico)
     // ═══════════════════════════════════════════════════════════
     {
       const sl = prs.addSlide();
@@ -2047,7 +1978,7 @@ export default function OeeDashboard({
         const ini = p.horaInicio || p.inicio || "-";
         const fim = p.horaFim || p.fim || "-";
         const dur = getDurMin(p);
-        const motivo = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "—");
+        const motivo = resolveMotivoDesc(p);
         const isAcima = dur > maqData.media * 1.5;
 
         if (isAcima) {
