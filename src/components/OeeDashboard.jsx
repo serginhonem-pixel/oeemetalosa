@@ -1141,18 +1141,24 @@ export default function OeeDashboard({
     const endISO = normalizeISODateInput(rangeEnd || dataFimInd || todayISO());
     const periodoLabel = `${formatDateBR(startISO)} até ${formatDateBR(endISO)}`;
 
-    // ---------- CORES ----------
+    // ---------- TEMA MINIMALISTA CLARO ----------
     const C = {
-      bg: [9, 9, 11],
-      card: [18, 18, 20],
-      accent: [34, 197, 94],
-      accentDark: [21, 128, 61],
-      danger: [248, 113, 113],
-      warn: [251, 191, 36],
-      muted: [113, 113, 122],
-      text: [228, 228, 231],
-      textDim: [161, 161, 170],
-      border: [39, 39, 42],
+      bg: [255, 255, 255],
+      pageBg: [250, 250, 252],
+      card: [247, 248, 250],
+      cardBorder: [226, 228, 233],
+      ink: [22, 24, 30],
+      muted: [110, 114, 128],
+      faint: [180, 184, 192],
+      accent: [79, 70, 229],       // indigo
+      accentLight: [237, 233, 254],
+      danger: [220, 38, 38],
+      dangerLight: [254, 226, 226],
+      warn: [217, 119, 6],
+      warnLight: [255, 243, 205],
+      good: [5, 150, 105],
+      goodLight: [209, 250, 229],
+      rule: [214, 216, 222],
       white: [255, 255, 255],
     };
 
@@ -1161,17 +1167,36 @@ export default function OeeDashboard({
       doc.rect(x, y, w, h, "F");
     };
 
-    const pageHeader = (pageNum) => {
+    const hRule = (y, color = C.rule) => {
+      doc.setDrawColor(...color);
+      doc.setLineWidth(0.25);
+      doc.line(14, y, W - 14, y);
+    };
+
+    const pageHeader = (pageNum, title = "") => {
+      // fundo branco
       fillRect(0, 0, W, H, C.bg);
-      // barra superior
-      fillRect(0, 0, W, 2, C.accent);
+      // linha topo indigo fina
+      fillRect(0, 0, W, 1.5, C.accent);
+
+      if (title) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(...C.muted);
+        doc.text(title, 14, 8);
+      }
+
       // rodapé
+      fillRect(0, H - 10, W, 10, C.card);
+      doc.setDrawColor(...C.rule);
+      doc.setLineWidth(0.2);
+      doc.line(0, H - 10, W, H - 10);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7);
       doc.setTextColor(...C.muted);
-      doc.text(`OEE Analytics — Análise de Paradas por Máquina`, 14, H - 6);
-      doc.text(`Página ${pageNum}`, W - 14, H - 6, { align: "right" });
-      doc.text(periodoLabel, W / 2, H - 6, { align: "center" });
+      doc.text("OEE Analytics · Análise de Paradas por Máquina", 14, H - 4);
+      doc.text(`Página ${pageNum}`, W - 14, H - 4, { align: "right" });
+      doc.text(periodoLabel, W / 2, H - 4, { align: "center" });
     };
 
     // ============================================================
@@ -1179,98 +1204,88 @@ export default function OeeDashboard({
     // ============================================================
     pageHeader(1);
 
-    // logo / ícone decorativo
-    fillRect(W / 2 - 14, 28, 28, 28, C.card);
-    doc.setDrawColor(...C.accent);
-    doc.setLineWidth(0.8);
-    doc.roundedRect(W / 2 - 14, 28, 28, 28, 3, 3);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.setTextColor(...C.accent);
-    doc.text("OEE", W / 2, 46, { align: "center" });
+    // bloco topo escuro (hero)
+    fillRect(0, 1.5, W, 52, C.ink);
 
-    // título principal
+    // pill "RELATÓRIO"
+    fillRect(W / 2 - 16, 10, 32, 6, C.accent);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
+    doc.setFontSize(6.5);
     doc.setTextColor(...C.white);
-    doc.text("Relatório de Análise de Paradas", W / 2, 72, { align: "center" });
+    doc.text("RELATÓRIO", W / 2, 14.5, { align: "center" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(...C.white);
+    doc.text("Análise de Paradas por Máquina", W / 2, 28, { align: "center" });
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-    doc.setTextColor(...C.textDim);
-    doc.text("por Máquina — Métricas & Maiores Eventos", W / 2, 80, { align: "center" });
-
-    // linha decorativa
-    doc.setDrawColor(...C.accent);
-    doc.setLineWidth(0.6);
-    doc.line(30, 86, W - 30, 86);
-
-    // período
-    fillRect(30, 92, W - 60, 14, C.card);
-    doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.setTextColor(...C.muted);
-    doc.text("PERÍODO ANALISADO", W / 2, 98, { align: "center" });
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...C.accent);
-    doc.text(periodoLabel, W / 2, 104, { align: "center" });
+    doc.setTextColor(...C.faint);
+    doc.text("Métricas por máquina · Média por tipo de parada · Eventos detalhados", W / 2, 36, { align: "center" });
 
-    // KPIs resumo
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...C.accentLight);
+    doc.text(periodoLabel, W / 2, 47, { align: "center" });
+
+    let coverY = 62;
+
+    // KPI cards (2×2)
     const kpis = [
-      { label: "OEE Global", value: `${oeeGlobal.toFixed(1)}%`, color: C.accent },
-      { label: "Disponibilidade", value: `${disponibilidade.toFixed(1)}%`, color: [96, 165, 250] },
-      { label: "Performance", value: `${performance.toFixed(1)}%`, color: [234, 179, 8] },
-      { label: "Qualidade", value: `${qualidade.toFixed(1)}%`, color: [236, 72, 153] },
+      { label: "OEE Global",      value: `${oeeGlobal.toFixed(1)}%`,      dot: C.accent },
+      { label: "Disponibilidade", value: `${disponibilidade.toFixed(1)}%`, dot: [59, 130, 246] },
+      { label: "Performance",     value: `${performance.toFixed(1)}%`,     dot: C.warn },
+      { label: "Qualidade",       value: `${qualidade.toFixed(1)}%`,       dot: [168, 85, 247] },
     ];
     const kpiW = (W - 28 - 3 * 4) / 4;
     kpis.forEach((k, i) => {
       const kx = 14 + i * (kpiW + 4);
-      const ky = 114;
-      fillRect(kx, ky, kpiW, 22, C.card);
-      doc.setDrawColor(...k.color);
-      doc.setLineWidth(0.5);
-      doc.rect(kx, ky, kpiW, 22);
+      fillRect(kx, coverY, kpiW, 20, C.card);
+      doc.setDrawColor(...C.cardBorder);
+      doc.setLineWidth(0.3);
+      doc.rect(kx, coverY, kpiW, 20);
+      // dot accent
+      doc.setFillColor(...k.dot);
+      doc.circle(kx + 5, coverY + 5, 1.5, "F");
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
+      doc.setFontSize(6.5);
       doc.setTextColor(...C.muted);
-      doc.text(k.label.toUpperCase(), kx + kpiW / 2, ky + 7, { align: "center" });
+      doc.text(k.label.toUpperCase(), kx + kpiW / 2, coverY + 8, { align: "center" });
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
-      doc.setTextColor(...k.color);
-      doc.text(k.value, kx + kpiW / 2, ky + 17, { align: "center" });
+      doc.setTextColor(...k.dot);
+      doc.text(k.value, kx + kpiW / 2, coverY + 17, { align: "center" });
     });
+    coverY += 26;
 
-    // estatísticas gerais
-    const statY = 146;
-    fillRect(14, statY, W - 28, 44, C.card);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...C.muted);
-    doc.text("RESUMO DO PERÍODO", 22, statY + 8);
-
+    // stats row
     const stats = [
-      { label: "Tempo total de turno", value: `${tempoTotalTurnoMin.toFixed(0)} min`, sub: `${diasNoPeriodo} dia(s) × ${turnoHoras}h` },
-      { label: "Tempo parado total", value: `${tempoParadoMin.toFixed(0)} min`, sub: `${((tempoParadoMin / (tempoTotalTurnoMin || 1)) * 100).toFixed(1)}% do turno` },
-      { label: "Produção total", value: `${producaoTotalPcs.toLocaleString("pt-BR")} un.`, sub: `${producaoTotalKg.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg est.` },
+      { label: "Tempo total de turno", value: `${tempoTotalTurnoMin.toFixed(0)} min`, sub: `${diasNoPeriodo} dia(s) · ${turnoHoras}h/dia` },
+      { label: "Tempo parado total",   value: `${tempoParadoMin.toFixed(0)} min`,    sub: `${((tempoParadoMin / (tempoTotalTurnoMin || 1)) * 100).toFixed(1)}% do turno` },
+      { label: "Produção total",       value: `${producaoTotalPcs.toLocaleString("pt-BR")} un.`, sub: `${producaoTotalKg.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg est.` },
     ];
-    const sColW = (W - 28 - 2 * 4) / 3;
+    const sW = (W - 28 - 2 * 4) / 3;
     stats.forEach((s, i) => {
-      const sx = 14 + i * (sColW + 4);
-      const sy = statY + 14;
+      const sx = 14 + i * (sW + 4);
+      fillRect(sx, coverY, sW, 18, C.card);
+      doc.setDrawColor(...C.cardBorder);
+      doc.setLineWidth(0.3);
+      doc.rect(sx, coverY, sW, 18);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
+      doc.setFontSize(6.5);
       doc.setTextColor(...C.muted);
-      doc.text(s.label.toUpperCase(), sx + sColW / 2, sy, { align: "center" });
+      doc.text(s.label.toUpperCase(), sx + sW / 2, coverY + 5.5, { align: "center" });
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(...C.text);
-      doc.text(s.value, sx + sColW / 2, sy + 9, { align: "center" });
+      doc.setFontSize(11);
+      doc.setTextColor(...C.ink);
+      doc.text(s.value, sx + sW / 2, coverY + 12, { align: "center" });
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
+      doc.setFontSize(6.5);
       doc.setTextColor(...C.muted);
-      doc.text(s.sub, sx + sColW / 2, sy + 15, { align: "center" });
+      doc.text(s.sub, sx + sW / 2, coverY + 16.5, { align: "center" });
     });
+    coverY += 24;
 
     // ============================================================
     // AGRUPAMENTO DE PARADAS POR MÁQUINA
@@ -1307,7 +1322,9 @@ export default function OeeDashboard({
     const maqMap = new Map();
     paradasValidas.forEach((p) => {
       const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
-      const maqNome = maquinasDisponiveis.find((m) => m.id === maqKey || normalizeMachineToken(m.nomeExibicao) === normalizeMachineToken(maqKey))?.nomeExibicao || maqKey;
+      const maqNome = maquinasDisponiveis.find(
+        (m) => m.id === maqKey || normalizeMachineToken(m.nomeExibicao) === normalizeMachineToken(maqKey)
+      )?.nomeExibicao || maqKey;
       if (!maqMap.has(maqNome)) maqMap.set(maqNome, []);
       maqMap.get(maqNome).push(p);
     });
@@ -1319,143 +1336,196 @@ export default function OeeDashboard({
         const media = duracoes.length ? total / duracoes.length : 0;
         const maxVal = duracoes.length ? Math.max(...duracoes) : 0;
         const minVal = duracoes.length ? Math.min(...duracoes) : 0;
-        return { nome, paradas, total, media, maxVal, minVal, qtd: paradas.length };
+
+        // média por tipo
+        const porTipo = new Map();
+        paradas.forEach((p) => {
+          const desc = sanitizeMojibakeText(
+            p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado"
+          );
+          const dur = getDurMin(p);
+          if (!porTipo.has(desc)) porTipo.set(desc, { total: 0, qtd: 0, max: 0 });
+          const t = porTipo.get(desc);
+          t.total += dur;
+          t.qtd += 1;
+          if (dur > t.max) t.max = dur;
+        });
+        const mediaPorTipo = Array.from(porTipo.entries())
+          .map(([tipo, s]) => ({
+            tipo,
+            qtd: s.qtd,
+            total: s.total,
+            media: s.qtd ? s.total / s.qtd : 0,
+            max: s.max,
+          }))
+          .sort((a, b) => b.total - a.total);
+
+        return { nome, paradas, total, media, maxVal, minVal, qtd: paradas.length, mediaPorTipo };
       })
       .sort((a, b) => b.total - a.total);
 
-    // Top 3 no cover
+    // ranking de máquinas na capa
     if (maquinasOrdenadas.length > 0) {
-      const topY = 200;
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
       doc.setTextColor(...C.muted);
-      doc.text("TOP MÁQUINAS COM MAIOR TEMPO PARADO", 14, topY);
+      doc.text("RANKING — MAIOR TEMPO PARADO", 14, coverY);
+      coverY += 4;
 
-      const barMaxW = W - 28;
+      const barMaxW = W - 28 - 36;
       const barMaxVal = maquinasOrdenadas[0]?.total || 1;
-      maquinasOrdenadas.slice(0, 5).forEach((m, i) => {
-        const by = topY + 8 + i * 10;
-        const barW = Math.max(2, (m.total / barMaxVal) * (barMaxW - 60));
-        const barColor = i === 0 ? C.danger : i === 1 ? C.warn : C.muted;
-        fillRect(14, by, barW, 6, barColor);
+      maquinasOrdenadas.slice(0, 6).forEach((m, i) => {
+        const by = coverY + i * 10;
+        const pct = m.total / barMaxVal;
+        const barW = Math.max(2, pct * barMaxW);
+        const bgColor = i === 0 ? C.danger : i === 1 ? [217, 119, 6] : i === 2 ? [107, 114, 128] : C.faint;
+
+        // trilho fundo
+        fillRect(14, by + 1, barMaxW, 6, C.card);
+        // barra preenchida
+        fillRect(14, by + 1, barW, 6, bgColor);
+
         doc.setFont("helvetica", "bold");
         doc.setFontSize(7);
-        doc.setTextColor(...C.text);
-        doc.text(m.nome.length > 35 ? m.nome.slice(0, 33) + "…" : m.nome, 14 + barW + 3, by + 4.5);
+        doc.setTextColor(...C.ink);
+        const nLabel = m.nome.length > 38 ? m.nome.slice(0, 36) + "…" : m.nome;
+        doc.text(nLabel, 14 + barMaxW + 3, by + 5.5);
+        doc.setFont("helvetica", "normal");
         doc.setTextColor(...C.muted);
-        doc.text(`${m.total.toFixed(0)}m`, barMaxW + 2, by + 4.5, { align: "right" });
+        doc.text(`${m.total.toFixed(0)} min`, W - 14, by + 5.5, { align: "right" });
       });
+      coverY += maquinasOrdenadas.slice(0, 6).length * 10 + 4;
     }
 
-    // data geração
+    // timestamp geração
     const now = new Date();
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
-    doc.setTextColor(...C.muted);
+    doc.setTextColor(...C.faint);
     doc.text(
       `Gerado em ${now.toLocaleDateString("pt-BR")} às ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
-      W / 2, H - 14, { align: "center" }
+      W / 2, coverY + 6, { align: "center" }
     );
 
     // ============================================================
-    // PÁGINAS SEGUINTES — UMA POR MÁQUINA
+    // PÁGINAS — UMA POR MÁQUINA
     // ============================================================
     let pageNum = 2;
 
     maquinasOrdenadas.forEach((maqData) => {
       doc.addPage();
-      pageHeader(pageNum++);
+      pageHeader(pageNum++, `Máquina: ${maqData.nome}`);
 
       let curY = 14;
 
-      // cabeçalho da máquina
-      fillRect(14, curY, W - 28, 18, C.card);
-      doc.setDrawColor(...C.accent);
-      doc.setLineWidth(0.5);
-      doc.rect(14, curY, W - 28, 18);
-      // barra lateral colorida
-      fillRect(14, curY, 4, 18, C.danger);
-
+      // === cabeçalho da máquina ===
+      fillRect(14, curY, W - 28, 16, C.ink);
+      // micro pill colorido
+      fillRect(14, curY, 3.5, 16, C.danger);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
+      doc.setFontSize(12);
       doc.setTextColor(...C.white);
-      const maqNomeLabel = maqData.nome.length > 60 ? maqData.nome.slice(0, 58) + "…" : maqData.nome;
-      doc.text(maqNomeLabel, 22, curY + 12);
-
+      const maqNomeLabel = maqData.nome.length > 55 ? maqData.nome.slice(0, 53) + "…" : maqData.nome;
+      doc.text(maqNomeLabel, 21, curY + 10.5);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(...C.muted);
-      doc.text(`${maqData.qtd} ocorrência(s) | Período: ${periodoLabel}`, W - 16, curY + 7, { align: "right" });
-      doc.text(`Tempo total parado: ${maqData.total.toFixed(0)} min`, W - 16, curY + 13, { align: "right" });
+      doc.setFontSize(7.5);
+      doc.setTextColor(...C.faint);
+      doc.text(`${maqData.qtd} ocorrência(s)  ·  ${periodoLabel}`, W - 17, curY + 6, { align: "right" });
+      doc.text(`Total parado: ${maqData.total.toFixed(0)} min`, W - 17, curY + 12, { align: "right" });
+      curY += 22;
 
-      curY += 24;
-
-      // métricas resumo
-      const metricas = [
-        { label: "Total parado", value: `${maqData.total.toFixed(0)} min`, color: C.danger },
-        { label: "Média por evento", value: `${maqData.media.toFixed(1)} min`, color: C.warn },
-        { label: "Maior parada", value: `${maqData.maxVal.toFixed(0)} min`, color: C.danger },
-        { label: "Menor parada", value: `${maqData.minVal.toFixed(0)} min`, color: C.accent },
-        { label: "Ocorrências", value: String(maqData.qtd), color: C.textDim },
+      // === 5 tiles de métricas ===
+      const tiles = [
+        { label: "Total parado",    value: `${maqData.total.toFixed(0)}`,  unit: "min", bg: C.dangerLight,  val: C.danger },
+        { label: "Média / evento",  value: `${maqData.media.toFixed(1)}`,  unit: "min", bg: C.warnLight,    val: C.warn   },
+        { label: "Maior parada",    value: `${maqData.maxVal.toFixed(0)}`, unit: "min", bg: C.dangerLight,  val: C.danger },
+        { label: "Menor parada",    value: `${maqData.minVal.toFixed(0)}`, unit: "min", bg: C.goodLight,    val: C.good   },
+        { label: "Ocorrências",     value: `${maqData.qtd}`,               unit: "ev.", bg: C.accentLight,  val: C.accent },
       ];
-      const mW = (W - 28 - 4 * 4) / 5;
-      metricas.forEach((met, i) => {
-        const mx = 14 + i * (mW + 4);
-        fillRect(mx, curY, mW, 20, C.card);
+      const tW = (W - 28 - 4 * 3) / 5;
+      tiles.forEach((t, i) => {
+        const tx = 14 + i * (tW + 3);
+        fillRect(tx, curY, tW, 18, t.bg);
+        doc.setDrawColor(...C.cardBorder);
+        doc.setLineWidth(0.25);
+        doc.rect(tx, curY, tW, 18);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(6.5);
         doc.setTextColor(...C.muted);
-        doc.text(met.label.toUpperCase(), mx + mW / 2, curY + 7, { align: "center" });
+        doc.text(t.label.toUpperCase(), tx + tW / 2, curY + 5.5, { align: "center" });
         doc.setFont("helvetica", "bold");
         doc.setFontSize(13);
-        doc.setTextColor(...met.color);
-        doc.text(met.value, mx + mW / 2, curY + 16, { align: "center" });
-      });
-      curY += 28;
-
-      // top motivos desta máquina
-      const motivosMaq = {};
-      maqData.paradas.forEach((p) => {
-        const desc = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
-        const dur = getDurMin(p);
-        motivosMaq[desc] = (motivosMaq[desc] || 0) + dur;
-      });
-      const topMotivos = Object.entries(motivosMaq)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
-
-      if (topMotivos.length) {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(8);
+        doc.setTextColor(...t.val);
+        doc.text(t.value, tx + tW / 2, curY + 13, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.5);
         doc.setTextColor(...C.muted);
-        doc.text("TOP MOTIVOS DE PARADA", 14, curY);
-        curY += 4;
+        doc.text(t.unit, tx + tW / 2, curY + 17, { align: "center" });
+      });
+      curY += 24;
 
-        const bmaxVal = topMotivos[0][1] || 1;
-        topMotivos.forEach(([motivo, dur], i) => {
-          const bW = Math.max(2, (dur / bmaxVal) * (W - 80));
-          const bColor = i === 0 ? C.danger : i === 1 ? [248, 148, 6] : C.muted;
-          fillRect(14, curY, bW, 7, bColor);
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(7);
-          doc.setTextColor(...C.text);
-          const mLabel = motivo.length > 50 ? motivo.slice(0, 48) + "…" : motivo;
-          doc.text(mLabel, 14 + bW + 3, curY + 5);
-          doc.setTextColor(...C.muted);
-          doc.text(`${dur.toFixed(0)}m`, W - 14, curY + 5, { align: "right" });
-          curY += 10;
-        });
-        curY += 4;
-      }
-
-      // título tabela
+      // === MÉDIA POR TIPO DE PARADA ===
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.setTextColor(...C.muted);
-      doc.text("TODOS OS EVENTOS — MAIORES PRIMEIRO", 14, curY);
-      curY += 3;
+      doc.setTextColor(...C.ink);
+      doc.text("Média por tipo de parada", 14, curY);
+      hRule(curY + 2);
+      curY += 6;
 
-      // tabela registros
+      autoTable(doc, {
+        startY: curY,
+        head: [["Tipo de parada", "Qtd", "Total (min)", "Média (min)", "Maior (min)"]],
+        body: maqData.mediaPorTipo.map((t) => [
+          t.tipo.length > 52 ? t.tipo.slice(0, 50) + "…" : t.tipo,
+          t.qtd,
+          t.total.toFixed(0),
+          t.media.toFixed(1),
+          t.max.toFixed(0),
+        ]),
+        styles: {
+          fillColor: C.white,
+          textColor: C.ink,
+          lineColor: C.rule,
+          lineWidth: 0.2,
+          fontSize: 8,
+          cellPadding: 2.8,
+        },
+        headStyles: {
+          fillColor: C.ink,
+          textColor: C.white,
+          fontSize: 7,
+          fontStyle: "bold",
+          halign: "center",
+        },
+        columnStyles: {
+          0: { cellWidth: "auto" },
+          1: { halign: "center", cellWidth: 14 },
+          2: { halign: "center", cellWidth: 24 },
+          3: { halign: "center", cellWidth: 24, fontStyle: "bold", textColor: C.warn },
+          4: { halign: "center", cellWidth: 24, textColor: C.danger },
+        },
+        didParseCell: (hookData) => {
+          if (hookData.section === "body" && hookData.row.index === 0) {
+            // destaca linha com maior total
+            if (hookData.column.index === 2) {
+              hookData.cell.styles.fontStyle = "bold";
+              hookData.cell.styles.textColor = C.danger;
+            }
+          }
+        },
+        alternateRowStyles: { fillColor: C.pageBg },
+        margin: { left: 14, right: 14 },
+      });
+      curY = doc.lastAutoTable?.finalY + 8 || curY + 10;
+
+      // === TODOS OS EVENTOS ===
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(...C.ink);
+      doc.text("Todos os eventos — maiores primeiro", 14, curY);
+      hRule(curY + 2);
+      curY += 6;
+
       const rows = [...maqData.paradas]
         .sort((a, b) => getDurMin(b) - getDurMin(a))
         .map((p, idx) => {
@@ -1464,35 +1534,28 @@ export default function OeeDashboard({
           const ini = p.horaInicio || p.inicio || p.inicioNorm || "-";
           const fim = p.horaFim || p.fim || p.fimNorm || "-";
           const dur = getDurMin(p);
-          const motivo = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
+          const motivo = sanitizeMojibakeText(
+            p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado"
+          );
           const isAcima = dur > maqData.media * 1.5 && dur > 0;
-          return {
-            idx: idx + 1,
-            data: dataFmt,
-            ini,
-            fim,
-            dur: dur > 0 ? `${dur.toFixed(0)} min` : "-",
-            motivo: motivo.length > 45 ? motivo.slice(0, 43) + "…" : motivo,
-            isAcima,
-          };
+          return { idx: idx + 1, data: dataFmt, ini, fim, dur, durStr: dur > 0 ? `${dur.toFixed(0)} min` : "-", motivo: motivo.length > 45 ? motivo.slice(0, 43) + "…" : motivo, isAcima };
         });
 
       autoTable(doc, {
         startY: curY,
         head: [["#", "Data", "Início", "Fim", "Duração", "Motivo"]],
-        body: rows.map((r) => [r.idx, r.data, r.ini, r.fim, r.dur, r.motivo]),
+        body: rows.map((r) => [r.idx, r.data, r.ini, r.fim, r.durStr, r.motivo]),
         styles: {
-          fillColor: C.card,
-          textColor: C.text,
-          lineColor: C.border,
-          lineWidth: 0.1,
+          fillColor: C.white,
+          textColor: C.ink,
+          lineColor: C.rule,
+          lineWidth: 0.2,
           fontSize: 8,
           cellPadding: 2.5,
-          fontStyle: "normal",
         },
         headStyles: {
-          fillColor: [14, 14, 17],
-          textColor: C.muted,
+          fillColor: C.ink,
+          textColor: C.white,
           fontSize: 7,
           fontStyle: "bold",
           halign: "center",
@@ -1502,53 +1565,50 @@ export default function OeeDashboard({
           1: { halign: "center", cellWidth: 22 },
           2: { halign: "center", cellWidth: 18 },
           3: { halign: "center", cellWidth: 18 },
-          4: { halign: "center", cellWidth: 22, textColor: C.danger, fontStyle: "bold" },
+          4: { halign: "center", cellWidth: 22, fontStyle: "bold" },
           5: { cellWidth: "auto" },
         },
         didParseCell: (hookData) => {
           if (hookData.section === "body") {
-            const rowObj = rows[hookData.row.index];
-            if (rowObj?.isAcima) {
-              hookData.cell.styles.fillColor = [40, 18, 18];
+            const r = rows[hookData.row.index];
+            if (r?.isAcima) {
+              hookData.cell.styles.fillColor = C.dangerLight;
             }
-            if (hookData.column.index === 4 && rowObj?.isAcima) {
-              hookData.cell.styles.textColor = C.danger;
-              hookData.cell.styles.fontStyle = "bold";
+            if (hookData.column.index === 4) {
+              const r2 = rows[hookData.row.index];
+              hookData.cell.styles.textColor = r2?.isAcima ? C.danger : C.warn;
             }
           }
         },
-        alternateRowStyles: { fillColor: [13, 13, 15] },
+        alternateRowStyles: { fillColor: C.pageBg },
         margin: { left: 14, right: 14 },
-        tableLineColor: C.border,
-        tableLineWidth: 0.1,
       });
 
-      // legenda acima da média
       const finalY = doc.lastAutoTable?.finalY || curY + 10;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7);
-      doc.setTextColor(...C.muted);
-      doc.text("* Linhas destacadas = duração ≥ 1,5× a média da máquina", 14, finalY + 5);
+      doc.setTextColor(...C.faint);
+      doc.text("* Linhas em rosa = duração ≥ 1,5× a média desta máquina", 14, finalY + 5);
     });
 
     // ============================================================
     // PÁGINA FINAL — RANKING GERAL
     // ============================================================
     doc.addPage();
-    pageHeader(pageNum);
-    let rankY = 14;
+    pageHeader(pageNum, "Ranking geral");
 
-    fillRect(14, rankY, W - 28, 12, C.card);
-    fillRect(14, rankY, 4, 12, C.accent);
+    let rankY = 14;
+    fillRect(14, rankY, W - 28, 13, C.ink);
+    fillRect(14, rankY, 3.5, 13, C.accent);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(...C.white);
-    doc.text("Ranking Geral de Paradas por Máquina", 22, rankY + 8.5);
+    doc.text("Ranking geral de paradas por máquina", 21, rankY + 9);
     rankY += 18;
 
     autoTable(doc, {
       startY: rankY,
-      head: [["Pos.", "Máquina", "Ocorrências", "Total (min)", "Média (min)", "Maior (min)", "Menor (min)"]],
+      head: [["Pos.", "Máquina", "Ocorr.", "Total (min)", "Média (min)", "Maior (min)", "Menor (min)"]],
       body: maquinasOrdenadas.map((m, i) => [
         `${i + 1}°`,
         m.nome.length > 40 ? m.nome.slice(0, 38) + "…" : m.nome,
@@ -1559,16 +1619,16 @@ export default function OeeDashboard({
         m.minVal.toFixed(0),
       ]),
       styles: {
-        fillColor: C.card,
-        textColor: C.text,
-        lineColor: C.border,
-        lineWidth: 0.1,
+        fillColor: C.white,
+        textColor: C.ink,
+        lineColor: C.rule,
+        lineWidth: 0.2,
         fontSize: 8,
         cellPadding: 3,
       },
       headStyles: {
-        fillColor: [14, 14, 17],
-        textColor: C.muted,
+        fillColor: C.ink,
+        textColor: C.white,
         fontSize: 7,
         fontStyle: "bold",
         halign: "center",
@@ -1576,21 +1636,19 @@ export default function OeeDashboard({
       columnStyles: {
         0: { halign: "center", cellWidth: 12, fontStyle: "bold" },
         1: { cellWidth: "auto" },
-        2: { halign: "center", cellWidth: 22 },
-        3: { halign: "center", cellWidth: 22, textColor: C.danger, fontStyle: "bold" },
-        4: { halign: "center", cellWidth: 22, textColor: C.warn },
-        5: { halign: "center", cellWidth: 22, textColor: C.danger },
-        6: { halign: "center", cellWidth: 22, textColor: C.accent },
+        2: { halign: "center", cellWidth: 18 },
+        3: { halign: "center", cellWidth: 24, fontStyle: "bold", textColor: C.danger },
+        4: { halign: "center", cellWidth: 24, textColor: C.warn },
+        5: { halign: "center", cellWidth: 24, textColor: C.danger },
+        6: { halign: "center", cellWidth: 24, textColor: C.good },
       },
       didParseCell: (hookData) => {
         if (hookData.section === "body" && hookData.row.index === 0) {
-          hookData.cell.styles.fillColor = [30, 14, 14];
+          hookData.cell.styles.fillColor = C.dangerLight;
         }
       },
-      alternateRowStyles: { fillColor: [13, 13, 15] },
+      alternateRowStyles: { fillColor: C.pageBg },
       margin: { left: 14, right: 14 },
-      tableLineColor: C.border,
-      tableLineWidth: 0.1,
     });
 
     // salva
