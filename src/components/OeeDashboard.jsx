@@ -1533,6 +1533,652 @@ export default function OeeDashboard({
     doc.save(nomeArq);
   };
 
+  // --- GERAÇÃO DE APRESENTAÇÃO PPTX ---
+  const gerarApresentacaoPPTX = async () => {
+    const PptxGenJS = (await import("pptxgenjs")).default;
+    const prs = new PptxGenJS();
+
+    prs.layout = "LAYOUT_WIDE"; // 33.87 × 19.05 cm  (16:9)
+    prs.title = "Análise de Paradas OEE";
+    prs.author = "OEE Analytics";
+
+    const startISO = normalizeISODateInput(rangeStart || dataInicioInd || todayISO());
+    const endISO   = normalizeISODateInput(rangeEnd   || dataFimInd   || todayISO());
+    const periodoLabel = `${formatDateBR(startISO)} até ${formatDateBR(endISO)}`;
+    const now = new Date();
+    const geradoEm = now.toLocaleDateString("pt-BR");
+
+    // ── Paleta ────────────────────────────────────────────────
+    const PAL = {
+      bg:       "F8F9FB",
+      dark:     "12131A",
+      ink:      "1E2028",
+      muted:    "6B7280",
+      faint:    "D1D5DB",
+      accent:   "4F46E5",   // indigo
+      accentLt: "EEF2FF",
+      danger:   "DC2626",
+      dangerLt: "FEE2E2",
+      warn:     "D97706",
+      warnLt:   "FEF3C7",
+      good:     "059669",
+      goodLt:   "D1FAE5",
+      white:    "FFFFFF",
+      card:     "FFFFFF",
+    };
+
+    // ── Helpers ────────────────────────────────────────────────
+    const hex = (c) => ({ color: c });
+    const bold = (c = PAL.ink) => ({ bold: true, color: c });
+    const fmtMin = (v) => `${Number(v).toFixed(0)} min`;
+    const fmtPct = (v) => `${Number(v).toFixed(1)}%`;
+
+    const addSectionLabel = (slide, text, x = 0.3, y = 0.18) => {
+      slide.addText(text.toUpperCase(), {
+        x, y, w: 4, h: 0.22,
+        fontSize: 7, bold: true, color: PAL.accent,
+        charSpacing: 2,
+      });
+    };
+
+    const addKpiBox = (slide, { x, y, w = 2.6, h = 1.4, label, value, sub, valueColor = PAL.ink, accentBar = PAL.accent }) => {
+      // card
+      slide.addShape(prs.ShapeType.rect, {
+        x, y, w, h,
+        fill: { color: PAL.card },
+        line: { color: PAL.faint, width: 0.5 },
+      });
+      // barra topo colorida
+      slide.addShape(prs.ShapeType.rect, {
+        x, y, w, h: 0.035,
+        fill: { color: accentBar },
+        line: { type: "none" },
+      });
+      // label
+      slide.addText(label.toUpperCase(), {
+        x: x + 0.16, y: y + 0.12, w: w - 0.32, h: 0.22,
+        fontSize: 7.5, bold: true, color: PAL.muted, charSpacing: 1.5,
+      });
+      // value
+      slide.addText(value, {
+        x: x + 0.16, y: y + 0.38, w: w - 0.32, h: 0.6,
+        fontSize: 28, bold: true, color: valueColor,
+        autoFit: true,
+      });
+      // sub
+      if (sub) {
+        slide.addText(sub, {
+          x: x + 0.16, y: y + 1.08, w: w - 0.32, h: 0.22,
+          fontSize: 8, color: PAL.muted,
+        });
+      }
+    };
+
+    const addHRule = (slide, y, x = 0.3, w = 12.84, color = PAL.faint) => {
+      slide.addShape(prs.ShapeType.line, {
+        x, y, w, h: 0, line: { color, width: 0.5 },
+      });
+    };
+
+    // ── Dados de paradas ──────────────────────────────────────
+    const startDate = new Date(`${startISO}T00:00:00`);
+    const endDate   = new Date(`${endISO}T00:00:00`);
+
+    const getDurMin = (p) => {
+      const direto = Number(p.duracaoMinutos ?? p.duracao);
+      if (Number.isFinite(direto) && direto > 0) return direto;
+      const toMin = (hhmm) => {
+        if (!hhmm || !String(hhmm).includes(":")) return 0;
+        const [h, m] = String(hhmm).split(":").map(Number);
+        return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+      };
+      const diff = toMin(p.horaFim || p.fim) - toMin(p.horaInicio || p.inicio);
+      return diff > 0 ? diff : 0;
+    };
+
+    const paradasValidas = (Array.isArray(historicoParadas) ? historicoParadas : []).filter((p) => {
+      const iso = normalizeISODateInput(p.data || p.date || p.dataProducao || p.createdAt || "");
+      if (!ISO_DATE_RE.test(iso)) return false;
+      const d = new Date(`${iso}T00:00:00`);
+      if (d < startDate || d > endDate) return false;
+      return String(p.codMotivo || p.motivoCodigo || "").toUpperCase() !== "TU001";
+    });
+
+    // Agrega por máquina
+    const maqMap = new Map();
+    paradasValidas.forEach((p) => {
+      const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
+      const maqNome = maquinasDisponiveis.find(
+        (m) => m.id === maqKey || normalizeMachineToken(m.nomeExibicao) === normalizeMachineToken(maqKey)
+      )?.nomeExibicao || maqKey;
+      if (!maqMap.has(maqNome)) maqMap.set(maqNome, []);
+      maqMap.get(maqNome).push(p);
+    });
+
+    const maquinasOrdenadas = Array.from(maqMap.entries()).map(([nome, paradas]) => {
+      const duracoes = paradas.map(getDurMin).filter((v) => v > 0);
+      const total = duracoes.reduce((a, b) => a + b, 0);
+      const media = duracoes.length ? total / duracoes.length : 0;
+      const maxVal = duracoes.length ? Math.max(...duracoes) : 0;
+      const minVal = duracoes.length ? Math.min(...duracoes) : 0;
+      const porTipo = new Map();
+      paradas.forEach((p) => {
+        const desc = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
+        const dur = getDurMin(p);
+        if (!porTipo.has(desc)) porTipo.set(desc, { total: 0, qtd: 0, max: 0 });
+        const t = porTipo.get(desc);
+        t.total += dur; t.qtd += 1;
+        if (dur > t.max) t.max = dur;
+      });
+      const mediaPorTipo = Array.from(porTipo.entries())
+        .map(([tipo, s]) => ({ tipo, qtd: s.qtd, total: s.total, media: s.qtd ? s.total / s.qtd : 0, max: s.max }))
+        .sort((a, b) => b.total - a.total);
+      return { nome, paradas, total, media, maxVal, minVal, qtd: paradas.length, mediaPorTipo, duracoes };
+    }).sort((a, b) => b.total - a.total);
+
+    // Agrega motivos globais (pareto geral)
+    const motivoGlobalMap = new Map();
+    paradasValidas.forEach((p) => {
+      const desc = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado");
+      const dur = getDurMin(p);
+      if (!motivoGlobalMap.has(desc)) motivoGlobalMap.set(desc, { total: 0, qtd: 0 });
+      motivoGlobalMap.get(desc).total += dur;
+      motivoGlobalMap.get(desc).qtd += 1;
+    });
+    const paretoGlobal = Array.from(motivoGlobalMap.entries())
+      .map(([motivo, s]) => ({ motivo, ...s, media: s.qtd ? s.total / s.qtd : 0 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    const totalParadoGeral = maquinasOrdenadas.reduce((a, b) => a + b.total, 0);
+    const totalOcorrencias = maquinasOrdenadas.reduce((a, b) => a + b.qtd, 0);
+    const maquinaCritica = maquinasOrdenadas[0];
+    const motivoCritico = paretoGlobal[0];
+    const dispPct = disponibilidade;
+    const perdaDisp = 100 - dispPct;
+    const tempoRecuperavel = paradasValidas
+      .map(getDurMin)
+      .filter((v) => v > 0)
+      .reduce((a, b) => a + b, 0);
+
+    // ═══════════════════════════════════════════════════════════
+    // SLIDE 1 — CAPA
+    // ═══════════════════════════════════════════════════════════
+    {
+      const sl = prs.addSlide();
+
+      // fundo escuro esquerda
+      sl.addShape(prs.ShapeType.rect, {
+        x: 0, y: 0, w: 13.33, h: 7.5,
+        fill: { color: PAL.dark },
+        line: { type: "none" },
+      });
+
+      // faixa accent lateral direita
+      sl.addShape(prs.ShapeType.rect, {
+        x: 9.2, y: 0, w: 4.17, h: 7.5,
+        fill: { color: PAL.accent },
+        line: { type: "none" },
+      });
+
+      // padrão geométrico sutil no accent (linhas)
+      for (let i = 0; i < 8; i++) {
+        sl.addShape(prs.ShapeType.line, {
+          x: 9.2, y: 0.9 * i, w: 4.17, h: 0.9 * i,
+          line: { color: "FFFFFF", width: 0.3, transparency: 80 },
+        });
+      }
+
+      // pill "CONFIDENCIAL"
+      sl.addShape(prs.ShapeType.rect, {
+        x: 0.5, y: 0.42, w: 1.6, h: 0.25,
+        fill: { color: PAL.accent },
+        line: { type: "none" },
+        rounding: 0.1,
+      });
+      sl.addText("CONFIDENCIAL", {
+        x: 0.5, y: 0.42, w: 1.6, h: 0.25,
+        fontSize: 7, bold: true, color: PAL.white, align: "center", valign: "middle",
+      });
+
+      // título
+      sl.addText("Análise de\nParadas Industriais", {
+        x: 0.5, y: 1.0, w: 8.3, h: 2.0,
+        fontSize: 46, bold: true, color: PAL.white,
+        lineSpacingMultiple: 1.1,
+      });
+
+      // subtítulo
+      sl.addText("Performance · Disponibilidade · Plano de Ação", {
+        x: 0.5, y: 3.1, w: 8.3, h: 0.4,
+        fontSize: 14, color: "A5B4FC", charSpacing: 1,
+      });
+
+      // linha
+      sl.addShape(prs.ShapeType.line, {
+        x: 0.5, y: 3.65, w: 7.8, h: 0, line: { color: "4F46E5", width: 1.2 },
+      });
+
+      // período
+      sl.addText(`Período: ${periodoLabel}`, {
+        x: 0.5, y: 3.85, w: 8.0, h: 0.3,
+        fontSize: 12, color: "94A3B8",
+      });
+
+      // data geração
+      sl.addText(`Gerado em ${geradoEm}`, {
+        x: 0.5, y: 6.9, w: 5, h: 0.25,
+        fontSize: 9, color: "475569",
+      });
+
+      // label lateral
+      sl.addText("OEE ANALYTICS", {
+        x: 9.3, y: 3.5, w: 3.8, h: 0.4,
+        fontSize: 11, bold: true, color: PAL.white, align: "center", charSpacing: 3,
+        rotate: 0,
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SLIDE 2 — EXECUTIVE SUMMARY (KPIs + insight crítico)
+    // ═══════════════════════════════════════════════════════════
+    {
+      const sl = prs.addSlide();
+      sl.background = { color: PAL.bg };
+
+      // header
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.75, fill: { color: PAL.dark }, line: { type: "none" } });
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 0.08, h: 0.75, fill: { color: PAL.accent }, line: { type: "none" } });
+      sl.addText("RESUMO EXECUTIVO", { x: 0.22, y: 0, w: 6, h: 0.75, fontSize: 13, bold: true, color: PAL.white, valign: "middle" });
+      sl.addText(periodoLabel, { x: 7, y: 0, w: 6.0, h: 0.75, fontSize: 11, color: "94A3B8", align: "right", valign: "middle" });
+
+      // KPI cards row
+      const kpiData = [
+        { label: "Disponibilidade", value: fmtPct(disponibilidade), sub: `Meta 85% · Desvio ${(disponibilidade - 85).toFixed(1)} p.p.`, valueColor: disponibilidade >= 85 ? PAL.good : PAL.danger, accentBar: disponibilidade >= 85 ? PAL.good : PAL.danger },
+        { label: "Performance",     value: fmtPct(performance),     sub: `Meta 75% · Base ${velocidadeMpm} m/min`,                   valueColor: performance >= 75    ? PAL.good : PAL.warn,   accentBar: performance >= 75    ? PAL.good : PAL.warn   },
+        { label: "OEE Global",      value: fmtPct(oeeGlobal),       sub: `Meta 70% · Desvio ${(oeeGlobal - 70).toFixed(1)} p.p.`,    valueColor: oeeGlobal >= 70      ? PAL.good : PAL.danger, accentBar: oeeGlobal >= 70      ? PAL.good : PAL.danger },
+        { label: "Qualidade",       value: fmtPct(qualidade),       sub: "Meta 99% · Sem refugo",                                     valueColor: PAL.good,             accentBar: PAL.good     },
+      ];
+      kpiData.forEach((k, i) => {
+        addKpiBox(sl, { x: 0.3 + i * 3.2, y: 0.95, w: 3.0, h: 1.5, ...k });
+      });
+
+      // linha divider
+      addHRule(sl, 2.62);
+
+      // destaque vermelho — insight crítico
+      sl.addShape(prs.ShapeType.rect, {
+        x: 0.3, y: 2.75, w: 12.73, h: 1.55,
+        fill: { color: PAL.dangerLt },
+        line: { color: PAL.danger, width: 0.8 },
+      });
+      sl.addShape(prs.ShapeType.rect, { x: 0.3, y: 2.75, w: 0.07, h: 1.55, fill: { color: PAL.danger }, line: { type: "none" } });
+      sl.addText("⚠  PONTO CRÍTICO", {
+        x: 0.5, y: 2.82, w: 5, h: 0.28,
+        fontSize: 9, bold: true, color: PAL.danger, charSpacing: 1.5,
+      });
+      const maqCritNome = maquinaCritica?.nome || "—";
+      const maqCritTotal = maquinaCritica ? fmtMin(maquinaCritica.total) : "—";
+      const maqCritPct = tempoTotalTurnoMin > 0 ? ((maquinaCritica?.total || 0) / tempoTotalTurnoMin * 100).toFixed(1) : "0";
+      sl.addText(`${maqCritNome} concentrou ${maqCritTotal} parados (${maqCritPct}% do turno total) no período — o principal driver de perda de disponibilidade.`, {
+        x: 0.5, y: 3.14, w: 12.3, h: 0.5,
+        fontSize: 12, color: PAL.ink,
+      });
+      sl.addText(`Motivo dominante: "${motivoCritico?.motivo || "—"}" · ${fmtMin(motivoCritico?.total || 0)} acumulados · média ${(motivoCritico?.media || 0).toFixed(1)} min/ocorrência`, {
+        x: 0.5, y: 3.64, w: 12.3, h: 0.3,
+        fontSize: 10, color: PAL.muted, italic: true,
+      });
+
+      // métricas resumo
+      const resumos = [
+        { label: "Tempo total parado", value: fmtMin(tempoParadoMin), color: PAL.danger },
+        { label: "Total de ocorrências", value: String(totalOcorrencias), color: PAL.warn },
+        { label: "Máquinas afetadas", value: String(maquinasOrdenadas.length), color: PAL.accent },
+        { label: "Dias analisados", value: String(diasNoPeriodo), color: PAL.ink },
+      ];
+      resumos.forEach((r, i) => {
+        const rx = 0.3 + i * 3.2;
+        sl.addShape(prs.ShapeType.rect, { x: rx, y: 4.52, w: 3.0, h: 1.05, fill: { color: PAL.white }, line: { color: PAL.faint, width: 0.5 } });
+        sl.addText(r.label.toUpperCase(), { x: rx + 0.14, y: 4.6, w: 2.7, h: 0.24, fontSize: 7.5, bold: true, color: PAL.muted, charSpacing: 1 });
+        sl.addText(r.value, { x: rx + 0.14, y: 4.84, w: 2.7, h: 0.6, fontSize: 26, bold: true, color: r.color, autoFit: true });
+      });
+
+      // rodapé
+      sl.addText(`OEE Analytics  ·  ${periodoLabel}  ·  ${geradoEm}`, { x: 0.3, y: 7.22, w: 12.73, h: 0.22, fontSize: 7.5, color: PAL.faint, align: "center" });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SLIDE 3 — PARETO GLOBAL (gráfico de barras horizontais)
+    // ═══════════════════════════════════════════════════════════
+    {
+      const sl = prs.addSlide();
+      sl.background = { color: PAL.bg };
+
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.75, fill: { color: PAL.dark }, line: { type: "none" } });
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 0.08, h: 0.75, fill: { color: PAL.accent }, line: { type: "none" } });
+      sl.addText("PARETO DE PARADAS — VISÃO GERAL", { x: 0.22, y: 0, w: 9, h: 0.75, fontSize: 13, bold: true, color: PAL.white, valign: "middle" });
+      sl.addText("Top 8 motivos · tempo acumulado", { x: 8.5, y: 0, w: 4.6, h: 0.75, fontSize: 10, color: "94A3B8", align: "right", valign: "middle" });
+
+      const maxBar = paretoGlobal[0]?.total || 1;
+      const barAreaW = 8.5;
+      const rowH = 0.62;
+      const startY = 0.95;
+
+      paretoGlobal.forEach((item, i) => {
+        const ry = startY + i * rowH;
+        const bw = Math.max(0.15, (item.total / maxBar) * barAreaW);
+        const barColor = i === 0 ? PAL.danger : i <= 2 ? PAL.warn : PAL.accent;
+
+        // fundo da linha
+        if (i % 2 === 0) {
+          sl.addShape(prs.ShapeType.rect, { x: 0.3, y: ry, w: 12.73, h: rowH, fill: { color: "F1F3F7" }, line: { type: "none" } });
+        }
+
+        // barra
+        sl.addShape(prs.ShapeType.rect, {
+          x: 3.8, y: ry + 0.1, w: bw, h: rowH - 0.2,
+          fill: { color: barColor },
+          line: { type: "none" },
+        });
+
+        // label motivo
+        const mLabel = item.motivo.length > 36 ? item.motivo.slice(0, 34) + "…" : item.motivo;
+        sl.addText(mLabel, {
+          x: 0.35, y: ry + 0.1, w: 3.4, h: rowH - 0.2,
+          fontSize: 9, color: PAL.ink, valign: "middle",
+        });
+
+        // valores direita
+        sl.addText(`${fmtMin(item.total)}`, {
+          x: 3.8 + bw + 0.1, y: ry + 0.08, w: 1.5, h: rowH - 0.16,
+          fontSize: 10, bold: true, color: barColor, valign: "middle",
+        });
+        sl.addText(`${item.qtd}×  ·  média ${item.media.toFixed(1)} min`, {
+          x: 3.8 + bw + 0.1, y: ry + 0.32, w: 4.0, h: 0.22,
+          fontSize: 8, color: PAL.muted,
+        });
+      });
+
+      // insight box direita
+      const top2pct = paretoGlobal.length >= 2
+        ? (((paretoGlobal[0]?.total || 0) + (paretoGlobal[1]?.total || 0)) / (totalParadoGeral || 1) * 100).toFixed(0)
+        : "—";
+      sl.addShape(prs.ShapeType.rect, { x: 9.8, y: 1.1, w: 3.2, h: 5.5, fill: { color: PAL.accentLt }, line: { color: PAL.accent, width: 0.8 } });
+      sl.addText("INSIGHT", { x: 9.95, y: 1.22, w: 2.9, h: 0.28, fontSize: 8, bold: true, color: PAL.accent, charSpacing: 2 });
+      addHRule(sl, 1.55, 9.95, 2.85, PAL.accent);
+      sl.addText(
+        `Os 2 principais motivos representam ${top2pct}% de todo o tempo parado.\n\nFocar ações corretivas nestes pontos pode recuperar a maior parte da disponibilidade perdida.`,
+        { x: 9.95, y: 1.65, w: 2.9, h: 2.2, fontSize: 10, color: PAL.ink, lineSpacingMultiple: 1.4 }
+      );
+      sl.addText(`Tempo total\nparado`, { x: 9.95, y: 4.0, w: 2.9, h: 0.45, fontSize: 9, bold: true, color: PAL.muted, charSpacing: 1 });
+      sl.addText(fmtMin(totalParadoGeral), { x: 9.95, y: 4.45, w: 2.9, h: 0.55, fontSize: 26, bold: true, color: PAL.danger });
+      sl.addText(`em ${totalOcorrencias} ocorrências`, { x: 9.95, y: 5.05, w: 2.9, h: 0.3, fontSize: 9, color: PAL.muted });
+
+      sl.addText(`OEE Analytics  ·  ${periodoLabel}  ·  ${geradoEm}`, { x: 0.3, y: 7.22, w: 12.73, h: 0.22, fontSize: 7.5, color: PAL.faint, align: "center" });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SLIDE 4 — RANKING POR MÁQUINA
+    // ═══════════════════════════════════════════════════════════
+    {
+      const sl = prs.addSlide();
+      sl.background = { color: PAL.bg };
+
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.75, fill: { color: PAL.dark }, line: { type: "none" } });
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 0.08, h: 0.75, fill: { color: PAL.danger }, line: { type: "none" } });
+      sl.addText("RANKING DE PARADAS POR MÁQUINA", { x: 0.22, y: 0, w: 9, h: 0.75, fontSize: 13, bold: true, color: PAL.white, valign: "middle" });
+      sl.addText("Ordenado por tempo total parado", { x: 8.5, y: 0, w: 4.6, h: 0.75, fontSize: 10, color: "94A3B8", align: "right", valign: "middle" });
+
+      // cabeçalho tabela
+      const cols = [
+        { label: "#",          x: 0.30, w: 0.35 },
+        { label: "MÁQUINA",   x: 0.70, w: 4.10 },
+        { label: "TOTAL",     x: 4.85, w: 1.80 },
+        { label: "OCORR.",    x: 6.70, w: 1.30 },
+        { label: "MÉDIA",     x: 8.05, w: 1.70 },
+        { label: "MAIOR",     x: 9.80, w: 1.70 },
+        { label: "% TURNO",   x: 11.55, w: 1.50 },
+      ];
+
+      sl.addShape(prs.ShapeType.rect, { x: 0.3, y: 0.85, w: 12.73, h: 0.38, fill: { color: PAL.ink }, line: { type: "none" } });
+      cols.forEach((c) => {
+        sl.addText(c.label, { x: c.x, y: 0.85, w: c.w, h: 0.38, fontSize: 8, bold: true, color: PAL.white, align: "center", valign: "middle" });
+      });
+
+      const maxTotal = maquinasOrdenadas[0]?.total || 1;
+      maquinasOrdenadas.slice(0, 9).forEach((m, i) => {
+        const ry = 1.28 + i * 0.56;
+        const bgFill = i === 0 ? PAL.dangerLt : i % 2 === 0 ? "F7F8FA" : PAL.white;
+        sl.addShape(prs.ShapeType.rect, { x: 0.3, y: ry, w: 12.73, h: 0.56, fill: { color: bgFill }, line: { type: "none" } });
+
+        // mini barra de proporção
+        const barPct = m.total / maxTotal;
+        sl.addShape(prs.ShapeType.rect, { x: 0.3, y: ry + 0.44, w: 12.73 * barPct, h: 0.06, fill: { color: i === 0 ? PAL.danger : PAL.accent }, line: { type: "none" } });
+
+        const pctTurno = tempoTotalTurnoMin > 0 ? (m.total / tempoTotalTurnoMin * 100).toFixed(1) + "%" : "—";
+        const vals = [
+          { v: `${i + 1}°`, cx: cols[0].x, cw: cols[0].w, bold: true, color: i === 0 ? PAL.danger : PAL.muted },
+          { v: m.nome.length > 30 ? m.nome.slice(0, 28) + "…" : m.nome, cx: cols[1].x, cw: cols[1].w, bold: i === 0, color: PAL.ink },
+          { v: fmtMin(m.total), cx: cols[2].x, cw: cols[2].w, bold: true, color: i === 0 ? PAL.danger : PAL.warn },
+          { v: String(m.qtd), cx: cols[3].x, cw: cols[3].w, bold: false, color: PAL.ink },
+          { v: `${m.media.toFixed(1)} min`, cx: cols[4].x, cw: cols[4].w, bold: false, color: PAL.muted },
+          { v: `${m.maxVal.toFixed(0)} min`, cx: cols[5].x, cw: cols[5].w, bold: false, color: PAL.danger },
+          { v: pctTurno, cx: cols[6].x, cw: cols[6].w, bold: i === 0, color: i === 0 ? PAL.danger : PAL.ink },
+        ];
+        vals.forEach(({ v, cx, cw, bold: b, color }) => {
+          sl.addText(v, { x: cx, y: ry + 0.06, w: cw, h: 0.38, fontSize: 9.5, bold: b, color, align: "center", valign: "middle" });
+        });
+      });
+
+      sl.addText(`OEE Analytics  ·  ${periodoLabel}  ·  ${geradoEm}`, { x: 0.3, y: 7.22, w: 12.73, h: 0.22, fontSize: 7.5, color: PAL.faint, align: "center" });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SLIDES 5..N — UMA MÁQUINA POR SLIDE (top 6)
+    // ═══════════════════════════════════════════════════════════
+    maquinasOrdenadas.slice(0, 6).forEach((maqData, mi) => {
+      const sl = prs.addSlide();
+      sl.background = { color: PAL.bg };
+
+      const accentColor = mi === 0 ? PAL.danger : PAL.accent;
+
+      // header
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.75, fill: { color: PAL.dark }, line: { type: "none" } });
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 0.08, h: 0.75, fill: { color: accentColor }, line: { type: "none" } });
+      const headerLabel = maqData.nome.length > 55 ? maqData.nome.slice(0, 53) + "…" : maqData.nome;
+      sl.addText(headerLabel, { x: 0.22, y: 0, w: 9.5, h: 0.75, fontSize: 13, bold: true, color: PAL.white, valign: "middle" });
+      sl.addText(`${maqData.qtd} ocorr.  ·  ${fmtMin(maqData.total)} parados`, { x: 8.5, y: 0, w: 4.6, h: 0.75, fontSize: 10, color: "94A3B8", align: "right", valign: "middle" });
+
+      // KPIs da máquina
+      const pctTurno = tempoTotalTurnoMin > 0 ? (maqData.total / tempoTotalTurnoMin * 100).toFixed(1) : "0";
+      const maqKpis = [
+        { label: "Total parado",    value: fmtMin(maqData.total),          sub: `${pctTurno}% do turno total`,          valueColor: PAL.danger,  accentBar: PAL.danger  },
+        { label: "Média / evento",  value: `${maqData.media.toFixed(1)} min`, sub: "por ocorrência",                     valueColor: PAL.warn,    accentBar: PAL.warn    },
+        { label: "Maior parada",    value: fmtMin(maqData.maxVal),          sub: "evento individual",                    valueColor: PAL.danger,  accentBar: PAL.danger  },
+        { label: "Ocorrências",     value: String(maqData.qtd),             sub: "no período",                           valueColor: PAL.accent,  accentBar: PAL.accent  },
+      ];
+      maqKpis.forEach((k, i) => {
+        addKpiBox(sl, { x: 0.3 + i * 3.2, y: 0.9, w: 3.0, h: 1.4, ...k });
+      });
+
+      addHRule(sl, 2.45);
+
+      // ── ESQUERDA: top motivos (barras)
+      sl.addText("TOP MOTIVOS DE PARADA", { x: 0.3, y: 2.55, w: 6.5, h: 0.28, fontSize: 8.5, bold: true, color: PAL.muted, charSpacing: 1.5 });
+
+      const topMotivos = maqData.mediaPorTipo.slice(0, 5);
+      const maxMot = topMotivos[0]?.total || 1;
+      topMotivos.forEach((t, ti) => {
+        const ry = 2.95 + ti * 0.66;
+        const bw = Math.max(0.1, (t.total / maxMot) * 5.6);
+        const bc = ti === 0 ? PAL.danger : ti === 1 ? PAL.warn : PAL.accent;
+
+        // nome
+        const tLabel = t.tipo.length > 38 ? t.tipo.slice(0, 36) + "…" : t.tipo;
+        sl.addText(tLabel, { x: 0.35, y: ry, w: 5.9, h: 0.26, fontSize: 8.5, color: PAL.ink });
+        // barra
+        sl.addShape(prs.ShapeType.rect, { x: 0.35, y: ry + 0.28, w: bw, h: 0.22, fill: { color: bc }, line: { type: "none" } });
+        // valores
+        sl.addText(`${fmtMin(t.total)}  ·  ${t.qtd}×  ·  média ${t.media.toFixed(1)} min`, {
+          x: 0.35 + bw + 0.12, y: ry + 0.28, w: 5.9 - bw - 0.12, h: 0.22,
+          fontSize: 8, color: PAL.muted, valign: "middle",
+        });
+      });
+
+      // ── DIREITA: tabela top eventos (maiores)
+      sl.addText("MAIORES EVENTOS", { x: 6.95, y: 2.55, w: 5.8, h: 0.28, fontSize: 8.5, bold: true, color: PAL.muted, charSpacing: 1.5 });
+
+      // cabeçalho tabela eventos
+      sl.addShape(prs.ShapeType.rect, { x: 6.95, y: 2.87, w: 6.05, h: 0.3, fill: { color: PAL.ink }, line: { type: "none" } });
+      ["DATA", "INÍCIO", "FIM", "DURAÇÃO", "MOTIVO"].forEach((lbl, ci) => {
+        const cx = [6.95, 7.72, 8.38, 9.04, 9.82][ci];
+        const cw = [0.72, 0.62, 0.62, 0.72, 3.18][ci];
+        sl.addText(lbl, { x: cx, y: 2.87, w: cw, h: 0.3, fontSize: 7, bold: true, color: PAL.white, align: "center", valign: "middle" });
+      });
+
+      const topEvts = [...maqData.paradas]
+        .sort((a, b) => getDurMin(b) - getDurMin(a))
+        .slice(0, 7);
+
+      topEvts.forEach((p, ei) => {
+        const ery = 3.2 + ei * 0.48;
+        const iso = normalizeISODateInput(p.data || p.date || "");
+        const dataFmt = ISO_DATE_RE.test(iso) ? iso.split("-").reverse().join("/") : "-";
+        const ini = p.horaInicio || p.inicio || "-";
+        const fim = p.horaFim || p.fim || "-";
+        const dur = getDurMin(p);
+        const motivo = sanitizeMojibakeText(p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "—");
+        const isAcima = dur > maqData.media * 1.5;
+
+        if (isAcima) {
+          sl.addShape(prs.ShapeType.rect, { x: 6.95, y: ery, w: 6.05, h: 0.48, fill: { color: PAL.dangerLt }, line: { type: "none" } });
+        } else if (ei % 2 === 0) {
+          sl.addShape(prs.ShapeType.rect, { x: 6.95, y: ery, w: 6.05, h: 0.48, fill: { color: "F7F8FA" }, line: { type: "none" } });
+        }
+
+        const cells = [
+          { v: dataFmt,                                    cx: 6.95, cw: 0.72 },
+          { v: ini,                                        cx: 7.72, cw: 0.62 },
+          { v: fim,                                        cx: 8.38, cw: 0.62 },
+          { v: fmtMin(dur),                               cx: 9.04, cw: 0.72 },
+          { v: motivo.length > 28 ? motivo.slice(0, 26) + "…" : motivo, cx: 9.82, cw: 3.18 },
+        ];
+        cells.forEach(({ v, cx, cw }, ci) => {
+          sl.addText(v, {
+            x: cx, y: ery + 0.06, w: cw, h: 0.38,
+            fontSize: 8.5, color: (ci === 3 && isAcima) ? PAL.danger : PAL.ink,
+            bold: ci === 3 && isAcima,
+            align: ci < 4 ? "center" : "left", valign: "middle",
+          });
+        });
+      });
+
+      // insight desta máquina
+      const motivoDominante = maqData.mediaPorTipo[0];
+      if (motivoDominante) {
+        const dominPct = (motivoDominante.total / (maqData.total || 1) * 100).toFixed(0);
+        sl.addShape(prs.ShapeType.rect, { x: 0.3, y: 6.75, w: 12.73, h: 0.44, fill: { color: PAL.accentLt }, line: { type: "none" } });
+        sl.addText(
+          `💡  "${motivoDominante.tipo}" responde por ${dominPct}% do tempo parado desta máquina (${fmtMin(motivoDominante.total)} · ${motivoDominante.qtd} ocorrências · média ${motivoDominante.media.toFixed(1)} min).`,
+          { x: 0.45, y: 6.75, w: 12.43, h: 0.44, fontSize: 9.5, color: PAL.accent, valign: "middle" }
+        );
+      }
+
+      sl.addText(`OEE Analytics  ·  ${periodoLabel}  ·  ${geradoEm}`, { x: 0.3, y: 7.22, w: 12.73, h: 0.22, fontSize: 7.5, color: PAL.faint, align: "center" });
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // SLIDE FINAL — PLANO DE AÇÃO / PRÓXIMOS PASSOS
+    // ═══════════════════════════════════════════════════════════
+    {
+      const sl = prs.addSlide();
+      sl.background = { color: PAL.bg };
+
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.75, fill: { color: PAL.dark }, line: { type: "none" } });
+      sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: 0.08, h: 0.75, fill: { color: PAL.good }, line: { type: "none" } });
+      sl.addText("PLANO DE AÇÃO — PRÓXIMOS PASSOS", { x: 0.22, y: 0, w: 10, h: 0.75, fontSize: 13, bold: true, color: PAL.white, valign: "middle" });
+
+      // Constrói ações automáticas baseadas nos dados
+      const acoes = [];
+
+      // Ação 1: máquina com maior tempo parado
+      if (maquinaCritica) {
+        acoes.push({
+          prioridade: "CRÍTICA",
+          cor: PAL.danger,
+          corLt: PAL.dangerLt,
+          titulo: `Reduzir paradas em ${maquinaCritica.nome}`,
+          descricao: `Máquina com ${fmtMin(maquinaCritica.total)} parados (${((maquinaCritica.total / (tempoTotalTurnoMin || 1)) * 100).toFixed(1)}% do turno). Motivo principal: ${maquinaCritica.mediaPorTipo[0]?.tipo || "—"}. Investigar causa-raiz e implementar plano de manutenção preventiva.`,
+        });
+      }
+
+      // Ação 2: motivo mais recorrente globalmente
+      if (motivoCritico) {
+        acoes.push({
+          prioridade: "ALTA",
+          cor: PAL.warn,
+          corLt: PAL.warnLt,
+          titulo: `Atacar causa-raiz: "${motivoCritico.motivo.length > 40 ? motivoCritico.motivo.slice(0, 38) + "…" : motivoCritico.motivo}"`,
+          descricao: `Responsável por ${fmtMin(motivoCritico.total)} em ${motivoCritico.qtd} ocorrências. Média de ${motivoCritico.media.toFixed(1)} min por evento. Criar procedimento padrão de resposta para reduzir tempo médio.`,
+        });
+      }
+
+      // Ação 3: disponibilidade
+      if (perdaDisp > 10) {
+        acoes.push({
+          prioridade: "ALTA",
+          cor: PAL.warn,
+          corLt: PAL.warnLt,
+          titulo: `Recuperar ${perdaDisp.toFixed(1)} p.p. de Disponibilidade`,
+          descricao: `Disponibilidade atual: ${fmtPct(dispPct)} (meta 85%). Eliminando os 3 principais motivos de parada seria possível recuperar até ${Math.min(perdaDisp, 20).toFixed(1)} p.p. de OEE.`,
+        });
+      }
+
+      // Ação 4: máquina com maior média por evento
+      const maqMaiorMedia = [...maquinasOrdenadas].sort((a, b) => b.media - a.media)[0];
+      if (maqMaiorMedia && maqMaiorMedia.nome !== maquinaCritica?.nome) {
+        acoes.push({
+          prioridade: "MÉDIA",
+          cor: PAL.accent,
+          corLt: PAL.accentLt,
+          titulo: `Reduzir tempo médio de parada em ${maqMaiorMedia.nome}`,
+          descricao: `Média de ${maqMaiorMedia.media.toFixed(1)} min por evento — a maior entre as máquinas analisadas. Revisar procedimentos de setup e troca de ferramental para reduzir tempo de resposta.`,
+        });
+      }
+
+      // Ação 5: oportunidade de ganho
+      acoes.push({
+        prioridade: "OPORTUNIDADE",
+        cor: PAL.good,
+        corLt: PAL.goodLt,
+        titulo: "Monitoramento contínuo com dashboards em tempo real",
+        descricao: `${fmtMin(tempoRecuperavel)} de tempo parado foram registrados no período. Implementar alertas automáticos ao superar limites de parada por turno permitiria intervir antes que o impacto no OEE se consolide.`,
+      });
+
+      acoes.slice(0, 4).forEach((a, i) => {
+        const ax = i % 2 === 0 ? 0.3 : 6.72;
+        const ay = i < 2 ? 0.88 : 4.1;
+        const aw = 6.2;
+        const ah = 2.9;
+
+        sl.addShape(prs.ShapeType.rect, { x: ax, y: ay, w: aw, h: ah, fill: { color: a.corLt }, line: { color: a.cor, width: 0.8 } });
+        sl.addShape(prs.ShapeType.rect, { x: ax, y: ay, w: aw, h: 0.04, fill: { color: a.cor }, line: { type: "none" } });
+
+        // badge prioridade
+        sl.addShape(prs.ShapeType.rect, { x: ax + 0.18, y: ay + 0.18, w: 1.4, h: 0.26, fill: { color: a.cor }, line: { type: "none" } });
+        sl.addText(a.prioridade, { x: ax + 0.18, y: ay + 0.18, w: 1.4, h: 0.26, fontSize: 7.5, bold: true, color: PAL.white, align: "center", valign: "middle" });
+
+        sl.addText(a.titulo, { x: ax + 0.18, y: ay + 0.54, w: aw - 0.36, h: 0.5, fontSize: 11, bold: true, color: PAL.ink });
+        sl.addText(a.descricao, { x: ax + 0.18, y: ay + 1.08, w: aw - 0.36, h: 1.65, fontSize: 9.5, color: PAL.muted, lineSpacingMultiple: 1.35 });
+      });
+
+      sl.addText(`OEE Analytics  ·  ${periodoLabel}  ·  ${geradoEm}`, { x: 0.3, y: 7.22, w: 12.73, h: 0.22, fontSize: 7.5, color: PAL.faint, align: "center" });
+    }
+
+    const nomeArq = `apresentacao-oee-${startISO}-${endISO}.pptx`;
+    await prs.writeFile({ fileName: nomeArq });
+  };
+
   // --- LABEL CUSTOMIZADO (BARRAS) ---
   const renderProdLabel = (props) => {
     const { x, y, width, height, value, payload } = props;
@@ -1749,15 +2395,25 @@ export default function OeeDashboard({
             </div>
           </div>
 
-          {/* BOTÃO RELATÓRIO PDF */}
-          <button
-            onClick={gerarRelatorioPDF}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-white text-sm font-semibold shadow-lg shadow-red-900/40 transition-all active:scale-95 self-end"
-            title="Baixar relatório PDF de paradas por máquina"
-          >
-            <FileDown size={15} />
-            Relatório PDF
-          </button>
+          {/* BOTÕES DE EXPORTAÇÃO */}
+          <div className="flex items-center gap-2 self-end">
+            <button
+              onClick={gerarRelatorioPDF}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-white text-sm font-semibold shadow-lg shadow-red-900/40 transition-all active:scale-95"
+              title="Baixar relatório PDF de paradas por máquina"
+            >
+              <FileDown size={15} />
+              PDF
+            </button>
+            <button
+              onClick={gerarApresentacaoPPTX}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-900/40 transition-all active:scale-95"
+              title="Baixar apresentação PowerPoint para diretoria"
+            >
+              <FileDown size={15} />
+              Apresentação
+            </button>
+          </div>
 
         </div>
       </header>
