@@ -1200,94 +1200,6 @@ export default function OeeDashboard({
     };
 
     // ============================================================
-    // PÁGINA 1 — CAPA
-    // ============================================================
-    pageHeader(1);
-
-    // bloco topo escuro (hero)
-    fillRect(0, 1.5, W, 52, C.ink);
-
-    // pill "RELATÓRIO"
-    fillRect(W / 2 - 16, 10, 32, 6, C.accent);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5);
-    doc.setTextColor(...C.white);
-    doc.text("RELATÓRIO", W / 2, 14.5, { align: "center" });
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.setTextColor(...C.white);
-    doc.text("Análise de Paradas por Máquina", W / 2, 28, { align: "center" });
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...C.faint);
-    doc.text("Métricas por máquina · Média por tipo de parada · Eventos detalhados", W / 2, 36, { align: "center" });
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...C.accentLight);
-    doc.text(periodoLabel, W / 2, 47, { align: "center" });
-
-    let coverY = 62;
-
-    // KPI cards (2×2)
-    const kpis = [
-      { label: "OEE Global",      value: `${oeeGlobal.toFixed(1)}%`,      dot: C.accent },
-      { label: "Disponibilidade", value: `${disponibilidade.toFixed(1)}%`, dot: [59, 130, 246] },
-      { label: "Performance",     value: `${performance.toFixed(1)}%`,     dot: C.warn },
-      { label: "Qualidade",       value: `${qualidade.toFixed(1)}%`,       dot: [168, 85, 247] },
-    ];
-    const kpiW = (W - 28 - 3 * 4) / 4;
-    kpis.forEach((k, i) => {
-      const kx = 14 + i * (kpiW + 4);
-      fillRect(kx, coverY, kpiW, 20, C.card);
-      doc.setDrawColor(...C.cardBorder);
-      doc.setLineWidth(0.3);
-      doc.rect(kx, coverY, kpiW, 20);
-      // dot accent
-      doc.setFillColor(...k.dot);
-      doc.circle(kx + 5, coverY + 5, 1.5, "F");
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.5);
-      doc.setTextColor(...C.muted);
-      doc.text(k.label.toUpperCase(), kx + kpiW / 2, coverY + 8, { align: "center" });
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(...k.dot);
-      doc.text(k.value, kx + kpiW / 2, coverY + 17, { align: "center" });
-    });
-    coverY += 26;
-
-    // stats row
-    const stats = [
-      { label: "Tempo total de turno", value: `${tempoTotalTurnoMin.toFixed(0)} min`, sub: `${diasNoPeriodo} dia(s) · ${turnoHoras}h/dia` },
-      { label: "Tempo parado total",   value: `${tempoParadoMin.toFixed(0)} min`,    sub: `${((tempoParadoMin / (tempoTotalTurnoMin || 1)) * 100).toFixed(1)}% do turno` },
-      { label: "Produção total",       value: `${producaoTotalPcs.toLocaleString("pt-BR")} un.`, sub: `${producaoTotalKg.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg est.` },
-    ];
-    const sW = (W - 28 - 2 * 4) / 3;
-    stats.forEach((s, i) => {
-      const sx = 14 + i * (sW + 4);
-      fillRect(sx, coverY, sW, 18, C.card);
-      doc.setDrawColor(...C.cardBorder);
-      doc.setLineWidth(0.3);
-      doc.rect(sx, coverY, sW, 18);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.5);
-      doc.setTextColor(...C.muted);
-      doc.text(s.label.toUpperCase(), sx + sW / 2, coverY + 5.5, { align: "center" });
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(...C.ink);
-      doc.text(s.value, sx + sW / 2, coverY + 12, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.5);
-      doc.setTextColor(...C.muted);
-      doc.text(s.sub, sx + sW / 2, coverY + 16.5, { align: "center" });
-    });
-    coverY += 24;
-
-    // ============================================================
     // AGRUPAMENTO DE PARADAS POR MÁQUINA
     // ============================================================
     const startDate = new Date(`${startISO}T00:00:00`);
@@ -1364,57 +1276,22 @@ export default function OeeDashboard({
       })
       .sort((a, b) => b.total - a.total);
 
-    // ranking de máquinas na capa
-    if (maquinasOrdenadas.length > 0) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
-      doc.setTextColor(...C.muted);
-      doc.text("RANKING — MAIOR TEMPO PARADO", 14, coverY);
-      coverY += 4;
-
-      const barMaxW = W - 28 - 36;
-      const barMaxVal = maquinasOrdenadas[0]?.total || 1;
-      maquinasOrdenadas.slice(0, 6).forEach((m, i) => {
-        const by = coverY + i * 10;
-        const pct = m.total / barMaxVal;
-        const barW = Math.max(2, pct * barMaxW);
-        const bgColor = i === 0 ? C.danger : i === 1 ? [217, 119, 6] : i === 2 ? [107, 114, 128] : C.faint;
-
-        // trilho fundo
-        fillRect(14, by + 1, barMaxW, 6, C.card);
-        // barra preenchida
-        fillRect(14, by + 1, barW, 6, bgColor);
-
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(7);
-        doc.setTextColor(...C.ink);
-        const nLabel = m.nome.length > 38 ? m.nome.slice(0, 36) + "…" : m.nome;
-        doc.text(nLabel, 14 + barMaxW + 3, by + 5.5);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...C.muted);
-        doc.text(`${m.total.toFixed(0)} min`, W - 14, by + 5.5, { align: "right" });
-      });
-      coverY += maquinasOrdenadas.slice(0, 6).length * 10 + 4;
-    }
-
-    // timestamp geração
     const now = new Date();
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...C.faint);
-    doc.text(
-      `Gerado em ${now.toLocaleDateString("pt-BR")} às ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
-      W / 2, coverY + 6, { align: "center" }
-    );
 
     // ============================================================
     // PÁGINAS — UMA POR MÁQUINA
     // ============================================================
-    let pageNum = 2;
+    let pageNum = 1;
+    let isFirstPage = true;
 
     maquinasOrdenadas.forEach((maqData) => {
-      doc.addPage();
-      pageHeader(pageNum++, `Máquina: ${maqData.nome}`);
+      if (isFirstPage) {
+        pageHeader(pageNum++, `Máquina: ${maqData.nome}`);
+        isFirstPage = false;
+      } else {
+        doc.addPage();
+        pageHeader(pageNum++, `Máquina: ${maqData.nome}`);
+      }
 
       let curY = 14;
 
