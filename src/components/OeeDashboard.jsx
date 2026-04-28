@@ -602,44 +602,66 @@ export default function OeeDashboard({
           item.maquina,
           item.maquinaNome,
           item.maquinaExibicao,
-          item.nomeMaquina,
-          item.equipamento,
-          item.eqp,
-        ];
-        const machineTokens = machineCandidates
-          .map((value) => normalizeMachineToken(value))
-          .filter(Boolean);
-        const tokenSelecionado = normalizeMachineToken(maquinaId);
-        const tokenNomeSelecionado = normalizeMachineToken(nomeSelecionado);
-        const selectedTokens = [tokenSelecionado, tokenNomeSelecionado].filter(Boolean);
 
-        const maquinaOk =
-          !maquinaId ||
-          selectedTokens.some((tkSel) => machineTokens.some((tkReg) => tkReg === tkSel));
+          // Garante que toda máquina presente em produção OU paradas apareça
+          const maquinasPresentesSet = new Set();
+          paradasValidas.forEach((p) => {
+            const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
+            maquinasPresentesSet.add(maqKey);
+          });
+          if (Array.isArray(historicoProducaoReal)) {
+            historicoProducaoReal.forEach((p) => {
+              if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return;
+              const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
+              maquinasPresentesSet.add(maqKey);
+            });
+          }
+          const maquinasPresentes = Array.from(maquinasPresentesSet);
 
-        const isProducao =
-          "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
-        const isParada = !isProducao && ("codMotivo" in item || "motivoCodigo" in item);
-        const origem = String(item.origem || "").toUpperCase();
-        // produção: respeita ignoreOriginExclusion; parada: sempre exige origem do CSV
-        const origemOk =
-          (isProducao && (ignoreOriginExclusion || ORIGENS_PERMITIDAS_OEE.has(origem))) ||
-          (isParada && ORIGENS_PARADAS_CSV.has(origem)) ||
-          (!isProducao && !isParada); // registros neutros passam livre
+          // mapeia máquinas (todas que aparecem nos dados)
+          const maqMap = new Map();
+          maquinasPresentes.forEach((maqKey) => {
+            const maqNome = maquinasDisponiveis.find(
+              (m) => m.id === maqKey || normalizeMachineToken(m.nomeExibicao) === normalizeMachineToken(maqKey)
+            )?.nomeExibicao || maqKey;
+            maqMap.set(maqNome, []);
+          });
+          paradasValidas.forEach((p) => {
+            const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
+            const maqNome = maquinasDisponiveis.find(
+              (m) => m.id === maqKey || normalizeMachineToken(m.nomeExibicao) === normalizeMachineToken(maqKey)
+            )?.nomeExibicao || maqKey;
+            if (!maqMap.has(maqNome)) maqMap.set(maqNome, []);
+            maqMap.get(maqNome).push(p);
+          });
 
-        return dataOk && maquinaOk && origemOk;
-    };
+          const maquinasOrdenadas = Array.from(maqMap.entries())
+            .map(([nome, paradas]) => {
+              const duracoes = paradas.map(getDurMin).filter((v) => v > 0);
+              const total = duracoes.reduce((a, b) => a + b, 0);
+              const media = duracoes.length ? total / duracoes.length : 0;
+              const maxVal = duracoes.length ? Math.max(...duracoes) : 0;
+              const minVal = duracoes.length ? Math.min(...duracoes) : 0;
 
-    const prodFiltradaPrincipal = Array.isArray(historicoProducaoReal)
-      ? historicoProducaoReal.filter(filterData)
-      : [];
-    const prodFiltradaComOrigens = Array.isArray(historicoProducaoReal)
-      ? historicoProducaoReal.filter((item) =>
-          filterData(item, startISO, endISO, { ignoreOriginExclusion: true })
-        )
-      : [];
-    const prodFiltrada =
-      prodFiltradaPrincipal.length > 0 ? prodFiltradaPrincipal : prodFiltradaComOrigens;
+              // média por tipo
+              const porTipo = new Map();
+              paradas.forEach((p) => {
+                const desc = sanitizeMojibakeText(
+                  p.descMotivo || p.descNorm || p.motivoCodigo || p.codMotivo || "Não informado"
+                );
+                const dur = getDurMin(p);
+                if (!porTipo.has(desc)) porTipo.set(desc, { total: 0, qtd: 0, max: 0 });
+                const t = porTipo.get(desc);
+                t.total += dur;
+                t.qtd += 1;
+                if (dur > t.max) t.max = dur;
+              });
+              const mediaPorTipo = Array.from(porTipo.entries())
+                .map(([tipo, s]) => ({ tipo, qtd: s.qtd, total: s.total, media: s.qtd ? s.total / s.qtd : 0, max: s.max }))
+                .sort((a, b) => b.total - a.total);
+              return { nome, paradas, total, media, maxVal, minVal, qtd: paradas.length, mediaPorTipo, duracoes };
+            })
+            .sort((a, b) => b.total - a.total);
 
     const prodDiasSet = new Set(
       prodFiltrada
@@ -1659,8 +1681,30 @@ export default function OeeDashboard({
       return String(p.codMotivo || p.motivoCodigo || "").toUpperCase() !== "TU001";
     });
 
-    // Agrega por máquina
+
+    // Garante que toda máquina presente em produção OU paradas apareça
+    const maquinasPresentesSet = new Set();
+    paradasValidas.forEach((p) => {
+      const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
+      maquinasPresentesSet.add(maqKey);
+    });
+    if (Array.isArray(historicoProducaoReal)) {
+      historicoProducaoReal.forEach((p) => {
+        if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return;
+        const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
+        maquinasPresentesSet.add(maqKey);
+      });
+    }
+    const maquinasPresentes = Array.from(maquinasPresentesSet);
+
+    // mapeia máquinas (todas que aparecem nos dados)
     const maqMap = new Map();
+    maquinasPresentes.forEach((maqKey) => {
+      const maqNome = maquinasDisponiveis.find(
+        (m) => m.id === maqKey || normalizeMachineToken(m.nomeExibicao) === normalizeMachineToken(maqKey)
+      )?.nomeExibicao || maqKey;
+      maqMap.set(maqNome, []);
+    });
     paradasValidas.forEach((p) => {
       const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
       const maqNome = maquinasDisponiveis.find(
