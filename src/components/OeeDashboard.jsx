@@ -1659,13 +1659,23 @@ export default function OeeDashboard({
       return diff > 0 ? diff : 0;
     };
 
+    // Chaves de máquinas inativas no catálogo — excluídas do PPTX
+    const maquinasInativasKeys = new Set(
+      CATALOGO_MAQUINAS.filter((m) => !m.ativo).map((m) =>
+        normalizeMachineToken(String(m.maquinaId || m.nomeExibicao || ""))
+      )
+    );
+
     const paradasValidas = (Array.isArray(historicoParadas) ? historicoParadas : []).filter((p) => {
       const iso = normalizeISODateInput(p.data || p.date || p.dataProducao || p.createdAt || "");
       if (!ISO_DATE_RE.test(iso)) return false;
-      const d = new Date(`${iso}T00:00:00`);
-      if (d < startDate || d > endDate) return false;
+      // Comparação como string ISO é segura e não depende de Date válido
+      if (iso < startISO || iso > endISO) return false;
       if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return false;
-      return String(p.codMotivo || p.motivoCodigo || "").toUpperCase() !== "TU001";
+      if (String(p.codMotivo || p.motivoCodigo || "").toUpperCase() === "TU001") return false;
+      // Exclui máquinas inativas no catálogo
+      const maqKey = normalizeMachineToken(String(p.maquinaId || p.maquinaNorm || p.maquina || ""));
+      return !maquinasInativasKeys.has(maqKey);
     });
 
 
