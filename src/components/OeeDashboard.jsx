@@ -1682,19 +1682,12 @@ export default function OeeDashboard({
     });
 
 
-    // Garante que toda máquina presente em produção OU paradas apareça
+    // Apenas máquinas que têm paradas reais no CSV
     const maquinasPresentesSet = new Set();
     paradasValidas.forEach((p) => {
       const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
       maquinasPresentesSet.add(maqKey);
     });
-    if (Array.isArray(historicoProducaoReal)) {
-      historicoProducaoReal.forEach((p) => {
-        if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return;
-        const maqKey = String(p.maquinaId || p.maquinaNorm || p.maquina || "Não informada").trim() || "Não informada";
-        maquinasPresentesSet.add(maqKey);
-      });
-    }
     const maquinasPresentes = Array.from(maquinasPresentesSet);
 
     // mapeia máquinas (todas que aparecem nos dados)
