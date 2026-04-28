@@ -5,7 +5,7 @@ export const CATALOGO_MAQUINAS = [
     maquinaId: 'CONFORMADORA_TELHAS',
     nomeExibicao: 'Conformadora de Telhas',
     grupo: 'GRUPO_TELHAS',
-    ativo: true,
+    ativo: false,
   },
   {
     maquinaId: 'PERF_TELHA_TRAPEZOIDAL_MARAFON',
