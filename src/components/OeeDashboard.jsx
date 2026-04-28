@@ -639,6 +639,17 @@ export default function OeeDashboard({
         return dataOk && maquinaOk && origemOk;
     };
 
+    const prodFiltradaPrincipal = Array.isArray(historicoProducaoReal)
+      ? historicoProducaoReal.filter(filterData)
+      : [];
+    const prodFiltradaComOrigens = Array.isArray(historicoProducaoReal)
+      ? historicoProducaoReal.filter((item) =>
+          filterData(item, startISO, endISO, { ignoreOriginExclusion: true })
+        )
+      : [];
+    const prodFiltrada =
+      prodFiltradaPrincipal.length > 0 ? prodFiltradaPrincipal : prodFiltradaComOrigens;
+
     const prodDiasSet = new Set(
       prodFiltrada
         .map((item) => getItemDateISO(item))
