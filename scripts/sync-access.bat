@@ -43,7 +43,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [OK] Sincronizacao concluida com commit.
+echo [3/3] Enviando para o repositorio remoto (git push)...
+git push
+if errorlevel 1 (
+  echo [FALHA] git push falhou. Verifique sua conexao ou credenciais.
+  pause
+  exit /b 1
+)
+
+echo [OK] Sincronizacao concluida com push.
 pause
 endlocal
 exit /b 0
