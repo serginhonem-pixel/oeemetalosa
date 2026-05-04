@@ -27,3 +27,5 @@ dist-ssr
 
 # Local spreadsheets
 src/data/Perfil Consolidado.xlsx
+
+.vercel

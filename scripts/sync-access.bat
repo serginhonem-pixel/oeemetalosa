@@ -2,9 +2,9 @@
 setlocal EnableExtensions
 cd /d C:\Users\coordpcp\telha-oee
 
-echo [1/2] Exportando Access direto para public/data-import...
-if not exist ".\public\data-import" mkdir ".\public\data-import"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\export-access-oee.ps1 -AccessPath "C:\DadosVBA\BDMETALOSA.accdb" -OutDir ".\public\data-import"
+echo [1/3] Exportando Access para data-import...
+if not exist ".\data-import" mkdir ".\data-import"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\export-access-oee.ps1 -AccessPath "C:\DadosVBA\BDMETALOSA.accdb" -OutDir ".\data-import"
 if errorlevel 1 (
   echo [FALHA] Export do Access falhou.
   pause
