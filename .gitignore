@@ -29,3 +29,6 @@ dist-ssr
 src/data/Perfil Consolidado.xlsx
 
 .vercel
+
+# Evita export acidental para a pasta public/
+public/data-import/
