@@ -1037,9 +1037,18 @@ const ProcessosScreen = () => {
     const ComparisonMonthBarShape = ({ x, y, width, height, fill, payload, value, index, ano, mostrarComparacaoAno = false }) => {
         if (!payload || !Number.isFinite(Number(value))) return null;
 
-        const mediaDia = Number(payload[`mediaDia_${ano}`]);
+        let mediaDia = Number(payload[`mediaDia_${ano}`]);
+        if (!Number.isFinite(mediaDia) || mediaDia === 0) {
+            const computed = getMediaDiaByMesLabel(`${payload.mes} ${ano}`, Number(value));
+            if (Number.isFinite(computed.mediaDia) && computed.mediaDia > 0) mediaDia = computed.mediaDia;
+        }
         const dadosComparacao = obterDadosFiltrados();
-        const prevMediaDia = index > 0 ? Number(dadosComparacao?.[index - 1]?.[`mediaDia_${ano}`]) : null;
+        const prevItem = index > 0 ? dadosComparacao?.[index - 1] : null;
+        let prevMediaDia = prevItem ? Number(prevItem[`mediaDia_${ano}`]) : null;
+        if (prevItem && (!Number.isFinite(prevMediaDia) || prevMediaDia === 0)) {
+            const computed = getMediaDiaByMesLabel(`${prevItem.mes} ${ano}`, Number(prevItem[`quantidade_${ano}`]));
+            if (Number.isFinite(computed.mediaDia) && computed.mediaDia > 0) prevMediaDia = computed.mediaDia;
+        }
         const mediaDiaDiffPct = (
             Number.isFinite(mediaDia) &&
             Number.isFinite(prevMediaDia) &&
@@ -1063,71 +1072,56 @@ const ProcessosScreen = () => {
         const pctColor = percentual > 0 ? '#22c55e' : percentual < 0 ? '#ef4444' : '#9CA3AF';
         const pctArrow = percentual > 0 ? '▲' : percentual < 0 ? '▼' : '▶';
 
-        const centerX = x + width / 2;
-        const showInfoBox = mostrarComparacaoAno && mediaDiaText && mediaDia > 0;
-        const valueY = y - 12;
-        const mediaY = valueY + 24;
-        const trendY = mediaY + 20;
-        const boxWidth = Math.max(72, mediaDiaText.length * 7.5 + 18);
-        const boxHeight = hasTrend ? 40 : 22;
-        const boxX = centerX - boxWidth / 2;
-        const boxY = mediaY - 15;
-        const pctY = y - 40;
+        const numValue = Number(value);
+        const hasValue = numValue > 0;
+        const barBottom = y + height;
+
+        // Layout igual ao CustomBarLabel: % canto sup-esq, valor centralizado, média e tendência abaixo
+        const cornerX  = x + 4;
+        const cornerPctY = y - 8;          // % levemente acima da barra
+        const valY     = y + 16;           // valor dentro, perto do topo
+        const mediaY   = valY + 18;        // média/dia abaixo do valor
+        const trendY   = mediaY + 15;      // tendência abaixo da média
+        const centerX  = x + width / 2;
+
+        const showValue = hasValue && height > 20 && valY < barBottom - 4;
+        const showMedia = showValue && Number.isFinite(mediaDia) && mediaDia > 0 && mediaY < barBottom - 4;
+        const showTrend = showMedia && hasTrend && trendY < barBottom - 4;
 
         return (
             <g>
                 <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />
-                {mostrarComparacaoAno && Number.isFinite(percentual) && (
-                    <text x={centerX} y={pctY} fill={pctColor} fontSize={16} fontWeight={900} textAnchor="middle">
+
+                {/* % ano-a-ano no canto sup-esq — só na barra de 2026 com dados */}
+                {mostrarComparacaoAno && hasValue && Number.isFinite(percentual) && (
+                    <text x={cornerX} y={cornerPctY} fill={pctColor} fontSize={13} fontWeight={900} textAnchor="start"
+                        stroke="#000" strokeWidth="0.5" paintOrder="stroke">
                         {pctArrow} {pctText}
                     </text>
                 )}
-                <text x={centerX} y={valueY} fill="#F9FAFB" fontSize={15} fontWeight={800} textAnchor="middle">
-                    {formatted}
-                </text>
-                {showInfoBox && (
-                    <>
-                        <rect
-                            x={boxX}
-                            y={boxY}
-                            width={boxWidth}
-                            height={boxHeight}
-                            rx={4}
-                            fill="#0B1220"
-                            fillOpacity={0.55}
-                            stroke="#475569"
-                            strokeOpacity={0.5}
-                            strokeWidth="0.6"
-                        />
-                        <text
-                            x={centerX}
-                            y={mediaY}
-                            fill={trendColor}
-                            stroke="#000000"
-                            strokeWidth="0.45"
-                            paintOrder="stroke"
-                            fontSize={13}
-                            fontWeight={800}
-                            textAnchor="middle"
-                        >
-                            {mediaDiaText}
-                        </text>
-                        {hasTrend && (
-                            <text
-                                x={centerX}
-                                y={trendY}
-                                fill={trendColor}
-                                stroke="#000000"
-                                strokeWidth="0.45"
-                                paintOrder="stroke"
-                                fontSize={11}
-                                fontWeight={900}
-                                textAnchor="middle"
-                            >
-                                {trendText}
-                            </text>
-                        )}
-                    </>
+
+                {/* Valor centralizado dentro da barra */}
+                {showValue && (
+                    <text x={centerX} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={900} textAnchor="middle"
+                        stroke="#000" strokeWidth="0.5" paintOrder="stroke">
+                        {formatted}
+                    </text>
+                )}
+
+                {/* Média/dia */}
+                {showMedia && (
+                    <text x={centerX} y={mediaY} fill="#CBD5E1" fontSize={11} fontWeight={800} textAnchor="middle"
+                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                        {mediaDiaText}
+                    </text>
+                )}
+
+                {/* Tendência mês a mês da média/dia */}
+                {showTrend && (
+                    <text x={centerX} y={trendY} fill={trendColor} fontSize={10} fontWeight={900} textAnchor="middle"
+                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                        {trendText}
+                    </text>
                 )}
             </g>
         );
@@ -1893,7 +1887,7 @@ const ProcessosScreen = () => {
                                                 </div>
                                             )}
                                             <ResponsiveContainer width="100%" height={600}>
-                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 110, right: 20, left: 20, bottom: 60 }}>
+                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 45, right: 20, left: 20, bottom: 60 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                     <XAxis 
                                                         dataKey="mes" 
