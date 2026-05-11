@@ -1064,27 +1064,28 @@ const ProcessosScreen = () => {
         const pctArrow = percentual > 0 ? '▲' : percentual < 0 ? '▼' : '▶';
 
         const centerX = x + width / 2;
-        const valueY = y - 8;
-        const mediaY = valueY + 18;
-        const trendY = mediaY + 16;
-        const boxWidth = Math.max(84, mediaDiaText.length * 6.5 + 18);
-        const boxHeight = hasTrend ? 34 : 18;
+        const showInfoBox = mostrarComparacaoAno && mediaDiaText && mediaDia > 0;
+        const valueY = y - 12;
+        const mediaY = valueY + 24;
+        const trendY = mediaY + 20;
+        const boxWidth = Math.max(72, mediaDiaText.length * 7.5 + 18);
+        const boxHeight = hasTrend ? 40 : 22;
         const boxX = centerX - boxWidth / 2;
-        const boxY = mediaY - 12;
-        const pctY = y - 30;
+        const boxY = mediaY - 15;
+        const pctY = y - 40;
 
         return (
             <g>
                 <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />
                 {mostrarComparacaoAno && Number.isFinite(percentual) && (
-                    <text x={centerX} y={pctY} fill={pctColor} fontSize={13} fontWeight={900} textAnchor="middle">
+                    <text x={centerX} y={pctY} fill={pctColor} fontSize={16} fontWeight={900} textAnchor="middle">
                         {pctArrow} {pctText}
                     </text>
                 )}
-                <text x={centerX} y={valueY} fill="#F9FAFB" fontSize={12} fontWeight={800} textAnchor="middle">
+                <text x={centerX} y={valueY} fill="#F9FAFB" fontSize={15} fontWeight={800} textAnchor="middle">
                     {formatted}
                 </text>
-                {mediaDiaText && (
+                {showInfoBox && (
                     <>
                         <rect
                             x={boxX}
@@ -1105,7 +1106,7 @@ const ProcessosScreen = () => {
                             stroke="#000000"
                             strokeWidth="0.45"
                             paintOrder="stroke"
-                            fontSize={11}
+                            fontSize={13}
                             fontWeight={800}
                             textAnchor="middle"
                         >
@@ -1119,7 +1120,7 @@ const ProcessosScreen = () => {
                                 stroke="#000000"
                                 strokeWidth="0.45"
                                 paintOrder="stroke"
-                                fontSize={9}
+                                fontSize={11}
                                 fontWeight={900}
                                 textAnchor="middle"
                             >
@@ -1891,8 +1892,8 @@ const ProcessosScreen = () => {
                                                     MODO MOCK ATIVO
                                                 </div>
                                             )}
-                                            <ResponsiveContainer width="100%" height={420}>
-                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 84, right: 20, left: 20, bottom: 60 }}>
+                                            <ResponsiveContainer width="100%" height={600}>
+                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 110, right: 20, left: 20, bottom: 60 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
                                                     <XAxis 
                                                         dataKey="mes" 
