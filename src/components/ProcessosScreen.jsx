@@ -1075,57 +1075,106 @@ const ProcessosScreen = () => {
         const numValue = Number(value);
         const hasValue = numValue > 0;
         const barBottom = y + height;
+        const centerX   = x + width / 2;
 
-        // Layout igual ao CustomBarLabel: % canto sup-esq, valor centralizado, média e tendência abaixo
-        const cornerX  = x + 4;
-        const cornerPctY = y - 8;          // % levemente acima da barra
-        const valY     = y + 16;           // valor dentro, perto do topo
-        const mediaY   = valY + 18;        // média/dia abaixo do valor
-        const trendY   = mediaY + 15;      // tendência abaixo da média
-        const centerX  = x + width / 2;
+        if (ano === '2025') {
+            // 2025 renderiza só o rect — rótulos ficam no shape do 2026 (que renderiza por cima)
+            return <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />;
+        }
 
-        const showValue = hasValue && height > 20 && valY < barBottom - 4;
-        const showMedia = showValue && Number.isFinite(mediaDia) && mediaDia > 0 && mediaY < barBottom - 4;
-        const showTrend = showMedia && hasTrend && trendY < barBottom - 4;
+        // ── 2026: renderiza rect + todos os rótulos (fica no topo do z-order) ──
+
+        // Recalcular posição Y da barra 2025 usando a escala linear
+        const val25 = Number(payload.quantidade_2025) || 0;
+        const height25 = (numValue > 0 && val25 > 0) ? height * (val25 / numValue) : 0;
+        const y25  = barBottom - height25;
+        const has25 = val25 > 0;
+        const has26 = numValue > 0;
+
+        // Centro aproximado da barra 2025 (um barWidth + 4px de gap à esquerda)
+        const cx25   = x - width / 2 - 4;
+        const cx26   = centerX;
+        const pairCX = (cx25 + cx26) / 2;
+
+        // Topo mais alto do par → rótulos vão acima disso
+        const topY = has26 ? y : (has25 ? y25 : barBottom);
+        const valY = topY - 13;
+        const pctY = topY - 38;
+
+        // Média/dia
+        let md25 = Number(payload.mediaDia_2025);
+        if (!Number.isFinite(md25) || md25 === 0) {
+            const c = getMediaDiaByMesLabel(`${payload.mes} 2025`, val25);
+            if (Number.isFinite(c.mediaDia) && c.mediaDia > 0) md25 = c.mediaDia;
+        }
+        const md25Text = (Number.isFinite(md25) && md25 > 0)
+            ? `${md25.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia` : null;
+        const md26Text = (Number.isFinite(mediaDia) && mediaDia > 0)
+            ? `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia` : null;
+
+        // Tendência (mediaDia mês a mês)
+        const trendColor26 = mediaDiaDiffPct > 0 ? '#22c55e' : mediaDiaDiffPct < 0 ? '#ef4444' : '#9CA3AF';
+
+        const mediaY25 = y25 + 28;
+        const mediaY26 = y  + 28;
+        const trendY26 = mediaY26 + 22;
+        const bottom25 = y25 + height25;
 
         return (
             <g>
                 <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />
 
-                {/* % ano-a-ano no canto sup-esq — só na barra de 2026 com dados */}
-                {mostrarComparacaoAno && hasValue && Number.isFinite(percentual) && (
-                    <text x={cornerX} y={cornerPctY} fill={pctColor} fontSize={13} fontWeight={900} textAnchor="start"
-                        stroke="#000" strokeWidth="0.5" paintOrder="stroke">
+                {/* % ano-a-ano centralizado acima do par */}
+                {has25 && has26 && Number.isFinite(percentual) && (
+                    <text x={pairCX} y={pctY} fill={pctColor} fontSize={20} fontWeight={900}
+                        textAnchor="middle" stroke="#000" strokeWidth="0.5" paintOrder="stroke">
                         {pctArrow} {pctText}
                     </text>
                 )}
 
-                {/* Valor centralizado dentro da barra */}
-                {showValue && (
-                    <text x={centerX} y={valY} fill="#F9FAFB" fontSize={14} fontWeight={900} textAnchor="middle"
-                        stroke="#000" strokeWidth="0.5" paintOrder="stroke">
-                        {formatted}
+                {/* Valor 2025 — cresce para a esquerda a partir da borda esquerda do 2026 */}
+                {has25 && (
+                    <text x={x - 4} y={valY} fill="#F9FAFB" fontSize={21} fontWeight={900}
+                        textAnchor="end" stroke="#000" strokeWidth="0.5" paintOrder="stroke">
+                        {val25.toLocaleString('pt-BR')}
                     </text>
                 )}
 
-                {/* Média/dia */}
-                {showMedia && (
-                    <text x={centerX} y={mediaY} fill="#CBD5E1" fontSize={11} fontWeight={800} textAnchor="middle"
-                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
-                        {mediaDiaText}
+                {/* Valor 2026 — cresce para a direita a partir da borda esquerda do 2026 */}
+                {has26 && (
+                    <text x={x + 4} y={valY} fill="#F9FAFB" fontSize={21} fontWeight={900}
+                        textAnchor="start" stroke="#000" strokeWidth="0.5" paintOrder="stroke">
+                        {numValue.toLocaleString('pt-BR')}
                     </text>
                 )}
 
-                {/* Tendência mês a mês da média/dia */}
-                {showTrend && (
-                    <text x={centerX} y={trendY} fill={trendColor} fontSize={10} fontWeight={900} textAnchor="middle"
-                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                {/* Média/dia 2025 dentro da barra 2025 */}
+                {has25 && md25Text && mediaY25 < bottom25 - 4 && (
+                    <text x={cx25} y={mediaY25} fill="#CBD5E1" fontSize={16} fontWeight={800}
+                        textAnchor="middle" stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                        {md25Text}
+                    </text>
+                )}
+
+                {/* Média/dia 2026 dentro da barra 2026 */}
+                {has26 && md26Text && mediaY26 < barBottom - 4 && (
+                    <text x={cx26} y={mediaY26} fill="#CBD5E1" fontSize={16} fontWeight={800}
+                        textAnchor="middle" stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                        {md26Text}
+                    </text>
+                )}
+
+                {/* Tendência 2026 */}
+                {has26 && hasTrend && trendY26 < barBottom - 4 && (
+                    <text x={cx26} y={trendY26} fill={trendColor26} fontSize={14} fontWeight={900}
+                        textAnchor="middle" stroke="#000" strokeWidth="0.4" paintOrder="stroke">
                         {trendText}
                     </text>
                 )}
             </g>
         );
     };
+
 
     const CustomStackedLabel = ({ x, y, width, payload }) => {
         if (!payload) return null;
@@ -1886,22 +1935,22 @@ const ProcessosScreen = () => {
                                                     MODO MOCK ATIVO
                                                 </div>
                                             )}
-                                            <ResponsiveContainer width="100%" height={600}>
-                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 45, right: 20, left: 20, bottom: 60 }}>
+                                            <ResponsiveContainer width="100%" height={720}>
+                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 50, right: 20, left: 20, bottom: 80 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
-                                                    <XAxis 
-                                                        dataKey="mes" 
+                                                    <XAxis
+                                                        dataKey="mes"
                                                         stroke="#9CA3AF"
-                                                        fontSize={14}
-                                                        fontWeight={600}
+                                                        fontSize={20}
+                                                        fontWeight={700}
                                                         angle={-45}
                                                         textAnchor="end"
-                                                        height={80}
+                                                        height={100}
                                                     />
-                                                    <YAxis 
+                                                    <YAxis
                                                         stroke="#9CA3AF"
-                                                        fontSize={14}
-                                                        fontWeight={600}
+                                                        fontSize={18}
+                                                        fontWeight={700}
                                                         tickFormatter={(value) => value.toLocaleString('pt-BR')}
                                                     />
                                                     <Tooltip 
@@ -2028,26 +2077,26 @@ const ProcessosScreen = () => {
 
                                 {/* KPI Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/30 border-2 border-blue-500/50 rounded-xl p-5 shadow-lg">
-                                        <div className="text-blue-300 text-base font-bold mb-2 tracking-wide">TOTAL ANUAL</div>
-                                        <div className="text-white text-5xl font-black mb-1">{kpis.total.toLocaleString('pt-BR')}</div>
-                                        <div className="text-blue-400 text-sm font-semibold">Unidades produzidas</div>
+                                    <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/30 border-2 border-blue-500/50 rounded-xl p-6 shadow-lg">
+                                        <div className="text-blue-300 text-xl font-bold mb-2 tracking-wide">TOTAL ANUAL</div>
+                                        <div className="text-white text-7xl font-black mb-1">{kpis.total.toLocaleString('pt-BR')}</div>
+                                        <div className="text-blue-400 text-base font-semibold">Unidades produzidas</div>
                                     </div>
-                                    <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-5 shadow-lg">
-                                        <div className="text-green-300 text-base font-bold mb-2 tracking-wide">MÉDIA MENSAL</div>
-                                        <div className="text-white text-5xl font-black mb-1">{kpis.media.toLocaleString('pt-BR')}</div>
-                                        <div className="text-green-300 text-sm font-bold mb-1">{Number(kpis.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
-                                        <div className="text-green-400 text-sm font-semibold">Produção por mês</div>
+                                    <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-6 shadow-lg">
+                                        <div className="text-green-300 text-xl font-bold mb-2 tracking-wide">MÉDIA MENSAL</div>
+                                        <div className="text-white text-7xl font-black mb-1">{kpis.media.toLocaleString('pt-BR')}</div>
+                                        <div className="text-green-300 text-base font-bold mb-1">{Number(kpis.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
+                                        <div className="text-green-400 text-base font-semibold">Produção por mês</div>
                                     </div>
-                                    <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-5 shadow-lg">
-                                        <div className="text-emerald-300 text-base font-bold mb-2 tracking-wide">MAIOR MÊS</div>
-                                        <div className="text-white text-5xl font-black mb-1">{kpis.maiorMes.toLocaleString('pt-BR')}</div>
-                                        <div className="text-emerald-400 text-sm font-semibold">{kpis.maiorMesNome}</div>
+                                    <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-6 shadow-lg">
+                                        <div className="text-emerald-300 text-xl font-bold mb-2 tracking-wide">MAIOR MÊS</div>
+                                        <div className="text-white text-7xl font-black mb-1">{kpis.maiorMes.toLocaleString('pt-BR')}</div>
+                                        <div className="text-emerald-400 text-base font-semibold">{kpis.maiorMesNome}</div>
                                     </div>
-                                    <div className="bg-gradient-to-br from-amber-900/60 to-amber-800/30 border-2 border-amber-500/50 rounded-xl p-5 shadow-lg">
-                                        <div className="text-amber-300 text-base font-bold mb-2 tracking-wide">MENOR MÊS</div>
-                                        <div className="text-white text-5xl font-black mb-1">{kpis.menorMes.toLocaleString('pt-BR')}</div>
-                                        <div className="text-amber-400 text-sm font-semibold">{kpis.menorMesNome}</div>
+                                    <div className="bg-gradient-to-br from-amber-900/60 to-amber-800/30 border-2 border-amber-500/50 rounded-xl p-6 shadow-lg">
+                                        <div className="text-amber-300 text-xl font-bold mb-2 tracking-wide">MENOR MÊS</div>
+                                        <div className="text-white text-7xl font-black mb-1">{kpis.menorMes.toLocaleString('pt-BR')}</div>
+                                        <div className="text-amber-400 text-base font-semibold">{kpis.menorMesNome}</div>
                                     </div>
                                 </div>
                             </div>
