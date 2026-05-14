@@ -1115,10 +1115,9 @@ const ProcessosScreen = () => {
         // Tendência (mediaDia mês a mês)
         const trendColor26 = mediaDiaDiffPct > 0 ? '#22c55e' : mediaDiaDiffPct < 0 ? '#ef4444' : '#9CA3AF';
 
-        const mediaY25 = y25 + 28;
-        const mediaY26 = y  + 28;
-        const trendY26 = mediaY26 + 22;
-        const bottom25 = y25 + height25;
+        // Centro vertical de cada barra para o texto rotacionado
+        const midY25 = y25 + height25 / 2;
+        const midY26 = y  + height  / 2;
 
         return (
             <g>
@@ -1148,27 +1147,27 @@ const ProcessosScreen = () => {
                     </text>
                 )}
 
-                {/* Média/dia 2025 dentro da barra 2025 */}
-                {has25 && md25Text && mediaY25 < bottom25 - 4 && (
-                    <text x={cx25} y={mediaY25} fill="#CBD5E1" fontSize={16} fontWeight={800}
-                        textAnchor="middle" stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                {/* Média/dia 2025 — rotacionado 90° no centro da barra */}
+                {has25 && md25Text && height25 > 40 && (
+                    <text
+                        x={cx25} y={midY25}
+                        fill="#CBD5E1" fontSize={17} fontWeight={800}
+                        textAnchor="middle" dominantBaseline="central"
+                        transform={`rotate(-90, ${cx25}, ${midY25})`}
+                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
                         {md25Text}
                     </text>
                 )}
 
-                {/* Média/dia 2026 dentro da barra 2026 */}
-                {has26 && md26Text && mediaY26 < barBottom - 4 && (
-                    <text x={cx26} y={mediaY26} fill="#CBD5E1" fontSize={16} fontWeight={800}
-                        textAnchor="middle" stroke="#000" strokeWidth="0.4" paintOrder="stroke">
+                {/* Média/dia 2026 — rotacionado 90° no centro da barra */}
+                {has26 && md26Text && height > 40 && (
+                    <text
+                        x={cx26} y={midY26}
+                        fill="#CBD5E1" fontSize={17} fontWeight={800}
+                        textAnchor="middle" dominantBaseline="central"
+                        transform={`rotate(-90, ${cx26}, ${midY26})`}
+                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
                         {md26Text}
-                    </text>
-                )}
-
-                {/* Tendência 2026 */}
-                {has26 && hasTrend && trendY26 < barBottom - 4 && (
-                    <text x={cx26} y={trendY26} fill={trendColor26} fontSize={14} fontWeight={900}
-                        textAnchor="middle" stroke="#000" strokeWidth="0.4" paintOrder="stroke">
-                        {trendText}
                     </text>
                 )}
             </g>
