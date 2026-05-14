@@ -1151,7 +1151,7 @@ const ProcessosScreen = () => {
                 {has25 && md25Text && height25 > 40 && (
                     <text
                         x={cx25} y={midY25}
-                        fill="#CBD5E1" fontSize={17} fontWeight={800}
+                        fill="#CBD5E1" fontSize={21} fontWeight={800}
                         textAnchor="middle" dominantBaseline="central"
                         transform={`rotate(-90, ${cx25}, ${midY25})`}
                         stroke="#000" strokeWidth="0.4" paintOrder="stroke">
@@ -1163,7 +1163,7 @@ const ProcessosScreen = () => {
                 {has26 && md26Text && height > 40 && (
                     <text
                         x={cx26} y={midY26}
-                        fill="#CBD5E1" fontSize={17} fontWeight={800}
+                        fill="#CBD5E1" fontSize={21} fontWeight={800}
                         textAnchor="middle" dominantBaseline="central"
                         transform={`rotate(-90, ${cx26}, ${midY26})`}
                         stroke="#000" strokeWidth="0.4" paintOrder="stroke">
