@@ -1256,7 +1256,7 @@ const ProcessosScreen = () => {
         if (dadosComVariacao.length === 0) {
             return { total: 0, media: 0, mediaDia: 0, maiorMes: 0, maiorMesNome: '', menorMes: 0, menorMesNome: '' };
         }
-        
+
         const total = dadosComVariacao.reduce((acc, d) => acc + d.quantidade, 0);
         const media = Math.round(total / dadosComVariacao.length);
         const itensComMediaDia = dadosGraficoFiltrados.filter((item) => Number.isFinite(Number(item?.mediaDia)));
@@ -1267,8 +1267,27 @@ const ProcessosScreen = () => {
         const maiorMesNome = dadosComVariacao.find(d => d.quantidade === maiorMes)?.mes || '';
         const menorMes = Math.min(...dadosComVariacao.map(d => d.quantidade));
         const menorMesNome = dadosComVariacao.find(d => d.quantidade === menorMes)?.mes || '';
-        
+
         return { total, media, mediaDia, maiorMes, maiorMesNome, menorMes, menorMesNome };
+    };
+
+    const calcularKPIsPorAno = () => {
+        const anoAtual = anoSelecionado;
+        const anoAnterior = anoAtual - 1;
+
+        const calcPorAno = (ano) => {
+            const dados = dadosComVariacao.filter(d => d.mes.includes(ano.toString()));
+            if (dados.length === 0) return null;
+            const total = dados.reduce((acc, d) => acc + d.quantidade, 0);
+            const media = Math.round(total / dados.length);
+            const maiorMes = Math.max(...dados.map(d => d.quantidade));
+            const maiorMesNome = dados.find(d => d.quantidade === maiorMes)?.mes?.split(' ')[0] || '';
+            const menorMes = Math.min(...dados.map(d => d.quantidade));
+            const menorMesNome = dados.find(d => d.quantidade === menorMes)?.mes?.split(' ')[0] || '';
+            return { total, media, maiorMes, maiorMesNome, menorMes, menorMesNome };
+        };
+
+        return { atual: calcPorAno(anoAtual), anterior: calcPorAno(anoAnterior), anoAtual, anoAnterior };
     };
 
     // Função para filtrar dados de visualização
@@ -1372,6 +1391,7 @@ const ProcessosScreen = () => {
     };
 
     const kpis = calcularKPIs();
+    const kpisPorAno = calcularKPIsPorAno();
     const top5 = getTop5Processos();
     const acumuladoData = calcularAcumulado();
 
@@ -2076,26 +2096,68 @@ const ProcessosScreen = () => {
 
                                 {/* KPI Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/30 border-2 border-blue-500/50 rounded-xl p-6 shadow-lg">
+                                    {/* TOTAL ANUAL */}
+                                    <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/30 border-2 border-blue-500/50 rounded-xl p-6 shadow-lg flex flex-col justify-between">
                                         <div className="text-blue-300 text-xl font-bold mb-2 tracking-wide">TOTAL ANUAL</div>
-                                        <div className="text-white text-7xl font-black mb-1">{kpis.total.toLocaleString('pt-BR')}</div>
-                                        <div className="text-blue-400 text-base font-semibold">Unidades produzidas</div>
+                                        <div>
+                                            <div className="text-blue-200 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAtual}</div>
+                                            <div className="text-white text-6xl font-black mb-1 leading-none">{kpisPorAno.atual ? kpisPorAno.atual.total.toLocaleString('pt-BR') : '--'}</div>
+                                        </div>
+                                        {kpisPorAno.anterior && (
+                                            <div className="mt-3 pt-3 border-t border-blue-500/30">
+                                                <div className="text-blue-400 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAnterior}</div>
+                                                <div className="text-blue-300 text-2xl font-bold">{kpisPorAno.anterior.total.toLocaleString('pt-BR')}</div>
+                                            </div>
+                                        )}
+                                        <div className="text-blue-400 text-sm font-semibold mt-2">Unidades produzidas</div>
                                     </div>
-                                    <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-6 shadow-lg">
+                                    {/* MÉDIA MENSAL */}
+                                    <div className="bg-gradient-to-br from-green-900/60 to-green-800/30 border-2 border-green-500/50 rounded-xl p-6 shadow-lg flex flex-col justify-between">
                                         <div className="text-green-300 text-xl font-bold mb-2 tracking-wide">MÉDIA MENSAL</div>
-                                        <div className="text-white text-7xl font-black mb-1">{kpis.media.toLocaleString('pt-BR')}</div>
-                                        <div className="text-green-300 text-base font-bold mb-1">{Number(kpis.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
-                                        <div className="text-green-400 text-base font-semibold">Produção por mês</div>
+                                        <div>
+                                            <div className="text-green-200 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAtual}</div>
+                                            <div className="text-white text-6xl font-black mb-1 leading-none">{kpisPorAno.atual ? kpisPorAno.atual.media.toLocaleString('pt-BR') : '--'}</div>
+                                            <div className="text-green-300 text-sm font-bold">{Number(kpis.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
+                                        </div>
+                                        {kpisPorAno.anterior && (
+                                            <div className="mt-3 pt-3 border-t border-green-500/30">
+                                                <div className="text-green-400 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAnterior}</div>
+                                                <div className="text-green-300 text-2xl font-bold">{kpisPorAno.anterior.media.toLocaleString('pt-BR')}</div>
+                                            </div>
+                                        )}
+                                        <div className="text-green-400 text-sm font-semibold mt-2">Produção por mês</div>
                                     </div>
-                                    <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-6 shadow-lg">
+                                    {/* MAIOR MÊS */}
+                                    <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-6 shadow-lg flex flex-col justify-between">
                                         <div className="text-emerald-300 text-xl font-bold mb-2 tracking-wide">MAIOR MÊS</div>
-                                        <div className="text-white text-7xl font-black mb-1">{kpis.maiorMes.toLocaleString('pt-BR')}</div>
-                                        <div className="text-emerald-400 text-base font-semibold">{kpis.maiorMesNome}</div>
+                                        <div>
+                                            <div className="text-emerald-200 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAtual}</div>
+                                            <div className="text-white text-6xl font-black mb-1 leading-none">{kpisPorAno.atual ? kpisPorAno.atual.maiorMes.toLocaleString('pt-BR') : '--'}</div>
+                                            <div className="text-emerald-400 text-sm font-semibold">{kpisPorAno.atual?.maiorMesNome}</div>
+                                        </div>
+                                        {kpisPorAno.anterior && (
+                                            <div className="mt-3 pt-3 border-t border-emerald-500/30">
+                                                <div className="text-emerald-400 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAnterior}</div>
+                                                <div className="text-emerald-300 text-2xl font-bold">{kpisPorAno.anterior.maiorMes.toLocaleString('pt-BR')}</div>
+                                                <div className="text-emerald-500 text-xs">{kpisPorAno.anterior.maiorMesNome}</div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="bg-gradient-to-br from-amber-900/60 to-amber-800/30 border-2 border-amber-500/50 rounded-xl p-6 shadow-lg">
+                                    {/* MENOR MÊS */}
+                                    <div className="bg-gradient-to-br from-amber-900/60 to-amber-800/30 border-2 border-amber-500/50 rounded-xl p-6 shadow-lg flex flex-col justify-between">
                                         <div className="text-amber-300 text-xl font-bold mb-2 tracking-wide">MENOR MÊS</div>
-                                        <div className="text-white text-7xl font-black mb-1">{kpis.menorMes.toLocaleString('pt-BR')}</div>
-                                        <div className="text-amber-400 text-base font-semibold">{kpis.menorMesNome}</div>
+                                        <div>
+                                            <div className="text-amber-200 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAtual}</div>
+                                            <div className="text-white text-6xl font-black mb-1 leading-none">{kpisPorAno.atual ? kpisPorAno.atual.menorMes.toLocaleString('pt-BR') : '--'}</div>
+                                            <div className="text-amber-400 text-sm font-semibold">{kpisPorAno.atual?.menorMesNome}</div>
+                                        </div>
+                                        {kpisPorAno.anterior && (
+                                            <div className="mt-3 pt-3 border-t border-amber-500/30">
+                                                <div className="text-amber-400 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAnterior}</div>
+                                                <div className="text-amber-300 text-2xl font-bold">{kpisPorAno.anterior.menorMes.toLocaleString('pt-BR')}</div>
+                                                <div className="text-amber-500 text-xs">{kpisPorAno.anterior.menorMesNome}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
