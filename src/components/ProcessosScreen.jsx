@@ -1280,11 +1280,15 @@ const ProcessosScreen = () => {
             if (dados.length === 0) return null;
             const total = dados.reduce((acc, d) => acc + d.quantidade, 0);
             const media = Math.round(total / dados.length);
+            const itensMediaDia = dadosGraficoFiltrados.filter(item => item?.mes?.includes(ano.toString()) && Number.isFinite(Number(item?.mediaDia)));
+            const mediaDia = itensMediaDia.length
+                ? itensMediaDia.reduce((acc, item) => acc + Number(item.mediaDia), 0) / itensMediaDia.length
+                : 0;
             const maiorMes = Math.max(...dados.map(d => d.quantidade));
             const maiorMesNome = dados.find(d => d.quantidade === maiorMes)?.mes?.split(' ')[0] || '';
             const menorMes = Math.min(...dados.map(d => d.quantidade));
             const menorMesNome = dados.find(d => d.quantidade === menorMes)?.mes?.split(' ')[0] || '';
-            return { total, media, maiorMes, maiorMesNome, menorMes, menorMesNome };
+            return { total, media, mediaDia, maiorMes, maiorMesNome, menorMes, menorMesNome };
         };
 
         return { atual: calcPorAno(anoAtual), anterior: calcPorAno(anoAnterior), anoAtual, anoAnterior };
@@ -2117,12 +2121,13 @@ const ProcessosScreen = () => {
                                         <div>
                                             <div className="text-green-200 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAtual}</div>
                                             <div className="text-white text-6xl font-black mb-1 leading-none">{kpisPorAno.atual ? kpisPorAno.atual.media.toLocaleString('pt-BR') : '--'}</div>
-                                            <div className="text-green-300 text-sm font-bold">{Number(kpis.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
+                                            {kpisPorAno.atual && <div className="text-green-300 text-sm font-bold">{Number(kpisPorAno.atual.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>}
                                         </div>
                                         {kpisPorAno.anterior && (
                                             <div className="mt-3 pt-3 border-t border-green-500/30">
                                                 <div className="text-green-400 text-xs font-semibold mb-0.5 uppercase tracking-wider">{kpisPorAno.anoAnterior}</div>
                                                 <div className="text-green-300 text-2xl font-bold">{kpisPorAno.anterior.media.toLocaleString('pt-BR')}</div>
+                                                <div className="text-green-500 text-xs">{Number(kpisPorAno.anterior.mediaDia).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia</div>
                                             </div>
                                         )}
                                         <div className="text-green-400 text-sm font-semibold mt-2">Produção por mês</div>
