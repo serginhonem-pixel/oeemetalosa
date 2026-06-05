@@ -1497,6 +1497,36 @@ const ProcessosScreen = () => {
         XLSX.writeFile(wb, `Processos_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
     };
 
+    const exportarGraficoExcel = () => {
+        const wb = XLSX.utils.book_new();
+        const dados = obterDadosFiltrados();
+        const titulo = filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`;
+
+        let linhas;
+        if (visualizacao === 'comparacao') {
+            linhas = dados.map(item => ({
+                'Mês': item.mes,
+                'Quantidade 2025': item.quantidade_2025 || 0,
+                'Média/dia 2025': Number.isFinite(item.mediaDia_2025) ? parseFloat(item.mediaDia_2025.toFixed(1)) : '',
+                'Quantidade 2026': item.quantidade_2026 || 0,
+                'Média/dia 2026': Number.isFinite(item.mediaDia_2026) ? parseFloat(item.mediaDia_2026.toFixed(1)) : '',
+            }));
+        } else {
+            linhas = dados.map(item => ({
+                'Mês': item.mes,
+                'Quantidade': item.quantidade,
+                'Média/dia': Number.isFinite(item.mediaDia) ? parseFloat(item.mediaDia.toFixed(1)) : '',
+                'Dias Úteis': item.diasUteis || '',
+                'Variação (un)': item.variacao ?? '',
+                'Variação (%)': item.percentual != null ? parseFloat(item.percentual.toFixed(1)) : '',
+            }));
+        }
+
+        const ws = XLSX.utils.json_to_sheet(linhas);
+        XLSX.utils.book_append_sheet(wb, ws, titulo.substring(0, 31));
+        XLSX.writeFile(wb, `${titulo.replace(/ /g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+    };
+
     // Exportar para PDF
     const exportarPDF = () => {
         const doc = new jsPDF();
@@ -1950,9 +1980,23 @@ const ProcessosScreen = () => {
 
                                         {/* Gráfico de Barras - Evolução por Mês */}
                                         <div>
-                                            <h3 className="text-2xl font-bold text-white mb-5">
-                                                {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
-                                            </h3>
+                                            <div className="flex items-center justify-between mb-5">
+                                                <h3 className="text-2xl font-bold text-white">
+                                                    {filtroTipo === 'Todos' ? 'Produção Total por Mês' : `Produção de ${filtroTipo} por Mês`}
+                                                </h3>
+                                                <button
+                                                    onClick={exportarGraficoExcel}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-sm font-semibold rounded-lg transition-colors"
+                                                    title="Baixar dados do gráfico em Excel"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                                        <polyline points="7 10 12 15 17 10" />
+                                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                                    </svg>
+                                                    Excel
+                                                </button>
+                                            </div>
                                             {shouldUseMockProcessosChart && (
                                                 <div className="mb-3 inline-flex items-center rounded-md border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">
                                                     MODO MOCK ATIVO
