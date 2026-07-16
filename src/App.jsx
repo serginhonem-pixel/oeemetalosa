@@ -29,7 +29,7 @@ import {
   Download, Factory, FileText, History, Layers, Layout,
   LogOut, Package, Pencil, Plus, PlusCircle, Scale, Search, Trash2, User,
   TrendingDown, TrendingUp,
-  Upload, X, Zap
+  Upload, Wrench, X, Zap
 } from 'lucide-react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
@@ -80,6 +80,7 @@ const DEV_CACHE_KEY = getDevCacheKey();
 const DEV_VIEW_STORAGE_KEY = `${DEV_CACHE_KEY}:viewMode`;
 
 import ProcessosScreen from './components/ProcessosScreen';
+import MaquinasScreen from './components/MaquinasScreen';
 import CadastroScreen from './components/CadastroScreen';
 import InsightsScreen from './components/InsightsScreen';
 
@@ -5823,6 +5824,9 @@ const handleImportBackup = (json) => {
               <BotaoMenu ativo={abaAtiva === 'indicadores'} onClick={() => setAbaAtiva('indicadores')} icon={<BarChart3 size={20} />} label="Carga" />
             )}
             <BotaoMenu ativo={abaAtiva === 'processos'} onClick={() => setAbaAtiva('processos')} icon={<Layers size={20} />} label="Processos" />
+            {effectiveViewMode !== 'comercial' && (
+              <BotaoMenu ativo={abaAtiva === 'maquinas'} onClick={() => setAbaAtiva('maquinas')} icon={<Wrench size={20} />} label="Máquinas" />
+            )}
             <div className="md:hidden">
               <BotaoMenu
                 ativo={false}
@@ -6961,6 +6965,11 @@ const handleImportBackup = (json) => {
           {/* ABA PROCESSOS */}
           {abaAtiva === 'processos' && (
             <ProcessosScreen />
+          )}
+
+          {/* ABA MÁQUINAS */}
+          {abaAtiva === 'maquinas' && (
+            <MaquinasScreen />
           )}
 
           {/* ABA COMERCIAL */}
