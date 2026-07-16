@@ -143,14 +143,17 @@ const MaquinasScreen = () => {
     const dadosComVariacao = calcularVariacaoMensal(chartData);
 
     // Label customizado: seta (▲/▼) + porcentagem em cima, valor formatado abaixo
-    const CustomBarLabel = ({ x, y, width, value, payload }) => {
+    // Nota: LabelList não entrega `payload` de forma confiável nesta versão do recharts,
+    // então buscamos o item pelo `index` (sempre presente) em vez de confiar em `payload`.
+    const CustomBarLabel = ({ x, y, width, value, index }) => {
+        const item = dadosGraficoFiltrados?.[index];
         const formatted = Number(value).toLocaleString('pt-BR');
-        const mesRefLabel = payload?.mesRef;
+        const mesRefLabel = item?.mesRef;
         const { mediaDia: mediaDiaCalc } = getMediaDiaByMesRef(mesRefLabel, value);
         const unidadeSufixo = unidadeSelecionada ? ` ${unidadeSelecionada}/dia` : '/dia';
         const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
 
-        let pctRaw = Number.isFinite(Number(payload?.percentual)) ? Number(payload.percentual) : null;
+        let pctRaw = Number.isFinite(Number(item?.percentual)) ? Number(item.percentual) : null;
 
         const centerX = x + width / 2;
         const cornerX = x + 6;
@@ -206,10 +209,12 @@ const MaquinasScreen = () => {
     };
 
     // Rótulo de variação % entre os dois anos, acima do par de barras
-    const ComparacaoPercentLabel = ({ x, y, width, payload }) => {
-        if (!payload) return null;
-        const v25 = Number(payload.quantidade_2025) || 0;
-        const v26 = Number(payload.quantidade_2026) || 0;
+    // Idem: usa `index` para buscar o item, já que `payload` não é confiável aqui.
+    const ComparacaoPercentLabel = ({ x, y, width, index }) => {
+        const item = dadosGraficoFiltrados?.[index];
+        if (!item) return null;
+        const v25 = Number(item.quantidade_2025) || 0;
+        const v26 = Number(item.quantidade_2026) || 0;
         if (!v25 || !v26) return null;
         const pct = ((v26 - v25) / v25) * 100;
         const color = pct > 0 ? '#22c55e' : pct < 0 ? '#ef4444' : '#9CA3AF';
