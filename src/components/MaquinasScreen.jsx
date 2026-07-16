@@ -185,6 +185,52 @@ const MaquinasScreen = () => {
         );
     };
 
+    // Rótulo de valor para o gráfico de Comparação de Meses (uma barra por ano)
+    const ComparacaoValueLabel = ({ x, y, width, value }) => {
+        if (!Number(value)) return null;
+        return (
+            <text
+                x={x + width / 2}
+                y={y - 8}
+                fill="#F9FAFB"
+                fontSize={14}
+                fontWeight={800}
+                textAnchor="middle"
+                stroke="#000000"
+                strokeWidth="0.4"
+                paintOrder="stroke"
+            >
+                {Number(value).toLocaleString('pt-BR')}
+            </text>
+        );
+    };
+
+    // Rótulo de variação % entre os dois anos, acima do par de barras
+    const ComparacaoPercentLabel = ({ x, y, width, payload }) => {
+        if (!payload) return null;
+        const v25 = Number(payload.quantidade_2025) || 0;
+        const v26 = Number(payload.quantidade_2026) || 0;
+        if (!v25 || !v26) return null;
+        const pct = ((v26 - v25) / v25) * 100;
+        const color = pct > 0 ? '#22c55e' : pct < 0 ? '#ef4444' : '#9CA3AF';
+        const arrow = pct > 0 ? '▲' : pct < 0 ? '▼' : '▶';
+        return (
+            <text
+                x={x + width / 2}
+                y={y - 28}
+                fill={color}
+                fontSize={16}
+                fontWeight={900}
+                textAnchor="middle"
+                stroke="#000000"
+                strokeWidth="0.5"
+                paintOrder="stroke"
+            >
+                {arrow} {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
+            </text>
+        );
+    };
+
     // Função para filtrar dados de visualização
     const obterDadosFiltrados = () => {
         if (visualizacao === 'anoAtual') {
@@ -377,8 +423,13 @@ const MaquinasScreen = () => {
                                                 formatter={(value, name) => [value.toLocaleString('pt-BR'), name.replace('quantidade_', 'Ano ')]}
                                                 labelFormatter={(label) => `Mês: ${label}`}
                                             />
-                                            <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-                                            <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="quantidade_2025" fill="#8B5CF6" radius={[4, 4, 0, 0]}>
+                                                <LabelList dataKey="quantidade_2025" content={ComparacaoValueLabel} />
+                                            </Bar>
+                                            <Bar dataKey="quantidade_2026" fill="#06B6D4" radius={[4, 4, 0, 0]}>
+                                                <LabelList dataKey="quantidade_2026" content={ComparacaoValueLabel} />
+                                                <LabelList dataKey="quantidade_2026" content={ComparacaoPercentLabel} />
+                                            </Bar>
                                         </BarChart>
                                     ) : (
                                         <BarChart data={dadosGraficoFiltrados} margin={{ top: 50, right: 20, left: 20, bottom: 80 }}>
