@@ -310,13 +310,13 @@ const MaquinasScreen = () => {
     // Label customizado: seta (▲/▼) + porcentagem em cima, valor formatado abaixo
     // Nota: LabelList não entrega `payload` de forma confiável nesta versão do recharts,
     // então buscamos o item pelo `index` (sempre presente) em vez de confiar em `payload`.
-    const CustomBarLabel = ({ x, y, width, value, index }) => {
-        const item = dadosGraficoFiltrados?.[index];
+    const CustomBarLabel = ({ x, y, width, value, index, payload }) => {
+        const itemFromPayload = Array.isArray(payload) ? payload[0]?.payload : payload?.payload || payload;
+        const item = itemFromPayload || dadosGraficoFiltrados?.[index];
         const formatted = Number(value).toLocaleString('pt-BR');
-        const mesRefLabel = item?.mesRef;
-        const { mediaDia: mediaDiaCalc } = getMediaDiaByMesRef(mesRefLabel, value);
+        const mediaDiaCalc = item?.mediaDia != null ? Number(item.mediaDia) : null;
         const unidadeSufixo = unidadeSelecionada ? ` ${unidadeSelecionada}/dia` : '/dia';
-        const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
+        const mediaDiaText = mediaDiaCalc === null ? '' : `${mediaDiaCalc.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
 
         let pctRaw = Number.isFinite(Number(item?.percentual)) ? Number(item.percentual) : null;
 
