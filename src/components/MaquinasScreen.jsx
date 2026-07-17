@@ -251,8 +251,8 @@ const MaquinasScreen = () => {
         handleResetForm();
     };
 
-    const getMediaDiaByMesRef = (mesRef, quantidade) => {
-        const diasUteis = getDiasUteisByMesRef(mesRef);
+    const getMediaDiaByMesRef = (mesRef, quantidade, diasUteisOverride = null) => {
+        const diasUteis = diasUteisOverride != null ? diasUteisOverride : getDiasUteisByMesRef(mesRef);
         const quantidadeNum = Number(quantidade);
         if (!diasUteis || !Number.isFinite(quantidadeNum)) {
             return { diasUteis, mediaDia: null };
@@ -271,13 +271,21 @@ const MaquinasScreen = () => {
         lancamentosFiltrados.forEach((item) => {
             const chave = item.mesRef;
             if (!chave) return;
-            mesMap[chave] = (mesMap[chave] || 0) + (Number(item.real) || 0);
+            const quantidade = Number(item.real) || 0;
+            const diasUteis = item.diasUteis != null ? Number(item.diasUteis) : null;
+            if (!mesMap[chave]) {
+                mesMap[chave] = { quantidade: 0, diasUteis: diasUteis };
+            }
+            mesMap[chave].quantidade += quantidade;
+            if (diasUteis != null) {
+                mesMap[chave].diasUteis = diasUteis;
+            }
         });
 
         return Object.entries(mesMap)
-            .map(([mesRef, quantidade]) => {
-                const { diasUteis, mediaDia } = getMediaDiaByMesRef(mesRef, quantidade);
-                return { mesRef, mes: mesRefToLabel(mesRef), quantidade, diasUteis, mediaDia };
+            .map(([mesRef, data]) => {
+                const { diasUteis, mediaDia } = getMediaDiaByMesRef(mesRef, data.quantidade, data.diasUteis);
+                return { mesRef, mes: mesRefToLabel(mesRef), quantidade: data.quantidade, diasUteis, mediaDia };
             })
             .sort((a, b) => a.mesRef.localeCompare(b.mesRef));
     };
