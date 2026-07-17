@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Factory, BarChart3, FileText } from 'lucide-react';
-import { collection, onSnapshot, query } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { IS_PRODUCTION } from '../services/firebase';
 import * as XLSX from 'xlsx';
@@ -20,6 +20,9 @@ const mesRefToLabel = (mesRef) => {
     return `${MESES_PT[idx]} ${y}`;
 };
 
+const MANUAL_LANCAMENTOS_LOCAL_KEY = 'local_lancamentos_maquinas';
+const MANUAL_LANCAMENTOS_COLLECTION = 'global_lancamentos_maquinas';
+
 const MaquinasScreen = () => {
     const [maquinas, setMaquinas] = useState([]);
     const [lancamentos, setLancamentos] = useState([]);
@@ -28,6 +31,10 @@ const MaquinasScreen = () => {
     const [filtroMaquina, setFiltroMaquina] = useState('Todas');
     const [visualizacao, setVisualizacao] = useState('todos'); // 'todos', 'anoAtual', 'comparacao'
     const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
+    const [novoDiaISO, setNovoDiaISO] = useState('');
+    const [novoValor, setNovoValor] = useState('');
+    const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
+    const [savingLancamento, setSavingLancamento] = useState(false);
 
     const isLocalhost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
@@ -38,7 +45,9 @@ const MaquinasScreen = () => {
 
     const carregarLancamentosLocal = () => {
         const localLanc = JSON.parse(localStorage.getItem('local_lancamentos') || '[]');
-        setLancamentos(localLanc.map((l) => ({ ...l, real: Number(l.real) || 0 })));
+        const manualLanc = JSON.parse(localStorage.getItem(MANUAL_LANCAMENTOS_LOCAL_KEY) || '[]');
+        const merged = [...manualLanc, ...localLanc].map((l) => ({ ...l, real: Number(l.real) || 0 }));
+        setLancamentos(merged);
         const localConfig = JSON.parse(localStorage.getItem('local_config') || '{}');
         setDiasUteisPorMes({ __default: Number(localConfig.diasUteis) || 22 });
         setLoading(false);
@@ -64,9 +73,23 @@ const MaquinasScreen = () => {
     useEffect(() => {
         if (IS_PRODUCTION) {
             const qLanc = query(collection(db, 'global_lancamentos'));
+            const qManualLanc = query(collection(db, MANUAL_LANCAMENTOS_COLLECTION));
+
             const unsubLanc = onSnapshot(qLanc, (snap) => {
                 const arr = snap.docs.map((d) => ({ ...d.data(), id: d.id, real: Number(d.data().real) || 0 }));
-                setLancamentos(arr);
+                setLancamentos((prev) => {
+                    const manual = prev.filter((item) => item.source === 'manual');
+                    return [...manual, ...arr];
+                });
+                setLoading(false);
+            });
+
+            const unsubManual = onSnapshot(qManualLanc, (snap) => {
+                const arr = snap.docs.map((d) => ({ ...d.data(), id: d.id, real: Number(d.data().real) || 0, source: 'manual' }));
+                setLancamentos((prev) => {
+                    const global = prev.filter((item) => item.source !== 'manual');
+                    return [...arr, ...global];
+                });
                 setLoading(false);
             });
 
@@ -81,6 +104,7 @@ const MaquinasScreen = () => {
 
             return () => {
                 unsubLanc();
+                unsubManual();
                 unsubCfg();
             };
         }
@@ -92,6 +116,74 @@ const MaquinasScreen = () => {
     const getDiasUteisByMesRef = (mesRef) => {
         if (isLocalhost) return diasUteisPorMes.__default || 22;
         return diasUteisPorMes[mesRef] || null;
+    };
+
+    const isoToDiaLabel = (iso) => {
+        if (!iso) return '';
+        const [year, month, day] = String(iso).split('-');
+        if (!year || !month || !day) return iso;
+        return `${String(Number(day)).padStart(2, '0')}/${month}/${year}`;
+    };
+
+    const getMesRefFromISO = (iso) => {
+        if (!iso) return '';
+        const [year, month] = String(iso).split('-');
+        if (!year || !month) return '';
+        return `${year}-${month}`;
+    };
+
+    useEffect(() => {
+        if (maquinas.length > 0 && !novaMaquinaForm) {
+            setNovaMaquinaForm(maquinas[0].nome || '');
+        }
+    }, [maquinas, novaMaquinaForm]);
+
+    const handleAddLancamento = async (e) => {
+        e.preventDefault();
+        if (!novaMaquinaForm || !novoDiaISO || !novoValor) return;
+
+        const mesRef = getMesRefFromISO(novoDiaISO);
+        if (!mesRef) return;
+
+        const novoLanc = {
+            id: `manual-${Date.now()}`,
+            diaISO: novoDiaISO,
+            dia: isoToDiaLabel(novoDiaISO),
+            real: Number(novoValor),
+            maquina: novaMaquinaForm,
+            mesRef,
+            source: 'manual',
+            createdAt: { seconds: Date.now() / 1000 }
+        };
+
+        if (IS_PRODUCTION) {
+            setSavingLancamento(true);
+            try {
+                await addDoc(collection(db, MANUAL_LANCAMENTOS_COLLECTION), {
+                    diaISO: novoDiaISO,
+                    dia: isoToDiaLabel(novoDiaISO),
+                    real: Number(novoValor),
+                    maquina: novaMaquinaForm,
+                    mesRef,
+                    manual: true,
+                    createdAt: serverTimestamp()
+                });
+            } catch (error) {
+                console.error('Erro ao salvar lançamento de máquina:', error);
+            } finally {
+                setSavingLancamento(false);
+            }
+            setNovoValor('');
+            setNovoDiaISO('');
+            return;
+        }
+
+        const existing = JSON.parse(localStorage.getItem(MANUAL_LANCAMENTOS_LOCAL_KEY) || '[]');
+        const updated = [novoLanc, ...existing];
+        localStorage.setItem(MANUAL_LANCAMENTOS_LOCAL_KEY, JSON.stringify(updated));
+        setLancamentos((prev) => [novoLanc, ...prev]);
+        setNovoValor('');
+        setNovoDiaISO('');
     };
 
     const getMediaDiaByMesRef = (mesRef, quantidade) => {
@@ -306,11 +398,17 @@ const MaquinasScreen = () => {
                 </header>
 
                 <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-3">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                        <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                            <BarChart3 size={20} className="text-purple-400" />
-                            Análise de Máquinas por Mês
-                        </h2>
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
+                        <div>
+                            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                                <BarChart3 size={20} className="text-purple-400" />
+                                Análise de Máquinas por Mês
+                            </h2>
+                            <p className="text-sm text-zinc-400 mt-1">
+                                Os lançamentos do Global continuam alimentando esta aba.
+                                Lançamentos manuais ficarão isolados aqui e não alteram a aba Geral.
+                            </p>
+                        </div>
 
                         <div className="flex items-center gap-3">
                             <label htmlFor="filtroMaquina" className="text-sm font-medium text-zinc-300">
@@ -330,6 +428,64 @@ const MaquinasScreen = () => {
                                 ))}
                             </select>
                         </div>
+                    </div>
+
+                    <div className="bg-zinc-900/80 border border-white/10 rounded-2xl p-4 mb-6">
+                        <form onSubmit={handleAddLancamento} className="grid grid-cols-1 xl:grid-cols-[2fr_1fr_1fr_1fr] gap-4 items-end">
+                            <div className="space-y-2">
+                                <label htmlFor="novaMaquinaForm" className="text-sm font-medium text-zinc-300">Máquina</label>
+                                <select
+                                    id="novaMaquinaForm"
+                                    value={novaMaquinaForm}
+                                    onChange={(e) => setNovaMaquinaForm(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    required
+                                >
+                                    {maquinas.length === 0 ? (
+                                        <option value="">Cadastre máquinas primeiro</option>
+                                    ) : (
+                                        maquinas.map((m) => (
+                                            <option key={m.id || m.nome} value={m.nome}>
+                                                {m.nome}
+                                            </option>
+                                        ))
+                                    )}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label htmlFor="novoDiaISO" className="text-sm font-medium text-zinc-300">Data</label>
+                                <input
+                                    id="novoDiaISO"
+                                    type="date"
+                                    value={novoDiaISO}
+                                    onChange={(e) => setNovoDiaISO(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label htmlFor="novoValor" className="text-sm font-medium text-zinc-300">Quantidade</label>
+                                <input
+                                    id="novoValor"
+                                    type="number"
+                                    min="0"
+                                    value={novoValor}
+                                    onChange={(e) => setNovoValor(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    placeholder="0"
+                                    required
+                                />
+                            </div>
+                            <div className="flex items-center pt-2">
+                                <button
+                                    type="submit"
+                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoDiaISO || !novoValor || savingLancamento}
+                                    className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    {savingLancamento ? 'Salvando...' : 'Salvar lançamento'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
 
                     {loading ? (
