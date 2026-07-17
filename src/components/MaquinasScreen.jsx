@@ -12,6 +12,7 @@ const MESES_PT = [
 ];
 
 const pad2 = (n) => String(n).padStart(2, '0');
+const ANOS_HISTORICO = Array.from({ length: new Date().getFullYear() - 2019 }, (_, idx) => 2020 + idx);
 
 const mesRefToLabel = (mesRef) => {
     const [y, m] = String(mesRef || '').split('-');
@@ -536,7 +537,7 @@ const MaquinasScreen = () => {
                                     className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
                                     required
                                 >
-                                    {[2025, 2026, 2027, 2028, 2029].map((ano) => (
+                                    {ANOS_HISTORICO.map((ano) => (
                                         <option key={ano} value={ano}>{ano}</option>
                                     ))}
                                 </select>
@@ -684,7 +685,7 @@ const MaquinasScreen = () => {
                                             onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
                                             className="px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 hover:border-purple-500 transition-colors"
                                         >
-                                            {[2025, 2026, 2027, 2028].map((a) => (
+                                            {ANOS_HISTORICO.map((a) => (
                                                 <option key={a} value={a}>{a}</option>
                                             ))}
                                         </select>
