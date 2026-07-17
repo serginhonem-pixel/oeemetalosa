@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Factory, BarChart3, FileText } from 'lucide-react';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { IS_PRODUCTION } from '../services/firebase';
 import * as XLSX from 'xlsx';
@@ -23,11 +23,15 @@ const mesRefToLabel = (mesRef) => {
 
 const MANUAL_LANCAMENTOS_LOCAL_KEY = 'local_lancamentos_maquinas';
 const MANUAL_LANCAMENTOS_COLLECTION = 'global_lancamentos_maquinas';
+const LOCAL_DIAS_UTEIS_KEY = 'local_config_mensal';
 
 const MaquinasScreen = () => {
     const [maquinas, setMaquinas] = useState([]);
     const [lancamentos, setLancamentos] = useState([]);
     const [diasUteisPorMes, setDiasUteisPorMes] = useState({});
+    const [diasUteisMesRef, setDiasUteisMesRef] = useState(`${new Date().getFullYear()}-${pad2(new Date().getMonth() + 1)}`);
+    const [diasUteisMesValor, setDiasUteisMesValor] = useState('');
+    const [savingDiasUteisMes, setSavingDiasUteisMes] = useState(false);
     const [loading, setLoading] = useState(true);
     const [filtroMaquina, setFiltroMaquina] = useState('Todas');
     const [visualizacao, setVisualizacao] = useState('todos'); // 'todos', 'anoAtual', 'comparacao'
@@ -35,7 +39,6 @@ const MaquinasScreen = () => {
     const [novoMes, setNovoMes] = useState('');
     const [novoAno, setNovoAno] = useState(String(new Date().getFullYear()));
     const [novoValor, setNovoValor] = useState('');
-    const [novoDiasUteis, setNovoDiasUteis] = useState('');
     const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
     const [editingManualId, setEditingManualId] = useState(null);
     const [savingLancamento, setSavingLancamento] = useState(false);
@@ -56,7 +59,8 @@ const MaquinasScreen = () => {
         ].map((l) => ({ ...l, real: Number(l.real) || 0 }));
         setLancamentos(merged);
         const localConfig = JSON.parse(localStorage.getItem('local_config') || '{}');
-        setDiasUteisPorMes({ __default: Number(localConfig.diasUteis) || 22 });
+        const localMes = JSON.parse(localStorage.getItem(LOCAL_DIAS_UTEIS_KEY) || '{}');
+        setDiasUteisPorMes({ __default: Number(localConfig.diasUteis) || 22, ...localMes });
         setLoading(false);
     };
 
@@ -121,9 +125,43 @@ const MaquinasScreen = () => {
     }, []);
 
     const getDiasUteisByMesRef = (mesRef) => {
-        if (isLocalhost) return diasUteisPorMes.__default || 22;
-        return diasUteisPorMes[mesRef] || null;
+        const mesDias = diasUteisPorMes[mesRef];
+        return mesDias != null ? mesDias : (diasUteisPorMes.__default || 22);
     };
+
+    const saveDiasUteisDoMes = async (mesRef, dias) => {
+        const d = Number(dias);
+        if (!mesRef || !Number.isFinite(d) || d <= 0) return;
+
+        if (!isLocalhost) {
+            setSavingDiasUteisMes(true);
+            try {
+                await setDoc(
+                    doc(db, 'global_config_mensal', mesRef),
+                    { diasUteis: d, updatedAt: serverTimestamp() },
+                    { merge: true }
+                );
+            } catch (error) {
+                console.error('Erro ao salvar dias úteis do mês:', error);
+            } finally {
+                setSavingDiasUteisMes(false);
+            }
+        } else {
+            const localMes = JSON.parse(localStorage.getItem(LOCAL_DIAS_UTEIS_KEY) || '{}');
+            localStorage.setItem(LOCAL_DIAS_UTEIS_KEY, JSON.stringify({
+                ...localMes,
+                [mesRef]: d,
+            }));
+            setDiasUteisPorMes((prev) => ({ ...prev, [mesRef]: d }));
+        }
+
+        setDiasUteisMesValor(String(d));
+    };
+
+    useEffect(() => {
+        const currentValue = diasUteisPorMes[diasUteisMesRef];
+        setDiasUteisMesValor(currentValue != null ? String(currentValue) : '');
+    }, [diasUteisMesRef, diasUteisPorMes]);
 
     const getMesRefFromMonthYear = (mes, ano) => {
         if (!mes || !ano) return '';
@@ -150,7 +188,6 @@ const MaquinasScreen = () => {
         setNovoMes('');
         setNovoAno(String(new Date().getFullYear()));
         setNovoValor('');
-        setNovoDiasUteis('');
         setEditingManualId(null);
     };
 
@@ -163,7 +200,6 @@ const MaquinasScreen = () => {
         setNovoMes(mesNome);
         setNovoAno(ano || String(new Date().getFullYear()));
         setNovoValor(String(item.real || ''));
-        setNovoDiasUteis(item.diasUteis != null ? String(item.diasUteis) : '');
     };
 
     const handleDeleteManualLancamento = async (item) => {
@@ -186,7 +222,7 @@ const MaquinasScreen = () => {
 
     const handleAddLancamento = async (e) => {
         e.preventDefault();
-        if (!novaMaquinaForm || !novoMes || !novoAno || !novoValor || !novoDiasUteis) return;
+        if (!novaMaquinaForm || !novoMes || !novoAno || !novoValor) return;
 
         const mesRef = getMesRefFromMonthYear(novoMes, novoAno);
         if (!mesRef) return;
@@ -195,7 +231,6 @@ const MaquinasScreen = () => {
             mesRef,
             mes: getMonthLabel(novoMes, novoAno),
             real: Number(novoValor),
-            diasUteis: Number(novoDiasUteis),
             maquina: novaMaquinaForm,
             manual: true,
             createdAt: serverTimestamp ? serverTimestamp() : { seconds: Date.now() / 1000 }
@@ -504,6 +539,47 @@ const MaquinasScreen = () => {
                     </div>
 
                     <div className="bg-zinc-900/80 border border-white/10 rounded-2xl p-4 mb-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr_1fr] gap-4 mb-6">
+                            <div className="space-y-2">
+                                <label htmlFor="diasUteisMesRef" className="text-sm font-medium text-zinc-300">Mês para dias úteis</label>
+                                <select
+                                    id="diasUteisMesRef"
+                                    value={diasUteisMesRef}
+                                    onChange={(e) => setDiasUteisMesRef(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                >
+                                    {ANOS_HISTORICO.flatMap((ano) =>
+                                        MESES_PT.map((mes, idx) => (
+                                            <option key={`${ano}-${pad2(idx + 1)}`} value={`${ano}-${pad2(idx + 1)}`}>
+                                                {`${mes} ${ano}`}
+                                            </option>
+                                        ))
+                                    )}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label htmlFor="diasUteisMesValor" className="text-sm font-medium text-zinc-300">Dias úteis</label>
+                                <input
+                                    id="diasUteisMesValor"
+                                    type="number"
+                                    min="1"
+                                    value={diasUteisMesValor}
+                                    onChange={(e) => setDiasUteisMesValor(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    placeholder="22"
+                                />
+                            </div>
+                            <div className="flex items-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => saveDiasUteisDoMes(diasUteisMesRef, diasUteisMesValor)}
+                                    disabled={!diasUteisMesRef || !diasUteisMesValor || savingDiasUteisMes}
+                                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    {savingDiasUteisMes ? 'Salvando...' : 'Salvar dias úteis'}
+                                </button>
+                            </div>
+                        </div>
                         <form onSubmit={handleAddLancamento} className="grid grid-cols-1 xl:grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 items-end">
                             <div className="space-y-2">
                                 <label htmlFor="novaMaquinaForm" className="text-sm font-medium text-zinc-300">Máquina</label>
@@ -555,20 +631,6 @@ const MaquinasScreen = () => {
                                 </select>
                             </div>
                             <div className="space-y-2">
-                                <label htmlFor="novoDiasUteis" className="text-sm font-medium text-zinc-300">Dias úteis</label>
-                                <input
-                                    id="novoDiasUteis"
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    value={novoDiasUteis}
-                                    onChange={(e) => setNovoDiasUteis(e.target.value)}
-                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
-                                    placeholder="22"
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-2">
                                 <label htmlFor="novoValor" className="text-sm font-medium text-zinc-300">Quantidade</label>
                                 <input
                                     id="novoValor"
@@ -584,7 +646,7 @@ const MaquinasScreen = () => {
                             <div className="flex items-center pt-2">
                                 <button
                                     type="submit"
-                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoMes || !novoAno || !novoValor || !novoDiasUteis || savingLancamento}
+                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoMes || !novoAno || !novoValor || savingLancamento}
                                     className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                     {savingLancamento ? 'Salvando...' : editingManualId ? 'Atualizar lançamento' : 'Salvar lançamento'}
@@ -616,7 +678,6 @@ const MaquinasScreen = () => {
                                             <th className="px-3 py-2">Máquina</th>
                                             <th className="px-3 py-2">Mês</th>
                                             <th className="px-3 py-2">Quantidade</th>
-                                            <th className="px-3 py-2">Dias úteis</th>
                                             <th className="px-3 py-2">Média / dia</th>
                                             <th className="px-3 py-2">Ações</th>
                                         </tr>
@@ -627,9 +688,11 @@ const MaquinasScreen = () => {
                                                 <td className="px-3 py-3">{item.maquina}</td>
                                                 <td className="px-3 py-3">{item.mes || item.mesRef}</td>
                                                 <td className="px-3 py-3">{Number(item.real || 0).toLocaleString('pt-BR')}</td>
-                                                <td className="px-3 py-3">{item.diasUteis != null ? Number(item.diasUteis).toLocaleString('pt-BR') : '-'}</td>
                                                 <td className="px-3 py-3">
-                                                    {item.diasUteis ? `${(Number(item.real || 0) / Number(item.diasUteis)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} pc/dia` : '-'}
+                                                    {(() => {
+                                                        const { mediaDia } = getMediaDiaByMesRef(item.mesRef, item.real);
+                                                        return Number.isFinite(mediaDia) ? `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} pc/dia` : '-';
+                                                    })()}
                                                 </td>
                                                 <td className="px-3 py-3 flex gap-2">
                                                     <button
