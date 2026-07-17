@@ -308,7 +308,7 @@ const MaquinasScreen = () => {
         const mesRefLabel = item?.mesRef;
         const { mediaDia: mediaDiaCalc } = getMediaDiaByMesRef(mesRefLabel, value);
         const unidadeSufixo = unidadeSelecionada ? ` ${unidadeSelecionada}/dia` : '/dia';
-        const mediaDiaText = mediaDiaCalc === null ? '' : `Média/dia: ${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
+        const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
 
         let pctRaw = Number.isFinite(Number(item?.percentual)) ? Number(item.percentual) : null;
 
@@ -621,7 +621,7 @@ const MaquinasScreen = () => {
                                                 <td className="px-3 py-3">{Number(item.real || 0).toLocaleString('pt-BR')}</td>
                                                 <td className="px-3 py-3">{item.diasUteis != null ? Number(item.diasUteis).toLocaleString('pt-BR') : '-'}</td>
                                                 <td className="px-3 py-3">
-                                                    {item.diasUteis ? (Number(item.real || 0) / Number(item.diasUteis)).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '-'}
+                                                    {item.diasUteis ? `${(Number(item.real || 0) / Number(item.diasUteis)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} pc/dia` : '-'}
                                                 </td>
                                                 <td className="px-3 py-3 flex gap-2">
                                                     <button
