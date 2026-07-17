@@ -35,6 +35,7 @@ const MaquinasScreen = () => {
     const [novoMes, setNovoMes] = useState('');
     const [novoAno, setNovoAno] = useState(String(new Date().getFullYear()));
     const [novoValor, setNovoValor] = useState('');
+    const [novoDiasUteis, setNovoDiasUteis] = useState('');
     const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
     const [editingManualId, setEditingManualId] = useState(null);
     const [savingLancamento, setSavingLancamento] = useState(false);
@@ -149,6 +150,7 @@ const MaquinasScreen = () => {
         setNovoMes('');
         setNovoAno(String(new Date().getFullYear()));
         setNovoValor('');
+        setNovoDiasUteis('');
         setEditingManualId(null);
     };
 
@@ -161,6 +163,7 @@ const MaquinasScreen = () => {
         setNovoMes(mesNome);
         setNovoAno(ano || String(new Date().getFullYear()));
         setNovoValor(String(item.real || ''));
+        setNovoDiasUteis(item.diasUteis != null ? String(item.diasUteis) : '');
     };
 
     const handleDeleteManualLancamento = async (item) => {
@@ -183,7 +186,7 @@ const MaquinasScreen = () => {
 
     const handleAddLancamento = async (e) => {
         e.preventDefault();
-        if (!novaMaquinaForm || !novoMes || !novoAno || !novoValor) return;
+        if (!novaMaquinaForm || !novoMes || !novoAno || !novoValor || !novoDiasUteis) return;
 
         const mesRef = getMesRefFromMonthYear(novoMes, novoAno);
         if (!mesRef) return;
@@ -192,6 +195,7 @@ const MaquinasScreen = () => {
             mesRef,
             mes: getMonthLabel(novoMes, novoAno),
             real: Number(novoValor),
+            diasUteis: Number(novoDiasUteis),
             maquina: novaMaquinaForm,
             manual: true,
             createdAt: serverTimestamp ? serverTimestamp() : { seconds: Date.now() / 1000 }
@@ -492,7 +496,7 @@ const MaquinasScreen = () => {
                     </div>
 
                     <div className="bg-zinc-900/80 border border-white/10 rounded-2xl p-4 mb-6">
-                        <form onSubmit={handleAddLancamento} className="grid grid-cols-1 xl:grid-cols-[2fr_1fr_1fr_1fr] gap-4 items-end">
+                        <form onSubmit={handleAddLancamento} className="grid grid-cols-1 xl:grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 items-end">
                             <div className="space-y-2">
                                 <label htmlFor="novaMaquinaForm" className="text-sm font-medium text-zinc-300">Máquina</label>
                                 <select
@@ -543,6 +547,20 @@ const MaquinasScreen = () => {
                                 </select>
                             </div>
                             <div className="space-y-2">
+                                <label htmlFor="novoDiasUteis" className="text-sm font-medium text-zinc-300">Dias úteis</label>
+                                <input
+                                    id="novoDiasUteis"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={novoDiasUteis}
+                                    onChange={(e) => setNovoDiasUteis(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    placeholder="22"
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-2">
                                 <label htmlFor="novoValor" className="text-sm font-medium text-zinc-300">Quantidade</label>
                                 <input
                                     id="novoValor"
@@ -558,7 +576,7 @@ const MaquinasScreen = () => {
                             <div className="flex items-center pt-2">
                                 <button
                                     type="submit"
-                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoMes || !novoAno || !novoValor || savingLancamento}
+                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoMes || !novoAno || !novoValor || !novoDiasUteis || savingLancamento}
                                     className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                     {savingLancamento ? 'Salvando...' : editingManualId ? 'Atualizar lançamento' : 'Salvar lançamento'}
@@ -590,6 +608,8 @@ const MaquinasScreen = () => {
                                             <th className="px-3 py-2">Máquina</th>
                                             <th className="px-3 py-2">Mês</th>
                                             <th className="px-3 py-2">Quantidade</th>
+                                            <th className="px-3 py-2">Dias úteis</th>
+                                            <th className="px-3 py-2">Média / dia</th>
                                             <th className="px-3 py-2">Ações</th>
                                         </tr>
                                     </thead>
@@ -599,6 +619,10 @@ const MaquinasScreen = () => {
                                                 <td className="px-3 py-3">{item.maquina}</td>
                                                 <td className="px-3 py-3">{item.mes || item.mesRef}</td>
                                                 <td className="px-3 py-3">{Number(item.real || 0).toLocaleString('pt-BR')}</td>
+                                                <td className="px-3 py-3">{item.diasUteis != null ? Number(item.diasUteis).toLocaleString('pt-BR') : '-'}</td>
+                                                <td className="px-3 py-3">
+                                                    {item.diasUteis ? (Number(item.real || 0) / Number(item.diasUteis)).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '-'}
+                                                </td>
                                                 <td className="px-3 py-3 flex gap-2">
                                                     <button
                                                         type="button"
