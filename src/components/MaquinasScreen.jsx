@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Factory, BarChart3, FileText } from 'lucide-react';
-import { addDoc, collection, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { IS_PRODUCTION } from '../services/firebase';
 import * as XLSX from 'xlsx';
@@ -31,9 +31,11 @@ const MaquinasScreen = () => {
     const [filtroMaquina, setFiltroMaquina] = useState('Todas');
     const [visualizacao, setVisualizacao] = useState('todos'); // 'todos', 'anoAtual', 'comparacao'
     const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
-    const [novoDiaISO, setNovoDiaISO] = useState('');
+    const [novoMes, setNovoMes] = useState('');
+    const [novoAno, setNovoAno] = useState(String(new Date().getFullYear()));
     const [novoValor, setNovoValor] = useState('');
     const [novaMaquinaForm, setNovaMaquinaForm] = useState('');
+    const [editingManualId, setEditingManualId] = useState(null);
     const [savingLancamento, setSavingLancamento] = useState(false);
 
     const isLocalhost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -46,7 +48,10 @@ const MaquinasScreen = () => {
     const carregarLancamentosLocal = () => {
         const localLanc = JSON.parse(localStorage.getItem('local_lancamentos') || '[]');
         const manualLanc = JSON.parse(localStorage.getItem(MANUAL_LANCAMENTOS_LOCAL_KEY) || '[]');
-        const merged = [...manualLanc, ...localLanc].map((l) => ({ ...l, real: Number(l.real) || 0 }));
+        const merged = [
+            ...manualLanc.map((l) => ({ ...l, real: Number(l.real) || 0, source: 'manual' })),
+            ...localLanc
+        ].map((l) => ({ ...l, real: Number(l.real) || 0 }));
         setLancamentos(merged);
         const localConfig = JSON.parse(localStorage.getItem('local_config') || '{}');
         setDiasUteisPorMes({ __default: Number(localConfig.diasUteis) || 22 });
@@ -118,18 +123,17 @@ const MaquinasScreen = () => {
         return diasUteisPorMes[mesRef] || null;
     };
 
-    const isoToDiaLabel = (iso) => {
-        if (!iso) return '';
-        const [year, month, day] = String(iso).split('-');
-        if (!year || !month || !day) return iso;
-        return `${String(Number(day)).padStart(2, '0')}/${month}/${year}`;
+    const getMesRefFromMonthYear = (mes, ano) => {
+        if (!mes || !ano) return '';
+        const index = MESES_PT.indexOf(mes);
+        if (index < 0) return '';
+        const monthNumber = String(index + 1).padStart(2, '0');
+        return `${ano}-${monthNumber}`;
     };
 
-    const getMesRefFromISO = (iso) => {
-        if (!iso) return '';
-        const [year, month] = String(iso).split('-');
-        if (!year || !month) return '';
-        return `${year}-${month}`;
+    const getMonthLabel = (mes, ano) => {
+        if (!mes || !ano) return '';
+        return `${mes} ${ano}`;
     };
 
     useEffect(() => {
@@ -138,43 +142,100 @@ const MaquinasScreen = () => {
         }
     }, [maquinas, novaMaquinaForm]);
 
+    const isManualLancamento = (item) => item?.source === 'manual' || item?.manual === true || String(item?.id || '').startsWith('manual-');
+
+    const handleResetForm = () => {
+        setNovoMes('');
+        setNovoAno(String(new Date().getFullYear()));
+        setNovoValor('');
+        setEditingManualId(null);
+    };
+
+    const handleEditManualLancamento = (item) => {
+        if (!item) return;
+        const [ano, mes] = String(item.mesRef || '').split('-');
+        const mesNome = MESES_PT[Number(mes) - 1] || '';
+        setEditingManualId(item.id);
+        setNovaMaquinaForm(item.maquina || '');
+        setNovoMes(mesNome);
+        setNovoAno(ano || String(new Date().getFullYear()));
+        setNovoValor(String(item.real || ''));
+    };
+
+    const handleDeleteManualLancamento = async (item) => {
+        if (!item) return;
+
+        if (IS_PRODUCTION && item.id && !String(item.id).startsWith('manual-')) {
+            try {
+                await deleteDoc(doc(db, MANUAL_LANCAMENTOS_COLLECTION, item.id));
+            } catch (error) {
+                console.error('Erro ao deletar lançamento manual:', error);
+            }
+            return;
+        }
+
+        const existing = JSON.parse(localStorage.getItem(MANUAL_LANCAMENTOS_LOCAL_KEY) || '[]');
+        const updated = existing.filter((l) => l.id !== item.id);
+        localStorage.setItem(MANUAL_LANCAMENTOS_LOCAL_KEY, JSON.stringify(updated));
+        setLancamentos((prev) => prev.filter((l) => l.id !== item.id));
+    };
+
     const handleAddLancamento = async (e) => {
         e.preventDefault();
-        if (!novaMaquinaForm || !novoDiaISO || !novoValor) return;
+        if (!novaMaquinaForm || !novoMes || !novoAno || !novoValor) return;
 
-        const mesRef = getMesRefFromISO(novoDiaISO);
+        const mesRef = getMesRefFromMonthYear(novoMes, novoAno);
         if (!mesRef) return;
+
+        const lancPayload = {
+            mesRef,
+            mes: getMonthLabel(novoMes, novoAno),
+            real: Number(novoValor),
+            maquina: novaMaquinaForm,
+            manual: true,
+            createdAt: serverTimestamp ? serverTimestamp() : { seconds: Date.now() / 1000 }
+        };
+
+        if (editingManualId) {
+            if (IS_PRODUCTION) {
+                setSavingLancamento(true);
+                try {
+                    await updateDoc(doc(db, MANUAL_LANCAMENTOS_COLLECTION, editingManualId), lancPayload);
+                } catch (error) {
+                    console.error('Erro ao atualizar lançamento manual:', error);
+                } finally {
+                    setSavingLancamento(false);
+                }
+            } else {
+                const existing = JSON.parse(localStorage.getItem(MANUAL_LANCAMENTOS_LOCAL_KEY) || '[]');
+                const updated = existing.map((l) =>
+                    l.id === editingManualId ? { ...l, ...lancPayload, id: editingManualId } : l
+                );
+                localStorage.setItem(MANUAL_LANCAMENTOS_LOCAL_KEY, JSON.stringify(updated));
+                setLancamentos((prev) => prev.map((l) =>
+                    l.id === editingManualId ? { ...l, ...lancPayload, source: 'manual' } : l
+                ));
+            }
+            handleResetForm();
+            return;
+        }
 
         const novoLanc = {
             id: `manual-${Date.now()}`,
-            diaISO: novoDiaISO,
-            dia: isoToDiaLabel(novoDiaISO),
-            real: Number(novoValor),
-            maquina: novaMaquinaForm,
-            mesRef,
             source: 'manual',
-            createdAt: { seconds: Date.now() / 1000 }
+            ...lancPayload
         };
 
         if (IS_PRODUCTION) {
             setSavingLancamento(true);
             try {
-                await addDoc(collection(db, MANUAL_LANCAMENTOS_COLLECTION), {
-                    diaISO: novoDiaISO,
-                    dia: isoToDiaLabel(novoDiaISO),
-                    real: Number(novoValor),
-                    maquina: novaMaquinaForm,
-                    mesRef,
-                    manual: true,
-                    createdAt: serverTimestamp()
-                });
+                await addDoc(collection(db, MANUAL_LANCAMENTOS_COLLECTION), lancPayload);
             } catch (error) {
                 console.error('Erro ao salvar lançamento de máquina:', error);
             } finally {
                 setSavingLancamento(false);
             }
-            setNovoValor('');
-            setNovoDiaISO('');
+            handleResetForm();
             return;
         }
 
@@ -182,8 +243,7 @@ const MaquinasScreen = () => {
         const updated = [novoLanc, ...existing];
         localStorage.setItem(MANUAL_LANCAMENTOS_LOCAL_KEY, JSON.stringify(updated));
         setLancamentos((prev) => [novoLanc, ...prev]);
-        setNovoValor('');
-        setNovoDiaISO('');
+        handleResetForm();
     };
 
     const getMediaDiaByMesRef = (mesRef, quantidade) => {
@@ -453,15 +513,33 @@ const MaquinasScreen = () => {
                                 </select>
                             </div>
                             <div className="space-y-2">
-                                <label htmlFor="novoDiaISO" className="text-sm font-medium text-zinc-300">Data</label>
-                                <input
-                                    id="novoDiaISO"
-                                    type="date"
-                                    value={novoDiaISO}
-                                    onChange={(e) => setNovoDiaISO(e.target.value)}
+                                <label htmlFor="novoMes" className="text-sm font-medium text-zinc-300">Mês</label>
+                                <select
+                                    id="novoMes"
+                                    value={novoMes}
+                                    onChange={(e) => setNovoMes(e.target.value)}
                                     className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
                                     required
-                                />
+                                >
+                                    <option value="">Selecione o mês</option>
+                                    {MESES_PT.map((mes) => (
+                                        <option key={mes} value={mes}>{mes}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label htmlFor="novoAno" className="text-sm font-medium text-zinc-300">Ano</label>
+                                <select
+                                    id="novoAno"
+                                    value={novoAno}
+                                    onChange={(e) => setNovoAno(e.target.value)}
+                                    className="w-full bg-black/70 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                                    required
+                                >
+                                    {[2025, 2026, 2027, 2028, 2029].map((ano) => (
+                                        <option key={ano} value={ano}>{ano}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="space-y-2">
                                 <label htmlFor="novoValor" className="text-sm font-medium text-zinc-300">Quantidade</label>
@@ -479,13 +557,70 @@ const MaquinasScreen = () => {
                             <div className="flex items-center pt-2">
                                 <button
                                     type="submit"
-                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoDiaISO || !novoValor || savingLancamento}
+                                    disabled={maquinas.length === 0 || !novaMaquinaForm || !novoMes || !novoAno || !novoValor || savingLancamento}
                                     className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
                                 >
-                                    {savingLancamento ? 'Salvando...' : 'Salvar lançamento'}
+                                    {savingLancamento ? 'Salvando...' : editingManualId ? 'Atualizar lançamento' : 'Salvar lançamento'}
                                 </button>
                             </div>
+                            {editingManualId && (
+                                <div className="flex items-center pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleResetForm}
+                                        className="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-3 rounded-lg transition-colors"
+                                    >
+                                        Cancelar edição
+                                    </button>
+                                </div>
+                            )}
+                            </div>
                         </form>
+                    </div>
+
+                    <div className="bg-zinc-900/80 border border-white/10 rounded-2xl p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-white mb-4">Lançamentos manuais</h3>
+                        {lancamentos.filter(isManualLancamento).length === 0 ? (
+                            <p className="text-sm text-zinc-400">Nenhum lançamento manual registrado ainda.</p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full text-left text-sm text-zinc-300">
+                                    <thead>
+                                        <tr className="border-b border-white/10 text-zinc-400">
+                                            <th className="px-3 py-2">Máquina</th>
+                                            <th className="px-3 py-2">Mês</th>
+                                            <th className="px-3 py-2">Quantidade</th>
+                                            <th className="px-3 py-2">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {lancamentos.filter(isManualLancamento).map((item) => (
+                                            <tr key={item.id} className="border-b border-white/10 hover:bg-white/5">
+                                                <td className="px-3 py-3">{item.maquina}</td>
+                                                <td className="px-3 py-3">{item.mes || item.mesRef}</td>
+                                                <td className="px-3 py-3">{Number(item.real || 0).toLocaleString('pt-BR')}</td>
+                                                <td className="px-3 py-3 flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleEditManualLancamento(item)}
+                                                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-xs font-semibold"
+                                                    >
+                                                        Editar
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteManualLancamento(item)}
+                                                        className="px-3 py-1 bg-red-600 hover:bg-red-500 rounded-lg text-white text-xs font-semibold"
+                                                    >
+                                                        Deletar
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
 
                     {loading ? (
