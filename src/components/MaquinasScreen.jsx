@@ -574,7 +574,6 @@ const MaquinasScreen = () => {
                                     </button>
                                 </div>
                             )}
-                            </div>
                         </form>
                     </div>
 
