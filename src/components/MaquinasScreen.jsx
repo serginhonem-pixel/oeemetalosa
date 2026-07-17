@@ -308,7 +308,7 @@ const MaquinasScreen = () => {
         const mesRefLabel = item?.mesRef;
         const { mediaDia: mediaDiaCalc } = getMediaDiaByMesRef(mesRefLabel, value);
         const unidadeSufixo = unidadeSelecionada ? ` ${unidadeSelecionada}/dia` : '/dia';
-        const mediaDiaText = mediaDiaCalc === null ? '' : `${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
+        const mediaDiaText = mediaDiaCalc === null ? '' : `Média/dia: ${Number(mediaDiaCalc).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unidadeSufixo}`;
 
         let pctRaw = Number.isFinite(Number(item?.percentual)) ? Number(item.percentual) : null;
 
