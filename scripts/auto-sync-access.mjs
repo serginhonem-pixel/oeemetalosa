@@ -91,15 +91,25 @@ const runSync = async () => {
     log("Export concluido. Verificando diferencas no git...");
     await runCmd("git", ["add", "data-import"]);
 
+    // resumo_import_access.json tem um timestamp que muda a cada export,
+    // mesmo sem dado novo. So conta como mudanca real se os CSVs mudarem.
     let hasDiff = true;
     try {
-      await runCmd("git", ["diff", "--cached", "--quiet", "--", "data-import"]);
+      await runCmd("git", [
+        "diff",
+        "--cached",
+        "--quiet",
+        "--",
+        "data-import/import_producao.csv",
+        "data-import/import_paradas.csv",
+      ]);
       hasDiff = false; // saiu com 0 = sem diferenca
     } catch (_) {
       hasDiff = true; // saiu != 0 = tem diferenca
     }
 
     if (!hasDiff) {
+      await runCmd("git", ["reset", "--", "data-import"]).catch(() => {});
       log("Nenhuma diferenca nos dados do Access. Nada para commitar.");
       return;
     }
