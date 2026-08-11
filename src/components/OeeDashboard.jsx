@@ -390,6 +390,31 @@ export default function OeeDashboard({
     return Array.from(byKey.values());
   }, [maquinasExtras]);
 
+  // Só entram no filtro as máquinas que de fato têm registro de produção
+  // ou parada — evita listar máquinas do catálogo sem nenhum dado.
+  const maquinasComDados = useMemo(() => {
+    const tokens = new Set();
+    const registrar = (item) => {
+      const candidatos = [
+        item?.maquinaId,
+        item?.maquinaid,
+        item?.maquina,
+        item?.maquinaNome,
+        item?.maquinaExibicao,
+        item?.nomeMaquina,
+        item?.equipamento,
+        item?.eqp,
+      ];
+      candidatos.forEach((c) => {
+        const tk = normalizeMachineToken(c);
+        if (tk) tokens.add(tk);
+      });
+    };
+    (Array.isArray(historicoProducaoReal) ? historicoProducaoReal : []).forEach(registrar);
+    (Array.isArray(historicoParadas) ? historicoParadas : []).forEach(registrar);
+    return tokens;
+  }, [historicoProducaoReal, historicoParadas]);
+
   const maquinasDisponiveis = useMemo(
     () =>
       maquinasCatalogo
@@ -402,10 +427,16 @@ export default function OeeDashboard({
           };
         })
         .filter(Boolean)
+        .filter((m) => {
+          if (!maquinasComDados.size) return true; // sem dado nenhum carregado ainda: mostra tudo
+          const tk1 = normalizeMachineToken(m.id);
+          const tk2 = normalizeMachineToken(m.nomeExibicao);
+          return maquinasComDados.has(tk1) || maquinasComDados.has(tk2);
+        })
         .sort((a, b) =>
           String(a.nomeExibicao).localeCompare(String(b.nomeExibicao), "pt-BR")
         ),
-    [maquinasCatalogo]
+    [maquinasCatalogo, maquinasComDados]
   );
 
   const applyVelocidade = () => {
@@ -2094,7 +2125,7 @@ export default function OeeDashboard({
       payload?.date &&
       normalizeISODateInput(payload.date) === selectedDayISO;
     const labelY = isSelected ? y + height / 2 + 4 : y - 4;
-    const labelFill = isSelected ? "#0f172a" : "#e4e4e7";
+    const labelFill = isSelected ? "#0f172a" : "#334155";
     return (
       <text
         x={x + width / 2}
