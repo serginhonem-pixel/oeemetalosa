@@ -4,6 +4,10 @@ export const CATALOGO_MAQUINAS = [
   {
     maquinaId: 'CONFORMADORA_TELHAS',
     nomeExibicao: 'Conformadora de Telhas',
+    // Apontamentos antigos no Access gravaram essa máquina só como
+    // "Conformadora" (sem "de Telhas"). Sem o alias, esses registros não
+    // batem com o token normalizado do nome e escapam do ativo:false.
+    aliases: ['Conformadora'],
     grupo: 'GRUPO_TELHAS',
     ativo: false,
   },

@@ -1520,6 +1520,10 @@ const buildMachineResolver = () => {
     const nome = String(m?.nomeExibicao || "").trim();
     if (id) map.set(normalizeMachineToken(id), id);
     if (nome) map.set(normalizeMachineToken(nome), id);
+    (Array.isArray(m?.aliases) ? m.aliases : []).forEach((alias) => {
+      const aliasKey = normalizeMachineToken(alias);
+      if (aliasKey) map.set(aliasKey, id);
+    });
   });
   return (raw) => {
     const key = normalizeMachineToken(raw);
@@ -1676,6 +1680,25 @@ const loadAccessOeeFromCsv = async () => {
   
 useEffect(() => {
 
+  // Remove paradas duplicadas (mesmo dia/hora/motivo/máquina) vindas de
+  // fontes diferentes (Access + cache local). Usado tanto no modo dev
+  // quanto em produção.
+  const deduplicateParadas = (list) => {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).filter((p) => {
+      const key = [
+        String(p.data || ""),
+        String(p.horaInicio || p.inicio || ""),
+        String(p.horaFim || p.fim || ""),
+        String(p.codMotivo || p.motivoCodigo || "").toUpperCase(),
+        String(p.maquinaId || p.maquina || "").toUpperCase(),
+      ].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const carregarDados = async () => {
     setDadosCarregados(false);
     // ------------------------------
@@ -1744,20 +1767,9 @@ useEffect(() => {
       }
 
       // Se não tiver nada no localStorage, usa o JSON da pasta (como você já fazia)
-      // --- GLOBAL (pega do localStorage da GlobalScreen e guarda junto) ---
-const localConfig = localStorage.getItem('local_config');
-const localMaq = localStorage.getItem('local_maquinas');
-const localLanc = localStorage.getItem('local_lancamentos');
-
-setMaquinasOeeExtras(
-  buildOeeMachineExtras([...(dadosLocais.producao || []), ...(dadosLocais.paradas || [])])
-);
-
-setGlobalDevSnapshot({
-  config: localConfig ? JSON.parse(localConfig) : null,
-  maquinas: localMaq ? JSON.parse(localMaq) : [],
-  lancamentos: localLanc ? JSON.parse(localLanc) : [],
-});
+      setMaquinasOeeExtras(
+        buildOeeMachineExtras([...(dadosLocais.producao || []), ...(dadosLocais.paradas || [])])
+      );
 
       console.log("📁 Sem cache local, carregando do backup JSON...");
       setFilaProducao(dadosLocais.romaneios || []);
@@ -1807,31 +1819,6 @@ try {
   } catch (err) {
     console.warn("Falha ao carregar Access em produção:", err);
   }
-
-  const mergeById = (base = [], extra = []) => {
-    const map = new Map();
-    [...base, ...extra].forEach((item, idx) => {
-      const id = String(item?.id || "").trim() || `merged-${idx}`;
-      if (!map.has(id)) map.set(id, item);
-    });
-    return Array.from(map.values());
-  };
-
-  const deduplicateParadas = (list) => {
-    const seen = new Set();
-    return list.filter((p) => {
-      const key = [
-        String(p.data || ""),
-        String(p.horaInicio || p.inicio || ""),
-        String(p.horaFim || p.fim || ""),
-        String(p.codMotivo || p.motivoCodigo || "").toUpperCase(),
-        String(p.maquinaId || p.maquina || "").toUpperCase(),
-      ].join("|");
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
 
   // O OEE não deve mais depender de apontamento feito no app: a fonte
   // única de produção/paradas passa a ser o Access (via CSV/VBA). O

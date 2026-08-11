@@ -699,6 +699,13 @@ export default function OeeDashboard({
         )
       : null;
     const nomeSelecionado = maquinaSelecionadaObj?.nomeExibicao || "";
+    // Máquinas retiradas de uso (ex.: Conformadora de Telhas) não devem
+    // entrar em nenhum total do OEE, mesmo com "Todas as Máquinas" selecionado.
+    const maquinasInativasKeysOee = new Set(
+      CATALOGO_MAQUINAS.filter((m) => !m.ativo).map((m) =>
+        normalizeMachineToken(String(m.maquinaId || m.nomeExibicao || ""))
+      )
+    );
     const turnoMin = (Number(turnoHoras) || 0) * 60;
     const capacidadeKgDia = Number(capacidadeDiaria) || 0;
     const capacidadeKgMin = turnoMin > 0 ? capacidadeKgDia / turnoMin : 0;
@@ -778,9 +785,12 @@ export default function OeeDashboard({
         const tokenNomeSelecionado = normalizeMachineToken(nomeSelecionado);
         const selectedTokens = [tokenSelecionado, tokenNomeSelecionado].filter(Boolean);
 
+        const maquinaAtivaOk = !machineTokens.some((tk) => maquinasInativasKeysOee.has(tk));
+
         const maquinaOk =
-          !maquinaId ||
-          selectedTokens.some((tkSel) => machineTokens.some((tkReg) => tkReg === tkSel));
+          maquinaAtivaOk &&
+          (!maquinaId ||
+            selectedTokens.some((tkSel) => machineTokens.some((tkReg) => tkReg === tkSel)));
 
         const isProducao =
           "cod" in item || "qtd" in item || "pesoTotal" in item || "pesoPorPeca" in item;
@@ -1401,6 +1411,14 @@ export default function OeeDashboard({
     const startDate = new Date(`${startISO}T00:00:00`);
     const endDate = new Date(`${endISO}T00:00:00`);
 
+    // Exclui máquinas marcadas como inativas no catálogo (ex.: Conformadora
+    // de Telhas, retirada de uso) — mesmo critério usado na apresentação PPTX.
+    const maquinasInativasKeys = new Set(
+      CATALOGO_MAQUINAS.filter((m) => !m.ativo).map((m) =>
+        normalizeMachineToken(String(m.maquinaId || m.nomeExibicao || ""))
+      )
+    );
+
     const paradasValidas = (Array.isArray(historicoParadas) ? historicoParadas : []).filter((p) => {
       const iso = normalizeISODateInput(
         p.data || p.date || p.dataProducao || p.dataApontamento || p.createdAt || ""
@@ -1410,7 +1428,9 @@ export default function OeeDashboard({
       if (d < startDate || d > endDate) return false;
       if (!ORIGENS_PARADAS_CSV.has(String(p.origem || "").toUpperCase())) return false;
       const cod = String(p.codMotivo || p.motivoCodigo || "").toUpperCase();
-      return cod !== "TU001";
+      if (cod === "TU001") return false;
+      const maqKey = normalizeMachineToken(String(p.maquinaId || p.maquinaNorm || p.maquina || ""));
+      return !maquinasInativasKeys.has(maqKey);
     });
 
     const getDurMin = (p) => {
