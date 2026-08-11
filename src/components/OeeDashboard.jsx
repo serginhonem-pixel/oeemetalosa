@@ -195,43 +195,35 @@ const getMotivoGroupKey = (parada) => {
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 // ---------- CARDS ----------
-const GaugeCard = ({ label, value, accent, helper, target, trend }) => {
-  const radius = 30;
+// Cor do anel é sempre semântica (status vs. meta), nunca decorativa por
+// métrica: verde = na meta, âmbar = perto, vermelho = abaixo. Sem meta,
+// usa o indigo institucional como neutro.
+const statusColorForValue = (value, target) => {
+  if (!Number.isFinite(target)) return { ring: "#4f46e5", text: "text-indigo-700", chip: "bg-indigo-50 text-indigo-700 border-indigo-200" };
+  const delta = value - target;
+  if (delta >= 0) return { ring: "#059669", text: "text-emerald-700", chip: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+  if (delta >= -5) return { ring: "#d97706", text: "text-amber-700", chip: "bg-amber-50 text-amber-700 border-amber-200" };
+  return { ring: "#dc2626", text: "text-red-700", chip: "bg-red-50 text-red-700 border-red-200" };
+};
+
+const GaugeCard = ({ label, value, helper, target, trend }) => {
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
   const safe = clampPercent(value);
   const offset = circumference - (safe / 100) * circumference;
-
-  const accentMap = {
-    green: "#22c55e",
-    blue: "#60a5fa",
-    pink: "#ec4899",
-    yellow: "#eab308",
-  };
-  const color = accentMap[accent] || "#a855f7";
+  const status = statusColorForValue(safe, target);
 
   return (
-    <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3 flex items-center gap-4 shadow-[0_8px_25px_rgba(0,0,0,0.60)]">
-      <div className="relative w-20 h-20 flex items-center justify-center">
-        <svg
-          width="100%"
-          height="100%"
-          viewBox="0 0 100 100"
-          className="-rotate-90"
-        >
+    <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
+      <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
+        <svg width="100%" height="100%" viewBox="0 0 100 100" className="-rotate-90">
+          <circle cx="50" cy="50" r={radius} stroke="#e2e8f0" strokeWidth="8" fill="transparent" />
           <circle
             cx="50"
             cy="50"
             r={radius}
-            stroke="#18181b"
-            strokeWidth="7"
-            fill="transparent"
-          />
-          <circle
-            cx="50"
-            cy="50"
-            r={radius}
-            stroke={color}
-            strokeWidth="7"
+            stroke={status.ring}
+            strokeWidth="8"
             fill="transparent"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
@@ -240,25 +232,25 @@ const GaugeCard = ({ label, value, accent, helper, target, trend }) => {
           />
         </svg>
         <div className="absolute flex flex-col items-center">
-          <span className="text-lg font-bold text-white">
+          <span className="text-xl font-bold text-slate-900 tabular-nums">
             {safe.toFixed(1)}%
           </span>
         </div>
       </div>
-      <div className="flex-1">
-        <p className="text-[11px] text-zinc-400 uppercase tracking-[0.18em] font-semibold mb-1">
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] text-slate-500 uppercase tracking-[0.14em] font-semibold mb-1.5">
           {label}
         </p>
         {Number.isFinite(target) ? (
-          <p className="text-[11px] text-zinc-500 leading-snug">
-            Meta {target.toFixed(0)}% | Desvio {formatDelta(safe - target)}
+          <p className={`text-xs font-semibold ${status.text}`}>
+            Meta {target.toFixed(0)}% · {formatDelta(safe - target)}
           </p>
         ) : null}
         {trend ? (
-          <p className="text-[11px] text-zinc-500 leading-snug">{trend}</p>
+          <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{trend}</p>
         ) : null}
         {helper && (
-          <p className="text-[11px] text-zinc-500 leading-snug">{helper}</p>
+          <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{helper}</p>
         )}
       </div>
     </div>
@@ -266,17 +258,17 @@ const GaugeCard = ({ label, value, accent, helper, target, trend }) => {
 };
 
 const StatCard = ({ icon: Icon, label, value, helper }) => (
-  <div className="bg-[#050509] border border-white/10 rounded-2xl px-4 py-3 flex items-center gap-4 shadow-[0_6px_20px_rgba(0,0,0,0.55)]">
-    <div className="p-2.5 rounded-xl bg-black/80 border border-white/10">
-      <Icon size={18} className="text-emerald-400" />
+  <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
+    <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100">
+      <Icon size={18} className="text-indigo-600" />
     </div>
-    <div>
-      <p className="text-[11px] text-zinc-400 uppercase tracking-[0.18em] font-semibold">
+    <div className="min-w-0">
+      <p className="text-[11px] text-slate-500 uppercase tracking-[0.14em] font-semibold">
         {label}
       </p>
-      <p className="text-xl font-bold text-white leading-tight">{value}</p>
+      <p className="text-xl font-bold text-slate-900 leading-tight tabular-nums">{value}</p>
       {helper && (
-        <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+        <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
           {helper}
         </p>
       )}
@@ -2126,7 +2118,7 @@ export default function OeeDashboard({
         x={x + width + 5} 
         y={y + height / 2 + 3}
         textAnchor="start"
-        fill="#e4e4e7"
+        fill="#334155"
         fontSize={10}
         fontWeight="bold"
       >
@@ -2137,35 +2129,35 @@ export default function OeeDashboard({
 
   return (
     <>
-    <div className="flex-1 bg-[#09090b] p-8 overflow-y-auto">
+    <div className="flex-1 bg-slate-50 p-8 overflow-y-auto">
       {/* HEADER */}
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
         
         {/* TITULO + SELETOR MÃQUINA (JUNTOS) */}
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
             <div>
-                <h1 className="text-3xl font-bold flex items-center gap-3 text-white">
-                    <Activity className="text-emerald-500" size={30} />
+                <h1 className="text-3xl font-bold flex items-center gap-3 text-slate-900">
+                    <Activity className="text-indigo-600" size={30} />
                     Dashboard OEE
                 </h1>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                     Análise de performance industrial
                 </p>
             </div>
 
             {/* SELETOR DE MÃQUINA (Aqui do lado, como pediu) */}
-            <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-lg">
-                <Filter size={14} className="text-blue-400" />
+            <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-lg">
+                <Filter size={14} className="text-indigo-600" />
                 <select 
                     value={maquinaId}
                     onChange={(e) => setMaquinaId(e.target.value)}
-                    className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer min-w-[140px]"
+                    className="bg-transparent text-slate-900 text-sm font-medium outline-none cursor-pointer min-w-[140px]"
                 >
-                    <option value="" className="bg-zinc-900">Todas as Máquinas</option>
+                    <option value="" className="bg-white">Todas as Máquinas</option>
                     {maquinasDisponiveis.map(m => {
                         const val = m.maquinaId || m.id || m.nomeExibicao;
                         return (
-                          <option key={val} value={val} className="bg-zinc-900">
+                          <option key={val} value={val} className="bg-white">
                               {m.nomeExibicao}
                           </option>
                         );
@@ -2178,13 +2170,13 @@ export default function OeeDashboard({
         <div className="flex flex-col gap-3 items-stretch md:items-end">
           
           {/* BOTÃ•ES DE ATALHO (PRESETS) - MANTIDOS */}
-          <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden self-end">
+          <div className="inline-flex rounded-full bg-slate-100 border border-slate-200 text-[11px] overflow-hidden self-end">
             <button
               onClick={() => handlePreset("today")}
               className={`px-3 py-1.5 ${
                 preset === "today"
-                  ? "bg-emerald-500 text-black font-semibold"
-                  : "text-zinc-400 hover:bg-white/5"
+                  ? "bg-indigo-600 text-white font-semibold"
+                  : "text-slate-600 hover:bg-white hover:shadow-sm"
               }`}
             >
               Hoje
@@ -2193,8 +2185,8 @@ export default function OeeDashboard({
               onClick={() => handlePreset("7d")}
               className={`px-3 py-1.5 ${
                 preset === "7d"
-                  ? "bg-emerald-500 text-black font-semibold"
-                  : "text-zinc-400 hover:bg-white/5"
+                  ? "bg-indigo-600 text-white font-semibold"
+                  : "text-slate-600 hover:bg-white hover:shadow-sm"
               }`}
             >
               7 Dias
@@ -2203,8 +2195,8 @@ export default function OeeDashboard({
               onClick={() => handlePreset("month")}
               className={`px-3 py-1.5 ${
                 preset === "month"
-                  ? "bg-emerald-500 text-black font-semibold"
-                  : "text-zinc-400 hover:bg-white/5"
+                  ? "bg-indigo-600 text-white font-semibold"
+                  : "text-slate-600 hover:bg-white hover:shadow-sm"
               }`}
             >
               Mês
@@ -2213,16 +2205,16 @@ export default function OeeDashboard({
               onClick={() => handlePreset("year")}
               className={`px-3 py-1.5 ${
                 preset === "year"
-                  ? "bg-emerald-500 text-black font-semibold"
-                  : "text-zinc-400 hover:bg-white/5"
+                  ? "bg-indigo-600 text-white font-semibold"
+                  : "text-slate-600 hover:bg-white hover:shadow-sm"
               }`}
             >
               Ano
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-lg self-end">
-            <span className="text-[10px] text-zinc-400 uppercase tracking-[0.18em] font-semibold">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-lg self-end">
+            <span className="text-[10px] text-slate-500 uppercase tracking-[0.18em] font-semibold">
               Velocidade
             </span>
             <input
@@ -2234,22 +2226,22 @@ export default function OeeDashboard({
               onKeyDown={(e) => {
                 if (e.key === "Enter") applyVelocidade();
               }}
-              className="w-16 bg-transparent text-white text-sm font-medium outline-none text-right"
+              className="w-16 bg-transparent text-slate-900 text-sm font-medium outline-none text-right"
             />
-            <span className="text-zinc-500 text-[11px]">m/min</span>
+            <span className="text-slate-500 text-[11px]">m/min</span>
             <button
               onClick={applyVelocidade}
-              className="px-2 py-1 text-[10px] rounded bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+              className="px-2 py-1 text-[10px] rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-500"
             >
               Aplicar
             </button>
           </div>
 
           {/* INPUTS DE DATA (VISUAL MELHORADO) */}
-          <div className="flex items-center gap-3 bg-zinc-900 px-4 py-2 rounded-2xl border border-white/10 text-xs shadow-sm">
-            <CalendarDays className="text-zinc-400" size={16} />
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 text-xs shadow-sm">
+            <CalendarDays className="text-slate-500" size={16} />
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-[0.16em]">
+              <span className="text-[10px] text-slate-500 uppercase tracking-[0.16em]">
                 Período Selecionado
               </span>
               <div className="flex gap-2 items-center">
@@ -2276,9 +2268,9 @@ export default function OeeDashboard({
                       setRangeStartDraft(formatDateBR(normalized));
                     }
                   }}
-                  className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
+                  className="bg-transparent border border-slate-300 hover:border-slate-400 rounded px-2 py-1 text-xs text-slate-900 outline-none transition-colors"
                 />
-                <span className="text-zinc-500 text-[10px]">até</span>
+                <span className="text-slate-500 text-[10px]">até</span>
                 <input
                   type="text"
                   inputMode="text"
@@ -2302,7 +2294,7 @@ export default function OeeDashboard({
                       setRangeEndDraft(formatDateBR(normalized));
                     }
                   }}
-                  className="bg-transparent border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 text-xs text-white outline-none transition-colors"
+                  className="bg-transparent border border-slate-300 hover:border-slate-400 rounded px-2 py-1 text-xs text-slate-900 outline-none transition-colors"
                 />
               </div>
             </div>
@@ -2312,7 +2304,7 @@ export default function OeeDashboard({
           <div className="flex items-center gap-2 self-end">
             <button
               onClick={gerarRelatorioPDF}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-white text-sm font-semibold shadow-lg shadow-red-900/40 transition-all active:scale-95"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-slate-900 text-sm font-semibold shadow-lg shadow-red-900/40 transition-all active:scale-95"
               title="Baixar relatório PDF de paradas por máquina"
             >
               <FileDown size={15} />
@@ -2320,7 +2312,7 @@ export default function OeeDashboard({
             </button>
             <button
               onClick={gerarApresentacaoPPTX}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-900/40 transition-all active:scale-95"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-slate-900 text-sm font-semibold shadow-lg shadow-indigo-900/40 transition-all active:scale-95"
               title="Baixar apresentação PowerPoint para diretoria"
             >
               <FileDown size={15} />
@@ -2336,7 +2328,6 @@ export default function OeeDashboard({
         <GaugeCard
           label="OEE Global"
           value={oeeGlobal}
-          accent="green"
           target={META_KPIS.oeeGlobal}
           trend={formatTrend(deltaOee)}
           helper="Reflete disponibilidade real"
@@ -2344,7 +2335,6 @@ export default function OeeDashboard({
         <GaugeCard
           label="Disponibilidade"
           value={disponibilidade}
-          accent="blue"
           target={META_KPIS.disponibilidade}
           trend={formatTrend(deltaDisp)}
           helper={`${tempoRodandoMin.toFixed(0)} min produzindo`}
@@ -2352,7 +2342,6 @@ export default function OeeDashboard({
         <GaugeCard
           label="Performance"
           value={performance}
-          accent="yellow"
           target={META_KPIS.performance}
           trend={formatTrend(deltaPerf)}
           helper={`Base ${velocidadeMpm} m/min`}
@@ -2360,7 +2349,6 @@ export default function OeeDashboard({
         <GaugeCard
           label="Qualidade"
           value={qualidade}
-          accent="pink"
           target={META_KPIS.qualidade}
           trend={formatTrend(deltaQual)}
           helper={
@@ -2406,21 +2394,21 @@ export default function OeeDashboard({
       </div>
 
       {/* OBSERVAÃ‡ÃƒO */}
-      <div className="flex items-start gap-2 text-[11px] text-zinc-500 mb-6">
-        <AlertCircle size={14} className="mt-[2px] text-yellow-400" />
+      <div className="flex items-start gap-2 text-[11px] text-slate-500 mb-6">
+        <AlertCircle size={14} className="mt-[2px] text-amber-600" />
         <p>
-          <span className="font-semibold text-emerald-400">Nota:</span> Ao filtrar por máquina, a produção pode aparecer zerada se os registros antigos não tiverem o campo de máquina preenchido.
+          <span className="font-semibold text-emerald-600">Nota:</span> Ao filtrar por máquina, a produção pode aparecer zerada se os registros antigos não tiverem o campo de máquina preenchido.
         </p>
       </div>
 
       {/* GRÃFICOS */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* PRODUÃ‡ÃƒO DIÃRIA */}
-        <div className="xl:col-span-2 bg-[#050509] border border-white/10 rounded-2xl p-5">
+        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-2xl p-5">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <TrendingUp size={18} className="text-emerald-400" />
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                <TrendingUp size={18} className="text-emerald-600" />
                 Produção diária
               </h2>
             </div>
@@ -2428,19 +2416,19 @@ export default function OeeDashboard({
               <button
                 type="button"
                 onClick={() => handleSelectDay({ date: selectedDayISO })}
-                className="text-[11px] px-2 py-1 rounded-full border border-emerald-500/40 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
+                className="text-[11px] px-2 py-1 rounded-full border border-emerald-500/40 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20"
                 title="Limpar filtro do dia"
               >
                 Dia {formatDateBR(selectedDayISO)}
               </button>
             ) : null}
-            <div className="inline-flex rounded-full bg-black/70 border border-white/10 text-[11px] overflow-hidden">
+            <div className="inline-flex rounded-full bg-slate-100 border border-slate-200 text-[11px] overflow-hidden">
               <button
                 onClick={() => setMetricMode("pieces")}
                 className={`px-3 py-1.5 ${
                   metricMode === "pieces"
-                    ? "bg-emerald-500 text-black font-semibold"
-                    : "text-zinc-400 hover:bg-white/5"
+                    ? "bg-indigo-600 text-white font-semibold"
+                    : "text-slate-600 hover:bg-white hover:shadow-sm"
                 }`}
               >
                 Peças
@@ -2449,8 +2437,8 @@ export default function OeeDashboard({
                 onClick={() => setMetricMode("weight")}
                 className={`px-3 py-1.5 ${
                   metricMode === "weight"
-                    ? "bg-emerald-500 text-black font-semibold"
-                    : "text-zinc-400 hover:bg-white/5"
+                    ? "bg-indigo-600 text-white font-semibold"
+                    : "text-slate-600 hover:bg-white hover:shadow-sm"
                 }`}
               >
                 Peso (kg)
@@ -2461,9 +2449,9 @@ export default function OeeDashboard({
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
               <BarChart data={dailyProductionData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="label" stroke="#a1a1aa" />
-                <YAxis stroke="#a1a1aa" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="label" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
                 <Tooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload || !payload.length) return null;
@@ -2474,35 +2462,35 @@ export default function OeeDashboard({
                     const destaqueValue = metricMode === "pieces" ? pecasText : pesoText;
 
                     return (
-                      <div className="bg-[#020617] border border-zinc-700 rounded-lg shadow-xl p-3 min-w-[220px]">
-                        <div className="text-[11px] text-zinc-400 mb-2 border-b border-zinc-800 pb-1">
+                      <div className="bg-white border border-slate-300 rounded-lg shadow-xl p-3 min-w-[220px]">
+                        <div className="text-[11px] text-slate-500 mb-2 border-b border-slate-200 pb-1">
                           {label}
                         </div>
-                        <div className="text-sm text-zinc-200 font-semibold mb-2">
-                          {destaqueLabel}: <span className="text-emerald-300">{destaqueValue}</span>
+                        <div className="text-sm text-slate-700 font-semibold mb-2">
+                          {destaqueLabel}: <span className="text-emerald-600">{destaqueValue}</span>
                         </div>
-                        <div className="text-[11px] text-zinc-400 mb-2">
+                        <div className="text-[11px] text-slate-500 mb-2">
                           {metricMode === "pieces" ? "Peso" : "Peças"}:{" "}
-                          <span className="text-emerald-300">
+                          <span className="text-emerald-600">
                             {metricMode === "pieces" ? pesoText : pecasText}
                           </span>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-400">
+                        <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-500">
                           <div>
-                            <div className="uppercase text-[10px] text-zinc-500">Perf</div>
-                            <div className="text-emerald-300 font-semibold">
+                            <div className="uppercase text-[10px] text-slate-500">Perf</div>
+                            <div className="text-emerald-600 font-semibold">
                               {Number(payload[0]?.payload?.performanceDia || 0).toFixed(1)}%
                             </div>
                           </div>
                           <div>
-                            <div className="uppercase text-[10px] text-zinc-500">Disp</div>
+                            <div className="uppercase text-[10px] text-slate-500">Disp</div>
                             <div className="text-sky-300 font-semibold">
                               {Number(payload[0]?.payload?.disponibilidadeDia || 0).toFixed(1)}%
                             </div>
                           </div>
                           <div>
-                            <div className="uppercase text-[10px] text-zinc-500">Qual</div>
-                            <div className="text-pink-300 font-semibold">
+                            <div className="uppercase text-[10px] text-slate-500">Qual</div>
+                            <div className="text-pink-600 font-semibold">
                               {Number(payload[0]?.payload?.qualidadeDia || 0).toFixed(1)}%
                             </div>
                           </div>
@@ -2536,14 +2524,14 @@ export default function OeeDashboard({
         </div>
 
         {/* PARETO DE PARADAS (TOP 5) */}
-        <div className="bg-[#050509] border border-white/10 rounded-2xl p-5">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-            <AlertOctagon size={18} className="text-red-400" />
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2 mb-4">
+            <AlertOctagon size={18} className="text-red-600" />
             Top 5 motivos de parada
           </h2>
           <div className="h-72">
             {paretoParadasData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-sm text-zinc-500">
+              <div className="h-full flex items-center justify-center text-sm text-slate-500">
                 Sem paradas no período/filtro
               </div>
             ) : (
@@ -2556,13 +2544,13 @@ export default function OeeDashboard({
                   <CartesianGrid
                     strokeDasharray="3 3"
                     horizontal={false}
-                    stroke="#27272a"
+                    stroke="#e2e8f0"
                   />
-                  <XAxis type="number" stroke="#a1a1aa" hide />
+                  <XAxis type="number" stroke="#64748b" hide />
                   <YAxis
                     type="category"
                     dataKey="motivo"
-                    stroke="#a1a1aa"
+                    stroke="#64748b"
                     width={140}
                     fontSize={10}
                   />
@@ -2578,7 +2566,7 @@ export default function OeeDashboard({
                   <Bar
                     dataKey="duracao"
                     name="Duração (min)"
-                    fill="#f87171"
+                    fill="#ef4444"
                     radius={[0, 4, 4, 0]}
                     barSize={30}
                     style={{ cursor: "pointer" }}
@@ -2590,33 +2578,33 @@ export default function OeeDashboard({
               </ResponsiveContainer>
             )}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-2">
+          <p className="text-[10px] text-slate-500 mt-2">
             *Clique em uma barra para ver os registros. Motivos que mais impactam a disponibilidade.
           </p>
         </div>
 
-        <div className="xl:col-span-3 bg-[#050509] border border-white/10 rounded-2xl p-5">
+        <div className="xl:col-span-3 bg-white border border-slate-200 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Clock size={18} className="text-amber-400" />
+            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <Clock size={18} className="text-amber-600" />
               Janela crítica por horário
             </h2>
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-slate-500">
               Pico: {janelaCriticaPrincipal.slot} ({janelaCriticaPrincipal.duracao.toFixed(0)} min)
             </span>
           </div>
 
           <div className="h-56">
             {janelaCriticaData.every((p) => Number(p.duracao || 0) === 0) ? (
-              <div className="h-full flex items-center justify-center text-sm text-zinc-500">
+              <div className="h-full flex items-center justify-center text-sm text-slate-500">
                 Sem paradas com horário válido no período.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
                 <BarChart data={janelaCriticaData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                  <XAxis dataKey="slot" stroke="#a1a1aa" interval={2} fontSize={10} />
-                  <YAxis stroke="#a1a1aa" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="slot" stroke="#64748b" interval={2} fontSize={10} />
+                  <YAxis stroke="#64748b" />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: "#020617",
@@ -2641,7 +2629,7 @@ export default function OeeDashboard({
               </ResponsiveContainer>
             )}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-2">
+          <p className="text-[10px] text-slate-500 mt-2">
             *Acima mostra em quais horas do dia as paradas mais concentraram minutos.
           </p>
         </div>
@@ -2651,53 +2639,53 @@ export default function OeeDashboard({
       {/* MODAL DRILL-DOWN PARETO */}
       {paretoModal && (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100 backdrop-blur-sm"
         onClick={() => setParetoModal(null)}
       >
         <div
-          className="bg-zinc-950 border border-zinc-700 rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col"
+          className="bg-white border border-slate-300 rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-red-500/20 flex items-center justify-center">
-                <AlertOctagon size={18} className="text-red-400" />
+                <AlertOctagon size={18} className="text-red-600" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-zinc-100 leading-tight">{paretoModal.motivo}</h3>
-                <p className="text-xs text-zinc-500">{paretoModal.registros.length} registro(s)</p>
+                <h3 className="text-base font-bold text-slate-900 leading-tight">{paretoModal.motivo}</h3>
+                <p className="text-xs text-slate-500">{paretoModal.registros.length} registro(s)</p>
               </div>
             </div>
             <button
               onClick={() => setParetoModal(null)}
-              className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
             >
               <X size={18} />
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-2 mb-4 shrink-0">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Média</p>
-              <p className="text-sm font-bold text-zinc-100">{paretoInsights.media.toFixed(1)} min</p>
+            <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Média</p>
+              <p className="text-sm font-bold text-slate-900">{paretoInsights.media.toFixed(1)} min</p>
             </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Maior parada</p>
-              <p className="text-sm font-bold text-red-300">{paretoInsights.max.toFixed(0)} min</p>
+            <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Maior parada</p>
+              <p className="text-sm font-bold text-red-600">{paretoInsights.max.toFixed(0)} min</p>
             </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Menor parada</p>
-              <p className="text-sm font-bold text-emerald-300">{paretoInsights.min.toFixed(0)} min</p>
+            <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Menor parada</p>
+              <p className="text-sm font-bold text-emerald-600">{paretoInsights.min.toFixed(0)} min</p>
             </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Máquinas afetadas</p>
-              <p className="text-sm font-bold text-zinc-100">{paretoInsights.maquinasAfetadas}</p>
+            <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Máquinas afetadas</p>
+              <p className="text-sm font-bold text-slate-900">{paretoInsights.maquinasAfetadas}</p>
             </div>
           </div>
 
           <div className="overflow-y-auto flex-1 space-y-2">
             {paretoModal.registros.length === 0 ? (
-              <p className="text-sm text-zinc-500 text-center py-8">Nenhum registro encontrado.</p>
+              <p className="text-sm text-slate-500 text-center py-8">Nenhum registro encontrado.</p>
             ) : (
               [...paretoModal.registros]
                 .sort((a, b) => (a.data || "").localeCompare(b.data || "") || (a.horaInicio || a.inicio || "").localeCompare(b.horaInicio || b.inicio || ""))
@@ -2708,21 +2696,21 @@ export default function OeeDashboard({
                   const maq = p.maquinaId || p.maquinaNorm || p.maquina || "-";
                   const dataFmt = (p.data || "").split("-").reverse().join("/") || "-";
                   return (
-                    <div key={i} className="flex items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
+                    <div key={i} className="flex items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl px-4 py-3">
                       <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className="text-xs font-mono text-zinc-400">{dataFmt} &nbsp;{ini} → {fim}</span>
-                        <span className="text-xs text-zinc-500 truncate">{maq}</span>
+                        <span className="text-xs font-mono text-slate-500">{dataFmt} &nbsp;{ini} → {fim}</span>
+                        <span className="text-xs text-slate-500 truncate">{maq}</span>
                       </div>
-                      <span className="text-sm font-bold text-red-400 shrink-0">{dur}m</span>
+                      <span className="text-sm font-bold text-red-600 shrink-0">{dur}m</span>
                     </div>
                   );
                 })
             )}
           </div>
 
-          <div className="mt-4 shrink-0 pt-3 border-t border-zinc-800 flex justify-between items-center">
-            <span className="text-xs text-zinc-500">Total</span>
-            <span className="text-sm font-bold text-zinc-200">
+          <div className="mt-4 shrink-0 pt-3 border-t border-slate-200 flex justify-between items-center">
+            <span className="text-xs text-slate-500">Total</span>
+            <span className="text-sm font-bold text-slate-700">
               {paretoInsights.total.toFixed(0)} min
             </span>
           </div>
