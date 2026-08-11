@@ -17,19 +17,33 @@ function Normalize-AccessName {
   return ($value.ToUpperInvariant() -replace '[^A-Z0-9]', '')
 }
 
-function Get-RowValue {
+# Constroi, uma unica vez por tabela, um mapa NOME_NORMALIZADO -> nome real da coluna.
+# Evita varrer todas as colunas para cada candidato em cada linha (que era O(linhas x candidatos x colunas)).
+function Build-ColumnMap {
+  param([System.Data.DataTable]$Table)
+  $map = @{}
+  foreach ($col in $Table.Columns) {
+    $key = Normalize-AccessName $col.ColumnName
+    if ($key -and -not $map.ContainsKey($key)) {
+      $map[$key] = $col.ColumnName
+    }
+  }
+  return $map
+}
+
+function Get-RowValueFast {
   param(
     [System.Data.DataRow]$Row,
+    [hashtable]$ColumnMap,
     [string[]]$Candidates,
     [object]$Fallback = $null
   )
 
-  foreach ($candidate in ($Candidates | Where-Object { $_ })) {
+  foreach ($candidate in $Candidates) {
+    if (-not $candidate) { continue }
     $target = Normalize-AccessName $candidate
-    foreach ($col in $Row.Table.Columns) {
-      if ((Normalize-AccessName $col.ColumnName) -eq $target) {
-        return $Row[$col.ColumnName]
-      }
+    if ($ColumnMap.ContainsKey($target)) {
+      return $Row[$ColumnMap[$target]]
     }
   }
 
@@ -68,36 +82,51 @@ try {
   $prodDa = New-Object System.Data.OleDb.OleDbDataAdapter($prodCmd)
   $prodDt = New-Object System.Data.DataTable
   [void]$prodDa.Fill($prodDt)
+  $prodColMap = Build-ColumnMap -Table $prodDt
 
-  $producaoRows = @()
+  $producaoRows = [System.Collections.Generic.List[object]]::new()
   foreach ($r in $prodDt.Rows) {
-    $dataIso = To-IsoDate (Get-RowValue $r @("DATA", "DATA_PRODUCAO", "DATAAPONTAMENTO") $r[0])
-    $maq = [string](Get-RowValue $r @("MAQUINA", "EQUIPAMENTO", "NOME_MAQUINA") $r[4])
-    $cod = [string](Get-RowValue $r @("CODIGO", "COD", "COD_PRODUTO", "PRODUTO") $r[5])
-    $desc = [string](Get-RowValue $r @("DESCRICAO", "DESC", "PRODUTO_DESC") $r[6])
-    $destino = [string](Get-RowValue $r @("DESTINO", "CLIENTE", "LOCAL_DESTINO") "Estoque")
+    $dataIso = To-IsoDate (Get-RowValueFast $r $prodColMap @("DATA", "DATA_PRODUCAO", "DATAAPONTAMENTO") $r[0])
+    $maq = [string](Get-RowValueFast $r $prodColMap @("MAQUINA", "EQUIPAMENTO", "NOME_MAQUINA") $r[4])
+    $cod = [string](Get-RowValueFast $r $prodColMap @("CODIGO", "COD", "COD_PRODUTO", "PRODUTO") $r[5])
+    $desc = [string](Get-RowValueFast $r $prodColMap @("DESCRICAO", "DESC", "PRODUTO_DESC") $r[6])
+    $destino = [string](Get-RowValueFast $r $prodColMap @("DESTINO", "CLIENTE", "LOCAL_DESTINO") "Estoque")
     $qtd = 0
-    $qtdRaw = Get-RowValue $r @("QTD", "QUANTIDADE", "PECAS", "PEÇAS") $r[11]
+    $qtdRaw = Get-RowValueFast $r $prodColMap @("QTD", "QUANTIDADE", "PECAS", "PEÇAS") $r[11]
     if ($qtdRaw -ne $null -and $qtdRaw.ToString() -ne "") {
       [void][int]::TryParse($qtdRaw.ToString(), [ref]$qtd)
     }
-    $comp = [string](Get-RowValue $r @("COMP", "COMPRIMENTO", "COMP_METROS", "METROS"))
-    $pesoTotal = [string](Get-RowValue $r @("PESO_TOTAL", "PESOTOTAL", "PESO", "KG"))
+    $comp = [string](Get-RowValueFast $r $prodColMap @("COMP", "COMPRIMENTO", "COMP_METROS", "METROS"))
+    $pesoTotal = [string](Get-RowValueFast $r $prodColMap @("PESO_TOTAL", "PESOTOTAL", "PESO", "KG"))
+
+    # Qualidade: refugo e retrabalho, direto da tabela Producao (QtdRef / QtdRet)
+    $qtdRef = 0
+    $qtdRefRaw = Get-RowValueFast $r $prodColMap @("QTDREF", "QTD_REF", "REFUGO") $r[12]
+    if ($qtdRefRaw -ne $null -and $qtdRefRaw.ToString() -ne "") {
+      [void][int]::TryParse($qtdRefRaw.ToString(), [ref]$qtdRef)
+    }
+    $qtdRet = 0
+    $qtdRetRaw = Get-RowValueFast $r $prodColMap @("QTDRET", "QTD_RET", "RETRABALHO") $r[13]
+    if ($qtdRetRaw -ne $null -and $qtdRetRaw.ToString() -ne "") {
+      [void][int]::TryParse($qtdRetRaw.ToString(), [ref]$qtdRet)
+    }
 
     if ([string]::IsNullOrWhiteSpace($dataIso) -or [string]::IsNullOrWhiteSpace($cod) -or $qtd -le 0) {
       continue
     }
 
-    $producaoRows += [PSCustomObject]@{
+    $producaoRows.Add([PSCustomObject]@{
       DATA      = $dataIso
       MAQUINA   = if ([string]::IsNullOrWhiteSpace($maq)) { "" } else { $maq.Trim() }
       CODIGO    = $cod.Trim()
       QTD       = $qtd
+      QTD_REF   = $qtdRef
+      QTD_RET   = $qtdRet
       DESCRICAO = if ([string]::IsNullOrWhiteSpace($desc)) { "Item s/ descricao" } else { $desc.Trim() }
       DESTINO   = if ([string]::IsNullOrWhiteSpace($destino)) { "Estoque" } else { $destino.Trim() }
       COMP      = if ([string]::IsNullOrWhiteSpace($comp)) { "" } else { $comp.Trim() }
       PESO_TOTAL = if ([string]::IsNullOrWhiteSpace($pesoTotal)) { "" } else { $pesoTotal.Trim() }
-    }
+    })
   }
 
   $parCmd = $conn.CreateCommand()
@@ -105,25 +134,26 @@ try {
   $parDa = New-Object System.Data.OleDb.OleDbDataAdapter($parCmd)
   $parDt = New-Object System.Data.DataTable
   [void]$parDa.Fill($parDt)
+  $parColMap = Build-ColumnMap -Table $parDt
 
-  $paradasRows = @()
+  $paradasRows = [System.Collections.Generic.List[object]]::new()
   foreach ($r in $parDt.Rows) {
     # Layout da tabela Apontamento (ordinal):
     # 0 Codigo, 1 Descricao, 2 Categoria, 7 Data Inicial, 8 Hora Inicial,
     # 9 Data Final, 10 Hora Final, 12 Comentarios
-    $dataIso = To-IsoDate (Get-RowValue $r @("DATA", "DATA_INICIAL", "DATA_FINAL") $r[7])
+    $dataIso = To-IsoDate (Get-RowValueFast $r $parColMap @("DATA", "DATA_INICIAL", "DATA_FINAL") $r[7])
     if ([string]::IsNullOrWhiteSpace($dataIso)) {
-      $dataIso = To-IsoDate (Get-RowValue $r @("DATA_FINAL") $r[9])
+      $dataIso = To-IsoDate (Get-RowValueFast $r $parColMap @("DATA_FINAL") $r[9])
     }
 
-    $inicio = To-HhMm (Get-RowValue $r @("INICIO", "HORA_INICIAL", "HORAINICIAL") $r[8])
-    $fim = To-HhMm (Get-RowValue $r @("FIM", "HORA_FINAL", "HORAFINAL") $r[10])
+    $inicio = To-HhMm (Get-RowValueFast $r $parColMap @("INICIO", "HORA_INICIAL", "HORAINICIAL") $r[8])
+    $fim = To-HhMm (Get-RowValueFast $r $parColMap @("FIM", "HORA_FINAL", "HORAFINAL") $r[10])
 
-    $cod = [string](Get-RowValue $r @("COD_MOTIVO", "CODIGO", "COD") $r[0])
-    $desc = [string](Get-RowValue $r @("DESC", "DESCRICAO") $r[1])
-    $categoria = [string](Get-RowValue $r @("GRUPO", "CATEGORIA", "TIPO") $r[2])
-    $maq = [string](Get-RowValue $r @("MAQUINA", "EQUIPAMENTO", "NOME_MAQUINA") $r[3])
-    $obs = [string](Get-RowValue $r @("OBS", "OBSERVACAO", "COMENTARIOS") $r[12])
+    $cod = [string](Get-RowValueFast $r $parColMap @("COD_MOTIVO", "CODIGO", "COD") $r[0])
+    $desc = [string](Get-RowValueFast $r $parColMap @("DESC", "DESCRICAO") $r[1])
+    $categoria = [string](Get-RowValueFast $r $parColMap @("GRUPO", "CATEGORIA", "TIPO") $r[2])
+    $maq = [string](Get-RowValueFast $r $parColMap @("MAQUINA", "EQUIPAMENTO", "NOME_MAQUINA") $r[3])
+    $obs = [string](Get-RowValueFast $r $parColMap @("OBS", "OBSERVACAO", "COMENTARIOS") $r[12])
 
     if (
       [string]::IsNullOrWhiteSpace($dataIso) -or
@@ -134,7 +164,7 @@ try {
       continue
     }
 
-    $paradasRows += [PSCustomObject]@{
+    $paradasRows.Add([PSCustomObject]@{
       DATA       = $dataIso
       MAQUINA    = if ([string]::IsNullOrWhiteSpace($maq)) { "" } else { $maq.Trim() }
       INICIO     = $inicio
@@ -143,7 +173,7 @@ try {
       DESC       = if ([string]::IsNullOrWhiteSpace($desc)) { "" } else { $desc.Trim() }
       GRUPO      = if ([string]::IsNullOrWhiteSpace($categoria)) { "" } else { $categoria.Trim() }
       OBS        = if ([string]::IsNullOrWhiteSpace($obs)) { "" } else { $obs.Trim() }
-    }
+    })
   }
 
   $prodCsv = Join-Path $OutDir "import_producao.csv"

@@ -490,6 +490,7 @@ export default function OeeDashboard({
     tempoRodandoMin,
     producaoTotalPcs,
     producaoTotalKg,
+    producaoTotalRefugoRetrabalho,
     dailyProductionData,
     paretoParadasData,
     previousSnapshot,
@@ -524,6 +525,7 @@ export default function OeeDashboard({
         tempoRodandoMin: 0,
         producaoTotalPcs: 0,
         producaoTotalKg: 0,
+        producaoTotalRefugoRetrabalho: 0,
         dailyProductionData: [],
         paretoParadasData: [],
         previousSnapshot: null,
@@ -803,6 +805,8 @@ export default function OeeDashboard({
 
       let producaoTotalMetrosSnapshot = 0;
       let producaoTotalKgSnapshot = 0;
+      let producaoBoasSnapshot = 0;
+      let producaoRefugoRetrabalhoSnapshot = 0;
       prod.forEach((item) => {
         const qtd = clampNonNegative(Number(item.qtd) || 0);
         const prodInfo = getProdutoFromItem(item);
@@ -824,6 +828,11 @@ export default function OeeDashboard({
           }
         }
         producaoTotalKgSnapshot += peso;
+
+        producaoBoasSnapshot += qtd;
+        producaoRefugoRetrabalhoSnapshot +=
+          clampNonNegative(Number(item.qtdRefugo) || 0) +
+          clampNonNegative(Number(item.qtdRetrabalho) || 0);
       });
 
       const performanceSnapshot = calcPerformancePercent(
@@ -831,7 +840,12 @@ export default function OeeDashboard({
         producaoTotalKgSnapshot,
         tempoRodandoSnapshot
       );
-      const qualidadeSnapshot = 100;
+      const producaoTotalPecasSnapshot =
+        producaoBoasSnapshot + producaoRefugoRetrabalhoSnapshot;
+      const qualidadeSnapshot =
+        producaoTotalPecasSnapshot > 0
+          ? (producaoBoasSnapshot / producaoTotalPecasSnapshot) * 100
+          : 100;
       const oeeSnapshot =
         (disponibilidadeSnapshot / 100) *
         (performanceSnapshot / 100) *
@@ -900,6 +914,7 @@ export default function OeeDashboard({
     let producaoTotalPcs = 0;
     let producaoTotalKg = 0;
     let producaoTotalMetros = 0;
+    let producaoTotalRefugoRetrabalho = 0;
     const dailyMap = {};
 
     if (endDate >= startDate) {
@@ -914,6 +929,7 @@ export default function OeeDashboard({
           pieces: 0,
           weightKg: 0,
           meters: 0,
+          refugoRetrabalho: 0,
           paradasMin: paradasPorDia.get(iso) || 0,
           counted: diasContados.has(iso),
           turnoMin,
@@ -950,10 +966,16 @@ export default function OeeDashboard({
 
       producaoTotalKg += peso;
 
+      const refugoRetrabalho =
+        clampNonNegative(Number(item.qtdRefugo) || 0) +
+        clampNonNegative(Number(item.qtdRetrabalho) || 0);
+      producaoTotalRefugoRetrabalho += refugoRetrabalho;
+
       if (dailyMap[iso]) {
         dailyMap[iso].pieces += qtd;
         dailyMap[iso].weightKg += peso;
         dailyMap[iso].meters += qtd * comp;
+        dailyMap[iso].refugoRetrabalho += refugoRetrabalho;
       }
     });
 
@@ -970,7 +992,10 @@ export default function OeeDashboard({
           d.counted && Math.max(0, d.turnoMin - d.paradasMin) > 0
             ? (d.meters / (Math.max(0, d.turnoMin - d.paradasMin) * velocidadeMpm)) * 100
             : 0,
-        qualidadeDia: 100,
+        qualidadeDia:
+          d.pieces + d.refugoRetrabalho > 0
+            ? (d.pieces / (d.pieces + d.refugoRetrabalho)) * 100
+            : 100,
         weightKg: Number(d.weightKg.toFixed(1)),
       }));
 
@@ -1016,7 +1041,11 @@ export default function OeeDashboard({
       producaoTotalKg,
       tempoRodandoMinPerf
     );
-    const qualidade = 100;
+    const producaoTotalPecasComPerdas = producaoTotalPcs + producaoTotalRefugoRetrabalho;
+    const qualidade =
+      producaoTotalPecasComPerdas > 0
+        ? (producaoTotalPcs / producaoTotalPecasComPerdas) * 100
+        : 100;
     const oeeGlobal =
       (disponibilidade / 100) * (performance / 100) * (qualidade / 100) * 100;
 
@@ -1053,6 +1082,7 @@ export default function OeeDashboard({
       disponibilidade,
       performance,
       qualidade,
+      producaoTotalRefugoRetrabalho,
       tempoTotalTurnoMin,
       tempoParadoMin,
       tempoRodandoMin,
@@ -1768,7 +1798,7 @@ export default function OeeDashboard({
         { label: "Disponibilidade", value: fmtPct(disponibilidade), sub: `Meta 85% · Desvio ${(disponibilidade - 85).toFixed(1)} p.p.`, valueColor: disponibilidade >= 85 ? PAL.good : PAL.danger, accentBar: disponibilidade >= 85 ? PAL.good : PAL.danger },
         { label: "Performance",     value: fmtPct(performance),     sub: `Meta 75% · Base ${velocidadeMpm} m/min`,                   valueColor: performance >= 75    ? PAL.good : PAL.warn,   accentBar: performance >= 75    ? PAL.good : PAL.warn   },
         { label: "OEE Global",      value: fmtPct(oeeGlobal),       sub: `Meta 70% · Desvio ${(oeeGlobal - 70).toFixed(1)} p.p.`,    valueColor: oeeGlobal >= 70      ? PAL.good : PAL.danger, accentBar: oeeGlobal >= 70      ? PAL.good : PAL.danger },
-        { label: "Qualidade",       value: fmtPct(qualidade),       sub: "Meta 99% · Sem refugo",                                     valueColor: PAL.good,             accentBar: PAL.good     },
+        { label: "Qualidade",       value: fmtPct(qualidade),       sub: `Meta 99% · Desvio ${(qualidade - 99).toFixed(1)} p.p.`,     valueColor: qualidade >= 99      ? PAL.good : PAL.warn,   accentBar: qualidade >= 99      ? PAL.good : PAL.warn   },
       ];
       kpiData.forEach((k, i) => {
         addKpiBox(sl, { x: 0.3 + i * 3.2, y: 0.95, w: 3.0, h: 1.5, ...k });
@@ -2333,7 +2363,11 @@ export default function OeeDashboard({
           accent="pink"
           target={META_KPIS.qualidade}
           trend={formatTrend(deltaQual)}
-          helper="Sem refugo"
+          helper={
+            producaoTotalRefugoRetrabalho > 0
+              ? `${producaoTotalRefugoRetrabalho.toFixed(0)} pçs refugo/retrabalho`
+              : "Sem refugo/retrabalho no período"
+          }
         />
       </div>
 
