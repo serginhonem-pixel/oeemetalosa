@@ -132,9 +132,29 @@ const runSync = async () => {
   }
 };
 
+// Teto máximo de espera: se o Access ficar sendo salvo em sequência (alguém
+// digitando ao vivo), o debounce puro nunca fecha uma janela quieta e o sync
+// nunca dispara. Depois de maxWaitMs desde a PRIMEIRA mudança pendente, força
+// o disparo mesmo que ainda esteja chegando mudança nova.
+const maxWaitMs = Math.max(debounceMs * 4, 60000);
+let firstPendingChangeAt = null;
+
 const scheduleSync = () => {
+  const now = Date.now();
+  if (!firstPendingChangeAt) firstPendingChangeAt = now;
+
   if (debounceTimer) clearTimeout(debounceTimer);
+
+  const tempoEspera = now - firstPendingChangeAt;
+  if (tempoEspera >= maxWaitMs) {
+    log(`Mudancas continuas ha ${Math.round(tempoEspera / 1000)}s — forcando sync agora.`);
+    firstPendingChangeAt = null;
+    runSync().catch(() => {});
+    return;
+  }
+
   debounceTimer = setTimeout(() => {
+    firstPendingChangeAt = null;
     runSync().catch(() => {});
   }, debounceMs);
 };

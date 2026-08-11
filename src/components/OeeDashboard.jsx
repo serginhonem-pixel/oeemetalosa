@@ -11,6 +11,9 @@ import {
   Flame,
   X,
   FileDown,
+  ClipboardCheck,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -306,7 +309,16 @@ export default function OeeDashboard({
   );
   
   // NOVO: Estado para filtro de mÃ¡quina
-  const [maquinaId, setMaquinaId] = useState(""); 
+  const [maquinaId, setMaquinaId] = useState("");
+
+  // Conferência de apontamento (Access): calendário de máquinas apontadas/não apontadas por dia
+  const [conferenciaAberta, setConferenciaAberta] = useState(false);
+  const [confInicio, setConfInicio] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [confFim, setConfFim] = useState(() => todayISO());
+  const [confDiaSelecionado, setConfDiaSelecionado] = useState(null);
 
   // sincroniza com filtros externos
   useEffect(() => {
@@ -415,6 +427,34 @@ export default function OeeDashboard({
     return tokens;
   }, [historicoProducaoReal, historicoParadas]);
 
+  // Para a Conferência de Apontamento: por dia, quais máquinas (token normalizado)
+  // tiveram QUALQUER registro (produção ou parada) vindo do Access.
+  const registrosPorDiaEMaquina = useMemo(() => {
+    const porDia = new Map(); // iso -> Set(token)
+    const registrar = (item) => {
+      const iso = getItemDateISO(item);
+      if (!ISO_DATE_RE.test(iso)) return;
+      const candidatos = [
+        item?.maquinaId,
+        item?.maquinaid,
+        item?.maquina,
+        item?.maquinaNome,
+        item?.maquinaExibicao,
+        item?.nomeMaquina,
+        item?.equipamento,
+        item?.eqp,
+      ];
+      const tokens = candidatos.map(normalizeMachineToken).filter(Boolean);
+      if (!tokens.length) return;
+      if (!porDia.has(iso)) porDia.set(iso, new Set());
+      const set = porDia.get(iso);
+      tokens.forEach((t) => set.add(t));
+    };
+    (Array.isArray(historicoProducaoReal) ? historicoProducaoReal : []).forEach(registrar);
+    (Array.isArray(historicoParadas) ? historicoParadas : []).forEach(registrar);
+    return porDia;
+  }, [historicoProducaoReal, historicoParadas]);
+
   const maquinasDisponiveis = useMemo(
     () =>
       maquinasCatalogo
@@ -438,6 +478,95 @@ export default function OeeDashboard({
         ),
     [maquinasCatalogo, maquinasComDados]
   );
+
+  // ---------- CONFERÊNCIA DE APONTAMENTO ----------
+  // Um bloco de calendário por mês dentro do intervalo [confInicio, confFim],
+  // com a % de máquinas (da lista maquinasDisponiveis, todas vindas do Access)
+  // que tiveram ao menos um registro naquele dia.
+  const conferenciaMeses = useMemo(() => {
+    const inicio = parseISODate(normalizeISODateInput(confInicio));
+    const fim = parseISODate(normalizeISODateInput(confFim));
+    if (!inicio || !fim || !maquinasDisponiveis.length) return [];
+
+    const start = inicio <= fim ? inicio : fim;
+    const end = inicio <= fim ? fim : inicio;
+
+    const machineTokens = maquinasDisponiveis.map((m) => ({
+      ...m,
+      tokens: [normalizeMachineToken(m.id), normalizeMachineToken(m.nomeExibicao)].filter(Boolean),
+    }));
+
+    const diaInfo = (iso) => {
+      const registrados = registrosPorDiaEMaquina.get(iso);
+      const maquinasStatus = machineTokens.map((m) => ({
+        id: m.id,
+        nomeExibicao: m.nomeExibicao,
+        apontada: !!registrados && m.tokens.some((tk) => registrados.has(tk)),
+      }));
+      const apontadas = maquinasStatus.filter((m) => m.apontada).length;
+      const total = maquinasStatus.length;
+      const dt = parseISODate(iso);
+      const diaSemana = dt ? dt.getDay() : 1;
+      const fimDeSemana = diaSemana === 0 || diaSemana === 6;
+      const semNenhumRegistro = apontadas === 0;
+      return {
+        iso,
+        maquinasStatus,
+        apontadas,
+        total,
+        pct: total > 0 ? (apontadas / total) * 100 : 0,
+        fimDeSemana,
+        neutro: fimDeSemana && semNenhumRegistro,
+      };
+    };
+
+    // Agrupa por mês (ano-mês) preservando a ordem cronológica
+    const mesesMap = new Map(); // "YYYY-MM" -> { ano, mes, dias: [{...diaInfo, inMonth, inRange}] }
+    for (
+      let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+      cursor <= end;
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+    ) {
+      const ano = cursor.getFullYear();
+      const mes = cursor.getMonth();
+      const key = `${ano}-${String(mes + 1).padStart(2, "0")}`;
+      const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
+      const totalDiasMes = new Date(ano, mes + 1, 0).getDate();
+      const dias = [];
+      // padding do início (dias vazios antes do dia 1)
+      for (let i = 0; i < primeiroDiaSemana; i += 1) dias.push(null);
+      for (let d = 1; d <= totalDiasMes; d += 1) {
+        const dt = new Date(ano, mes, d);
+        const iso = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const inRange = dt >= start && dt <= end;
+        dias.push({ ...diaInfo(iso), dia: d, inRange });
+      }
+      mesesMap.set(key, { ano, mes, dias });
+    }
+
+    return Array.from(mesesMap.values());
+  }, [confInicio, confFim, maquinasDisponiveis, registrosPorDiaEMaquina]);
+
+  const conferenciaResumo = useMemo(() => {
+    const diasValidos = conferenciaMeses
+      .flatMap((m) => m.dias)
+      .filter((d) => d && d.inRange && !d.neutro);
+    if (!diasValidos.length) return { mediaPct: 0, diasCompletos: 0, diasComFalha: 0, totalDias: 0 };
+    const mediaPct =
+      diasValidos.reduce((acc, d) => acc + d.pct, 0) / diasValidos.length;
+    const diasCompletos = diasValidos.filter((d) => d.pct >= 100).length;
+    const diasComFalha = diasValidos.filter((d) => d.pct < 100).length;
+    return { mediaPct, diasCompletos, diasComFalha, totalDias: diasValidos.length };
+  }, [conferenciaMeses]);
+
+  const diaSelecionadoInfo = useMemo(() => {
+    if (!confDiaSelecionado) return null;
+    for (const mes of conferenciaMeses) {
+      const found = mes.dias.find((d) => d && d.iso === confDiaSelecionado);
+      if (found) return found;
+    }
+    return null;
+  }, [confDiaSelecionado, conferenciaMeses]);
 
   const applyVelocidade = () => {
     const parsed = Number(velocidadeDraft);
@@ -2334,8 +2463,16 @@ export default function OeeDashboard({
           {/* BOTÕES DE EXPORTAÇÃO */}
           <div className="flex items-center gap-2 self-end">
             <button
+              onClick={() => setConferenciaAberta(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-300 hover:border-slate-400 hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-all active:scale-95"
+              title="Conferir quais máquinas foram apontadas no Access, por dia"
+            >
+              <ClipboardCheck size={15} />
+              Conferência
+            </button>
+            <button
               onClick={gerarRelatorioPDF}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-slate-900 text-sm font-semibold shadow-lg shadow-red-900/40 transition-all active:scale-95"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 text-white text-sm font-semibold shadow-lg shadow-red-900/40 transition-all active:scale-95"
               title="Baixar relatório PDF de paradas por máquina"
             >
               <FileDown size={15} />
@@ -2343,7 +2480,7 @@ export default function OeeDashboard({
             </button>
             <button
               onClick={gerarApresentacaoPPTX}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-slate-900 text-sm font-semibold shadow-lg shadow-indigo-900/40 transition-all active:scale-95"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-900/40 transition-all active:scale-95"
               title="Baixar apresentação PowerPoint para diretoria"
             >
               <FileDown size={15} />
@@ -2666,6 +2803,213 @@ export default function OeeDashboard({
         </div>
       </div>
     </div>
+
+      {/* MODAL CONFERÊNCIA DE APONTAMENTO */}
+      {conferenciaAberta && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          onClick={() => {
+            setConferenciaAberta(false);
+            setConfDiaSelecionado(null);
+          }}
+        >
+          <div
+            className="bg-white border border-slate-300 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                  <ClipboardCheck size={18} className="text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 leading-tight">
+                    Conferência de Apontamento
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {maquinasDisponiveis.length} máquina(s) com apontamento no Access
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setConferenciaAberta(false);
+                  setConfDiaSelecionado(null);
+                }}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 p-5 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 uppercase tracking-wide font-semibold">De</span>
+                <input
+                  type="date"
+                  value={confInicio}
+                  onChange={(e) => {
+                    setConfInicio(e.target.value);
+                    setConfDiaSelecionado(null);
+                  }}
+                  className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                />
+                <span className="text-[11px] text-slate-500 uppercase tracking-wide font-semibold">até</span>
+                <input
+                  type="date"
+                  value={confFim}
+                  onChange={(e) => {
+                    setConfFim(e.target.value);
+                    setConfDiaSelecionado(null);
+                  }}
+                  className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                />
+              </div>
+              <div className="ml-auto flex items-center gap-4 text-xs">
+                <div>
+                  <span className="text-slate-500">Média apontamento: </span>
+                  <span
+                    className={`font-bold ${
+                      conferenciaResumo.mediaPct >= 100
+                        ? "text-emerald-600"
+                        : conferenciaResumo.mediaPct >= 50
+                        ? "text-amber-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {conferenciaResumo.mediaPct.toFixed(0)}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-emerald-600 font-bold">{conferenciaResumo.diasCompletos}</span>
+                  <span className="text-slate-500"> dias completos</span>
+                </div>
+                <div>
+                  <span className="text-red-600 font-bold">{conferenciaResumo.diasComFalha}</span>
+                  <span className="text-slate-500"> dias com falha</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              {conferenciaMeses.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-8">
+                  Selecione um período válido para conferir.
+                </p>
+              ) : (
+                conferenciaMeses.map((mes) => (
+                  <div key={`${mes.ano}-${mes.mes}`}>
+                    <h4 className="text-sm font-semibold text-slate-700 mb-2 capitalize">
+                      {new Date(mes.ano, mes.mes, 1).toLocaleDateString("pt-BR", {
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </h4>
+                    <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] text-slate-500 uppercase tracking-wide mb-1">
+                      {["D", "S", "T", "Q", "Q", "S", "S"].map((d, i) => (
+                        <div key={i}>{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {mes.dias.map((dia, i) => {
+                        if (!dia) return <div key={`pad-${i}`} />;
+                        if (!dia.inRange) {
+                          return (
+                            <div
+                              key={dia.iso}
+                              className="aspect-square rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-[11px] text-slate-300"
+                            >
+                              {dia.dia}
+                            </div>
+                          );
+                        }
+                        if (dia.neutro) {
+                          return (
+                            <button
+                              key={dia.iso}
+                              onClick={() => setConfDiaSelecionado(dia.iso)}
+                              title="Fim de semana sem nenhum registro"
+                              className={`aspect-square rounded-lg border flex flex-col items-center justify-center gap-0.5 transition-colors bg-slate-100 hover:bg-slate-200 ${
+                                confDiaSelecionado === dia.iso
+                                  ? "border-indigo-400 ring-2 ring-indigo-200"
+                                  : "border-slate-200"
+                              }`}
+                            >
+                              <span className="text-[11px] text-slate-500">{dia.dia}</span>
+                              <span className="text-[10px] text-slate-400">—</span>
+                            </button>
+                          );
+                        }
+                        const cor =
+                          dia.pct >= 100
+                            ? { bg: "bg-emerald-50 hover:bg-emerald-100", border: "border-emerald-200", text: "text-emerald-700" }
+                            : dia.pct >= 50
+                            ? { bg: "bg-amber-50 hover:bg-amber-100", border: "border-amber-200", text: "text-amber-700" }
+                            : { bg: "bg-red-50 hover:bg-red-100", border: "border-red-200", text: "text-red-700" };
+                        return (
+                          <button
+                            key={dia.iso}
+                            onClick={() => setConfDiaSelecionado(dia.iso)}
+                            title={`${dia.apontadas}/${dia.total} máquinas apontadas`}
+                            className={`aspect-square rounded-lg border flex flex-col items-center justify-center gap-0.5 transition-colors ${cor.bg} ${
+                              confDiaSelecionado === dia.iso
+                                ? "border-indigo-400 ring-2 ring-indigo-200"
+                                : cor.border
+                            }`}
+                          >
+                            <span className="text-[11px] text-slate-600">{dia.dia}</span>
+                            <span className={`text-xs font-bold ${cor.text}`}>{dia.pct.toFixed(0)}%</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {diaSelecionadoInfo && (
+                <div className="border-t border-slate-200 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-bold text-slate-900">
+                      {formatDateBR(diaSelecionadoInfo.iso)} · {diaSelecionadoInfo.apontadas}/
+                      {diaSelecionadoInfo.total} máquinas apontadas
+                    </h4>
+                    <button
+                      onClick={() => setConfDiaSelecionado(null)}
+                      className="text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {diaSelecionadoInfo.maquinasStatus.map((m) => (
+                      <div
+                        key={m.id}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                          m.apontada ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"
+                        }`}
+                      >
+                        {m.apontada ? (
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                        ) : (
+                          <XCircle size={16} className="text-red-600 shrink-0" />
+                        )}
+                        <span
+                          className={`text-sm truncate ${
+                            m.apontada ? "text-emerald-800" : "text-red-800"
+                          }`}
+                        >
+                          {m.nomeExibicao}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DRILL-DOWN PARETO */}
       {paretoModal && (
