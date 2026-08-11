@@ -14,8 +14,8 @@ for (let i = 0; i < args.length; i += 1) {
 
 const accessPath =
   argMap.get("accessPath") || "C:\\DadosVBA\\BDMETALOSA.accdb";
-const email = argMap.get("email") || "";
-const senha = argMap.get("senha") || "";
+const email = argMap.get("email") || process.env.SYNC_EMAIL || "";
+const senha = argMap.get("senha") || process.env.SYNC_SENHA || "";
 const maquinaId = argMap.get("maquinaId") || "CONFORMADORA_TELHAS";
 const debounceMs = Number(argMap.get("debounceMs") || 8000);
 const pollMs = Number(argMap.get("pollMs") || 2000);

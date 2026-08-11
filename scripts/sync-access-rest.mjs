@@ -195,6 +195,8 @@ const buildData = () => {
       const maqId = normalizeMachineId(maqRaw);
       const comp = toNumberLike(getField(r, ["COMP", "COMP_METROS", "COMPRIMENTO", "METROS"]));
       const pesoTotal = toNumberLike(getField(r, ["PESO_TOTAL", "PESOTOTAL", "PESO", "KG"]));
+      const qtdRefugo = toInt(getField(r, ["QTD_REF", "QTDREF", "REFUGO"]));
+      const qtdRetrabalho = toInt(getField(r, ["QTD_RET", "QTDRET", "RETRABALHO"]));
       const createdAt = `${data}T12:00:00.000Z`;
       if (!data || !cod || qtd <= 0) return null;
       return {
@@ -208,6 +210,8 @@ const buildData = () => {
         pesoTotal,
         pesoPorPeca: qtd > 0 && pesoTotal > 0 ? pesoTotal / qtd : 0,
         m2Total: comp * qtd,
+        qtdRefugo,
+        qtdRetrabalho,
         maquinaId: maqId,
         maquina: machineDisplayById[maqId] || clean(maqRaw) || maqId,
         maquinaNome: clean(maqRaw) || machineDisplayById[maqId] || maqId,

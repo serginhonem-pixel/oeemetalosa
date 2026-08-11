@@ -1613,6 +1613,8 @@ const loadAccessOeeFromCsv = async () => {
         row.PESO_TOTAL || row.pesoTotal || row.PESO || row.peso || 0
       );
       const pesoPorPeca = qtd > 0 && pesoTotal > 0 ? pesoTotal / qtd : 0;
+      const qtdRefugo = toNumberLike(row.QTD_REF || row.qtdRef || row.REFUGO || 0);
+      const qtdRetrabalho = toNumberLike(row.QTD_RET || row.qtdRet || row.RETRABALHO || 0);
       return {
         id: `acc_prod_${data}_${cod}_${qtd}___${idx}`.replace(/[^a-zA-Z0-9_\-]/g, ""),
         data,
@@ -1625,6 +1627,8 @@ const loadAccessOeeFromCsv = async () => {
         pesoTotal,
         pesoPorPeca,
         m2Total: comp * qtd,
+        qtdRefugo,
+        qtdRetrabalho,
         maquinaId: resolveMachineId(maquinaNome),
         maquina: maquinaNome,
         maquinaNome,
@@ -1671,7 +1675,6 @@ const loadAccessOeeFromCsv = async () => {
 
   
 useEffect(() => {
-  let unsubProducao = null;
 
   const carregarDados = async () => {
     setDadosCarregados(false);
@@ -1830,36 +1833,16 @@ try {
     });
   };
 
-  const producaoComAccess =
-    accessDataProd && Array.isArray(accessDataProd.producao)
-      ? mergeById(listaProducao, accessDataProd.producao)
+  // O OEE não deve mais depender de apontamento feito no app: a fonte
+  // única de produção/paradas passa a ser o Access (via CSV/VBA). O
+  // Firestore só entra como fallback se o Access não puder ser lido,
+  // pra não deixar o app "zerado".
+  const producaoFinal =
+    accessDataProd && Array.isArray(accessDataProd.producao) && accessDataProd.producao.length
+      ? accessDataProd.producao
       : listaProducao;
 
-  setHistoricoProducaoReal(producaoComAccess);
-  if (unsubProducao) unsubProducao();
-  unsubProducao = onSnapshot(
-    collection(db, "producao"),
-    (snap) => {
-      const listaProducaoRt = snap.docs.map((docSnap) => {
-        const d = docSnap.data();
-        const { id, ...rest } = d;
-        return {
-          id: docSnap.id,
-          ...rest,
-          data: toISODate(d.data),
-        };
-      });
-      const producaoRtComAccess =
-        accessDataProd && Array.isArray(accessDataProd.producao)
-          ? mergeById(listaProducaoRt, accessDataProd.producao)
-          : listaProducaoRt;
-      setHistoricoProducaoReal(producaoRtComAccess);
-    },
-    (err) => {
-      console.error("Erro ao assinar producao:", err);
-      toast?.(`Erro producao: ${err?.code || err?.message || "desconhecido"}`);
-    }
-  );
+  setHistoricoProducaoReal(producaoFinal);
 
   // 3. Paradas
   const paradasSnapshot = await getDocs(collection(db, "paradas"));
@@ -1871,12 +1854,12 @@ try {
       data: toISODate(d.data), // ✅ se existir; se não existir fica ""
     };
   });
-  const paradasComAccess = deduplicateParadas(
-    accessDataProd && Array.isArray(accessDataProd.paradas)
-      ? mergeById(listaParadas, accessDataProd.paradas)
+  const paradasFinal = deduplicateParadas(
+    accessDataProd && Array.isArray(accessDataProd.paradas) && accessDataProd.paradas.length
+      ? accessDataProd.paradas
       : listaParadas
   );
-  setHistoricoParadas(paradasComAccess);
+  setHistoricoParadas(paradasFinal);
 
   const maquinasVba = (() => {
     const byKey = new Map();
@@ -1885,8 +1868,8 @@ try {
       ...(Array.isArray(accessDataProd?.paradas) ? accessDataProd.paradas : []),
     ];
     const rowsFallback = [
-      ...(Array.isArray(producaoComAccess) ? producaoComAccess : []),
-      ...(Array.isArray(paradasComAccess) ? paradasComAccess : []),
+      ...(Array.isArray(producaoFinal) ? producaoFinal : []),
+      ...(Array.isArray(paradasFinal) ? paradasFinal : []),
     ];
     const rows = rowsAccess.length ? rowsAccess : rowsFallback;
 
@@ -1915,8 +1898,10 @@ try {
 
   console.log("✅ Dados da nuvem carregados!", {
     romaneios: listaRomaneios.length,
-    producao: producaoComAccess.length,
-    paradas: paradasComAccess.length,
+    producao: producaoFinal.length,
+    paradas: paradasFinal.length,
+    fonteProducao: accessDataProd?.producao?.length ? "access" : "firestore",
+    fonteParadas: accessDataProd?.paradas?.length ? "access" : "firestore",
     sampleProducaoData: listaProducao[0]?.data,
   });
 } catch (erro) {
@@ -1931,9 +1916,6 @@ try {
   };
 
   carregarDados();
-  return () => {
-    if (unsubProducao) unsubProducao();
-  };
 }, []);
 
   useEffect(() => {
