@@ -12013,3 +12013,5 @@
 "2026-08-12","Perfil ""U"" BR200 Regiane","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-12","Perfil ""U"" BR200 Regiane","12:00","13:41","TU001","Produção","TU",""
 "2026-08-12","Perfil ""U"" BR200 Regiane","13:41","14:40","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-08-12","Perfil ""U"" BR200 Regiane","14:40","16:30","TU001","Produção","TU",""
+"2026-08-12","Perfil ""U"" BR200 Regiane","16:30","16:48","TU002","Carregamento de bobina/matéria prima","IND",""
