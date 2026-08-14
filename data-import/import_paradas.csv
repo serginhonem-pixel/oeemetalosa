@@ -12106,3 +12106,6 @@
 "2026-08-13","Perf. Telha Trapezoidal Marafon","13:10","14:30","TU001","Produção","TU",""
 "2026-08-13","Perf. Telha Trapezoidal Marafon","14:30","15:00","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-08-13","Perf. Telha Trapezoidal Marafon","15:00","16:48","TU001","Produção","TU",""
+"2026-08-13","Perfil ""U"" ZL","07:00","07:10","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-08-13","Perfil ""U"" ZL","07:10","07:50","TU001","Produção","TU",""
+"2026-08-13","Perfil ""U"" ZL","07:50","08:10","TU002","Carregamento de bobina/matéria prima","IND",""
