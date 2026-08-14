@@ -12138,3 +12138,6 @@
 "2026-08-13","Perfil ""U"" BR200 Regiane","14:25","15:00","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-08-13","Perfil ""U"" BR200 Regiane","15:00","16:30","TU001","Produção","TU",""
 "2026-08-13","Perfil ""U"" BR200 Regiane","16:30","16:48","IN024","Aguardando equipamento compartilhado","IND",""
+"2026-08-13","Formadora de Tubos 1","07:00","08:40","IN005","Manutenção Corretiva","IND",""
+"2026-08-13","Formadora de Tubos 1","08:40","12:10","TU001","Produção","TU",""
+"2026-08-13","Formadora de Tubos 1","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
