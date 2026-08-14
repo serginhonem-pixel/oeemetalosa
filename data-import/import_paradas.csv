@@ -12168,3 +12168,6 @@
 "2026-08-12","Rodadeira 03","09:15","11:30","TU001","Produção","TU",""
 "2026-08-12","Rodadeira 03","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-12","Rodadeira 03","12:30","16:49","TU001","Produção","TU",""
+"2026-08-12","Prensa Debrum 03","07:00","07:10","IN038","Aguardando a entrega de EPI","IND",""
+"2026-08-12","Prensa Debrum 03","07:10","08:05","TU003","Produção Velocidade Reduzida","TU",""
+"2026-08-12","Prensa Debrum 03","08:05","08:10","TU004","Retirada de Material","TU",""
