@@ -12182,3 +12182,8 @@
 "2026-08-12","Prensa Debrum 03","14:10","14:15","TU004","Retirada de Material","TU",""
 "2026-08-12","Prensa Debrum 03","14:15","15:10","TU003","Produção Velocidade Reduzida","TU",""
 "2026-08-12","Prensa Debrum 03","15:10","16:48","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-08-13","Rodadeira 02","07:00","10:30","TU001","Produção","TU",""
+"2026-08-13","Rodadeira 02","10:30","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-08-13","Rodadeira 02","11:30","16:48","TU001","Produção","TU",""
+"2026-08-13","Rodadeira 03","07:05","07:40","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-08-13","Rodadeira 03","07:40","11:30","TU001","Produção","TU",""
