@@ -12240,3 +12240,6 @@
 "2026-08-14","Formadora de Tubos 1","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-14","Formadora de Tubos 1","13:10","14:00","IN005","Manutenção Corretiva","IND",""
 "2026-08-14","Formadora de Tubos 1","14:00","16:48","TU001","Produção","TU",""
+"2026-08-14","Dobra","07:00","07:57","TU001","Produção","TU",""
+"2026-08-14","Dobra","07:57","08:42","TU004","Retirada de Material","TU",""
+"2026-08-14","Dobra","08:42","09:15","TU001","Produção","TU",""
