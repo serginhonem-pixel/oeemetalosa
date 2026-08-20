@@ -12450,3 +12450,8 @@
 "2026-08-19","Prensa Debrum 03","07:10","16:48","IN033","Revezamento","IND",""
 "2026-08-19","Prensa Estampa 09","05:00","06:40","TU001","Produção","TU",""
 "2026-08-19","Prensa Estampa 09","06:40","07:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-08-19","Rodadeira 01","07:00","07:10","IN038","Aguardando a entrega de EPI","IND",""
+"2026-08-19","Rodadeira 01","07:10","08:47","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-08-19","Rodadeira 01","08:47","11:30","TU001","Produção","TU",""
+"2026-08-19","Rodadeira 01","11:30","16:48","TU001","Produção","TU",""
+"2026-08-19","Rodadeira 02","07:00","16:48","TU001","Produção","TU",""
