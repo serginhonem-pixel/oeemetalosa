@@ -12437,3 +12437,8 @@
 "2026-08-19","Perf. Telha Ondulada V8","14:00","15:20","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-08-19","Prensa Recorte 01","07:00","07:15","IN038","Aguardando a entrega de EPI","IND",""
 "2026-08-19","Prensa Recorte 01","07:15","08:15","TU001","Produção","TU",""
+"2026-08-19","Prensa Recorte 01","08:15","10:00","IN033","Revezamento","IND",""
+"2026-08-19","Prensa Recorte 01","10:00","10:15","TU001","Produção","TU",""
+"2026-08-19","Prensa Recorte 01","10:15","10:20","IN016","Falta de colaborador","IND",""
+"2026-08-19","Prensa Recorte 01","10:20","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-08-19","Prensa Recorte 01","12:30","16:48","IN021","Organização do setor - 5S","IND",""
