@@ -12605,3 +12605,7 @@
 "2026-08-21","Rodadeira 02","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-21","Rodadeira 02","12:30","14:25","TU001","Produção","TU",""
 "2026-08-21","Rodadeira 02","13:40","14:25","IN033","Revezamento","IND",""
+"2026-08-21","Rodadeira 02","14:25","16:48","TU001","Produção","TU",""
+"2026-08-21","Prensa Recorte 01","07:00","11:30","TU001","Produção","TU",""
+"2026-08-21","Prensa Recorte 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-08-21","Prensa Recorte 01","12:30","16:48","TU001","Produção","TU",""
