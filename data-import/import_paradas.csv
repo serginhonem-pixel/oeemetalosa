@@ -12582,3 +12582,7 @@
 "2026-08-21","Formadora de Tubos 1","07:00","12:10","TU001","Produção","TU",""
 "2026-08-21","Formadora de Tubos 1","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-21","Formadora de Tubos 1","13:10","16:48","TU001","Produção","TU",""
+"2026-08-21","Prensa 500 ton","05:00","07:00","IN033","Revezamento","IND",""
+"2026-08-21","Prensa 500 ton","07:00","08:30","TU001","Produção","TU",""
+"2026-08-21","Prensa 500 ton","08:30","09:05","RE008","Regulagem-Problema Equipamento","RET",""
+"2026-08-21","Prensa 500 ton","09:05","11:30","TU001","Produção","TU",""
