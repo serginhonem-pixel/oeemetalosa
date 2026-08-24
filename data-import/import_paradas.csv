@@ -12672,3 +12672,7 @@
 "2026-08-21","Corte","10:31","10:50","TU004","Retirada de Material","TU",""
 "2026-08-21","Corte","10:50","11:42","TU001","Produção","TU",""
 "2026-08-21","Corte","11:42","12:10","TU004","Retirada de Material","TU",""
+"2026-08-21","Corte","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-08-21","Corte","13:10","13:59","TU001","Produção","TU",""
+"2026-08-21","Corte","13:59","14:40","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-08-21","Corte","14:40","15:20","TU001","Produção","TU",""
