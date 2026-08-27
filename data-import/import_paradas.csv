@@ -12928,3 +12928,8 @@
 "2026-08-25","Rodadeira 02","09:15","10:30","TU001","Produção","TU",""
 "2026-08-25","Rodadeira 02","10:30","11:30","TU001","Produção","TU",""
 "2026-08-25","Rodadeira 02","11:30","16:48","TU001","Produção","TU",""
+"2026-08-25","Rodadeira 01","07:00","07:10","IN038","Aguardando a entrega de EPI","IND",""
+"2026-08-25","Rodadeira 01","07:10","10:00","TU001","Produção","TU",""
+"2026-08-25","Rodadeira 01","10:00","11:30","IN033","Revezamento","IND",""
+"2026-08-25","Rodadeira 01","11:30","13:15","IN033","Revezamento","IND",""
+"2026-08-25","Rodadeira 01","13:15","16:48","TU001","Produção","TU",""
