@@ -13093,3 +13093,7 @@
 "2026-08-29","Rodadeira 03","05:00","10:30","TU001","Produção","TU",""
 "2026-08-29","Rodadeira 03","10:30","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-29","Rodadeira 03","11:30","15:00","TU001","Produção","TU",""
+"2026-08-29","Rodadeira 01","08:00","10:30","TU001","Produção","TU",""
+"2026-08-29","Rodadeira 01","10:30","13:25","RE008","Regulagem-Problema Equipamento","RET",""
+"2026-08-29","Rodadeira 01","13:25","13:20","TU001","Produção","TU",""
+"2026-08-29","Rodadeira 01","13:20","16:48","TU002","Carregamento de bobina/matéria prima","IND",""
