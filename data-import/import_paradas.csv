@@ -13353,3 +13353,5 @@
 "2026-09-01","Perfil ""U"" BR200 Regiane","12:30","13:40","TU001","Produção","TU",""
 "2026-09-01","Perfil ""U"" BR200 Regiane","13:40","14:30","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-09-01","Perfil ""U"" BR200 Regiane","14:30","15:30","TU001","Produção","TU",""
+"2026-09-01","Perfil ""U"" BR200 Regiane","15:30","15:45","IN016","Falta de colaborador","IND",""
+"2026-09-01","Perfil ""U"" BR200 Regiane","15:45","16:48","TU001","Produção","TU",""
