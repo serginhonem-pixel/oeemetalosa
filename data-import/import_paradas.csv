@@ -13492,3 +13492,8 @@
 "2026-09-03","Rodadeira 01","10:30","11:30","IN038","Aguardando a entrega de EPI","IND",""
 "2026-09-03","Rodadeira 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-09-03","Rodadeira 01","12:30","16:48","TU001","Produção","TU",""
+"2026-09-03","Prensa Debrum 03","07:00","07:10","IN038","Aguardando a entrega de EPI","IND",""
+"2026-09-03","Prensa Debrum 03","07:10","07:30","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-03","Prensa Debrum 03","07:30","10:15","TU001","Produção","TU",""
+"2026-09-03","Prensa Debrum 03","10:15","10:40","RE002","Inspeção ou Troca Ferramental","RET",""
+"2026-09-03","Prensa Debrum 03","10:40","12:30","TU001","Produção","TU",""
