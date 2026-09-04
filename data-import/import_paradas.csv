@@ -13461,3 +13461,6 @@
 "2026-08-31","Prensa Recorte 02","07:25","08:00","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-08-31","Prensa Recorte 02","08:00","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-08-31","Prensa Recorte 02","11:30","12:30","TU001","Produção","TU",""
+"2026-09-03","Rodadeira 01","07:00","07:05","IN038","Aguardando a entrega de EPI","IND",""
+"2026-09-03","Rodadeira 01","07:05","07:30","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-03","Rodadeira 01","07:30","08:20","IN033","Revezamento","IND",""
