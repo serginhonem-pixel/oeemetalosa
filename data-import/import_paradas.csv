@@ -13445,3 +13445,6 @@
 "2026-09-01","Prensa Debrum 03","15:35","16:25","TU003","Produção Velocidade Reduzida","TU",""
 "2026-09-01","Prensa Debrum 03","16:25","16:30","TU004","Retirada de Material","TU",""
 "2026-09-01","Prensa Debrum 03","16:30","16:48","TU003","Produção Velocidade Reduzida","TU",""
+"2026-09-02","Formadora de Tubos 1","07:00","11:00","TU001","Produção","TU",""
+"2026-09-02","Formadora de Tubos 1","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-02","Formadora de Tubos 1","12:00","16:48","TU001","Produção","TU",""
