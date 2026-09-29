@@ -13846,3 +13846,8 @@
 "2026-09-18","Perfil ""U"" ZL","14:05","14:50","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-09-18","Perfil ""U"" ZL","14:50","15:20","TU001","Produção","TU",""
 "2026-09-18","Perfil ""U"" ZL","15:20","15:45","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-09-18","Perfil ""U"" ZL","15:45","16:25","TU001","Produção","TU",""
+"2026-09-18","Perfil ""U"" ZL","16:25","16:48","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-09-21","Perfil ""U"" BR200 Regiane","07:00","07:25","IN001","Diálogo de Segurança do Trabalho (DDS)","IND",""
+"2026-09-21","Perfil ""U"" BR200 Regiane","07:25","08:00","TU001","Produção","TU",""
+"2026-09-21","Perfil ""U"" BR200 Regiane","08:00","08:30","TU002","Carregamento de bobina/matéria prima","IND",""
