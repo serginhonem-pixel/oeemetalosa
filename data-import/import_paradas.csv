@@ -14026,3 +14026,6 @@
 "2026-09-08","Rodadeira 01","10:00","10:15","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-09-08","Rodadeira 01","10:15","11:30","TU001","Produção","TU",""
 "2026-09-08","Rodadeira 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-09","Prensa Recorte 02","07:00","11:30","TU001","Produção","TU",""
+"2026-09-09","Prensa Recorte 02","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-09","Prensa Recorte 02","12:30","16:48","TU001","Produção","TU",""
