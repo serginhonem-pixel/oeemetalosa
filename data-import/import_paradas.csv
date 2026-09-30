@@ -14241,3 +14241,6 @@
 "2026-09-14","Prensa Debrum 03","12:50","13:30","TU001","Produção","TU",""
 "2026-09-14","Prensa Debrum 03","13:30","14:40","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-09-14","Prensa Debrum 03","14:40","16:48","TU001","Produção","TU",""
+"2026-09-14","Prensa Debrum 03","07:00","07:30","IN038","Aguardando a entrega de EPI","IND",""
+"2026-09-14","Prensa Debrum 03","07:30","08:40","TU001","Produção","TU",""
+"2026-09-14","Prensa Debrum 03","08:40","15:00","IN003","Setup (Preparação de Máquina)","IND",""
