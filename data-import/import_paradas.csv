@@ -14154,3 +14154,8 @@
 "2026-09-11","Prensa Estampa 09","06:40","07:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-09-11","Prensa Estampa 09","14:00","14:40","PP002","Manutenção Programada","PP",""
 "2026-09-11","Prensa Estampa 09","07:00","14:40","TU001","Produção","TU",""
+"2026-09-11","Prensa Recorte 01","07:00","07:25","IN001","Diálogo de Segurança do Trabalho (DDS)","IND",""
+"2026-09-11","Prensa Recorte 01","07:25","08:05","TU001","Produção","TU",""
+"2026-09-11","Prensa Recorte 01","08:05","08:10","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-09-11","Prensa Recorte 01","08:10","08:40","TU001","Produção","TU",""
+"2026-09-11","Prensa Recorte 01","08:40","08:45","TU002","Carregamento de bobina/matéria prima","IND",""
