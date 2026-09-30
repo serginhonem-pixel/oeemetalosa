@@ -14269,3 +14269,8 @@
 "2026-09-15","Rodadeira 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-09-15","Rodadeira 01","12:30","14:00","TU001","Produção","TU",""
 "2026-09-15","Rodadeira 01","14:00","15:30","TU001","Produção","TU",""
+"2026-09-15","Prensa Recorte 02","07:00","08:30","TU001","Produção","TU",""
+"2026-09-15","Prensa Recorte 02","08:30","09:45","TU001","Produção","TU",""
+"2026-09-15","Prensa Recorte 02","09:45","09:50","TU004","Retirada de Material","TU",""
+"2026-09-15","Prensa Recorte 02","09:50","10:35","TU001","Produção","TU",""
+"2026-09-15","Prensa Recorte 02","10:35","10:40","TU002","Carregamento de bobina/matéria prima","IND",""
