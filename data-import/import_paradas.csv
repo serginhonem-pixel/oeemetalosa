@@ -14350,3 +14350,7 @@
 "2026-09-17","Rodadeira 02","10:30","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-09-17","Rodadeira 02","11:30","16:48","TU001","Produção","TU",""
 "2026-09-17","Rodadeira 01","07:00","07:30","TU001","Produção","TU",""
+"2026-09-17","Rodadeira 01","07:30","08:00","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-09-17","Rodadeira 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-17","Rodadeira 01","12:30","15:00","TU001","Produção","TU",""
+"2026-09-17","Rodadeira 01","15:00","16:48","IN033","Revezamento","IND",""
