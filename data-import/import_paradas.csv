@@ -14150,3 +14150,7 @@
 "2026-09-11","Prensa 500 ton","11:30","15:00","TU001","Produção","TU",""
 "2026-09-11","Prensa 500 ton","15:00","16:48","TU001","Produção","TU",""
 "2026-09-11","Prensa 500 ton","13:30","15:00","RE005","Regulagem-Problema Ferramental","RET",""
+"2026-09-11","Prensa Estampa 09","05:00","06:40","TU001","Produção","TU",""
+"2026-09-11","Prensa Estampa 09","06:40","07:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-11","Prensa Estampa 09","14:00","14:40","PP002","Manutenção Programada","PP",""
+"2026-09-11","Prensa Estampa 09","07:00","14:40","TU001","Produção","TU",""
