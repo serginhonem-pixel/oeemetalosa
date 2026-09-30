@@ -14287,3 +14287,7 @@
 "2026-09-15","Prensa 500 ton","10:30","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-09-15","Prensa 500 ton","11:30","15:00","TU001","Produção","TU",""
 "2026-09-15","Prensa 500 ton","15:00","16:48","TU001","Produção","TU",""
+"2026-09-16","Rodadeira 01","07:00","10:30","TU001","Produção","TU",""
+"2026-09-16","Rodadeira 01","10:30","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-16","Rodadeira 01","11:30","12:30","IN033","Revezamento","IND",""
+"2026-09-16","Rodadeira 01","12:30","16:48","TU001","Produção","TU",""
