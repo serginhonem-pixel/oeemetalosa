@@ -14588,3 +14588,8 @@
 "2026-09-24","Rodadeira 01","09:25","11:30","TU001","Produção","TU",""
 "2026-09-24","Rodadeira 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-09-24","Rodadeira 01","12:30","16:48","TU001","Produção","TU",""
+"2026-09-24","Prensa Recorte 02","07:00","10:40","TU001","Produção","TU",""
+"2026-09-24","Prensa Recorte 02","10:40","11:30","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-24","Prensa Recorte 02","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-24","Prensa Recorte 02","12:30","13:45","TU001","Produção","TU",""
+"2026-09-24","Prensa Recorte 02","13:45","14:40","RE005","Regulagem-Problema Ferramental","RET",""
