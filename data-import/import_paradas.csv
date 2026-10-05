@@ -14847,3 +14847,5 @@
 "2026-10-01","Dobra","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-10-01","Dobra","13:10","16:48","IN033","Revezamento","IND",""
 "2026-10-01","Perfil ""U"" BR200 Regiane","07:00","08:50","TU001","Produção","TU",""
+"2026-10-01","Perfil ""U"" BR200 Regiane","08:50","09:00","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-01","Perfil ""U"" BR200 Regiane","09:00","10:05","IN033","Revezamento","IND",""
