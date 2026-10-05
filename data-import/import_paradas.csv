@@ -14387,3 +14387,6 @@
 "2026-09-18","Rodadeira 01","14:00","14:40","TU001","Produção","TU",""
 "2026-09-18","Rodadeira 01","14:40","14:50","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-09-18","Rodadeira 01","14:50","16:48","TU001","Produção","TU",""
+"2026-09-18","Prensa Debrum 03","07:10","07:25","IN038","Aguardando a entrega de EPI","IND",""
+"2026-09-18","Prensa Debrum 03","07:25","08:45","TU001","Produção","TU",""
+"2026-09-18","Prensa Debrum 03","08:45","11:30","TU001","Produção","TU",""
