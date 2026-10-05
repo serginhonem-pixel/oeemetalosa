@@ -14384,3 +14384,6 @@
 "2026-09-18","Rodadeira 01","12:30","12:45","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-09-18","Rodadeira 01","12:45","13:45","TU001","Produção","TU",""
 "2026-09-18","Rodadeira 01","13:45","14:00","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-18","Rodadeira 01","14:00","14:40","TU001","Produção","TU",""
+"2026-09-18","Rodadeira 01","14:40","14:50","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-18","Rodadeira 01","14:50","16:48","TU001","Produção","TU",""
