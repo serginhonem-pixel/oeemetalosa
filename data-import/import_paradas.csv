@@ -14452,3 +14452,6 @@
 "2026-09-21","Prensa Debrum 03","11:30","12:35","TU001","Produção","TU",""
 "2026-09-21","Prensa Debrum 03","12:35","13:47","TU003","Produção Velocidade Reduzida","TU",""
 "2026-09-21","Prensa Debrum 03","13:47","15:00","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-22","Rodadeira 01","07:00","07:15","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-09-22","Rodadeira 01","07:15","10:45","TU001","Produção","TU",""
+"2026-09-22","Rodadeira 01","10:45","11:10","IN003","Setup (Preparação de Máquina)","IND",""
