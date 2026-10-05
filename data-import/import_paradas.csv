@@ -14560,3 +14560,8 @@
 "2026-09-24","Rodadeira 03","07:00","07:30","IN001","Diálogo de Segurança do Trabalho (DDS)","IND",""
 "2026-09-24","Rodadeira 03","07:30","07:50","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-09-24","Rodadeira 03","07:50","11:30","TU001","Produção","TU",""
+"2026-09-24","Rodadeira 03","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-09-24","Rodadeira 03","12:30","16:50","TU001","Produção","TU",""
+"2026-09-24","Prensa Debrum 03","07:00","07:15","IN038","Aguardando a entrega de EPI","IND",""
+"2026-09-24","Prensa Debrum 03","07:15","11:30","TU001","Produção","TU",""
+"2026-09-24","Prensa Debrum 03","11:30","16:48","TU001","Produção","TU",""
