@@ -14837,3 +14837,6 @@
 "2026-10-02","Formadora de Tubos 1","07:00","12:10","TU001","Produção","TU",""
 "2026-10-02","Formadora de Tubos 1","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-10-02","Formadora de Tubos 1","13:10","16:48","TU001","Produção","TU",""
+"2026-10-01","Dobra","07:00","07:25","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-01","Dobra","07:25","08:50","TU001","Produção","TU",""
+"2026-10-01","Dobra","08:50","09:25","TU004","Retirada de Material","TU",""
