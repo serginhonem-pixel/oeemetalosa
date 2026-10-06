@@ -14872,3 +14872,7 @@
 "2026-10-01","Perfil ""U"" ZL","15:00","15:30","TU001","Produção","TU",""
 "2026-10-01","Perfil ""U"" ZL","15:30","16:00","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-01","Perfil ""U"" ZL","16:00","16:48","TU001","Produção","TU",""
+"2026-10-05","Formadora de Tubos 1","07:00","08:42","RE008","Regulagem-Problema Equipamento","RET",""
+"2026-10-05","Formadora de Tubos 1","08:42","12:10","TU001","Produção","TU",""
+"2026-10-05","Formadora de Tubos 1","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-05","Formadora de Tubos 1","13:10","16:48","TU001","Produção","TU",""
