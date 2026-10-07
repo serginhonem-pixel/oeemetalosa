@@ -15086,3 +15086,5 @@
 "2026-10-06","Rodadeira 01","12:30","15:00","TU001","Produção","TU",""
 "2026-10-06","Rodadeira 01","15:00","16:48","IN033","Revezamento","IND",""
 "2026-10-06","Prensa Recorte 01","07:00","07:15","IN016","Falta de colaborador","IND",""
+"2026-10-06","Prensa Recorte 01","07:15","08:00","TU001","Produção","TU",""
+"2026-10-06","Prensa Recorte 01","08:00","08:05","TU002","Carregamento de bobina/matéria prima","IND",""
