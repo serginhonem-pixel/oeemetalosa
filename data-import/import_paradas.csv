@@ -15096,3 +15096,8 @@
 "2026-10-06","Prensa Debrum 03","10:30","11:30","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-10-06","Prensa Debrum 03","11:30","14:40","TU001","Produção","TU",""
 "2026-10-06","Prensa Debrum 03","14:40","16:48","TU001","Produção","TU",""
+"2026-10-06","Rodadeira 01","07:00","07:15","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-06","Rodadeira 01","07:15","11:30","IN033","Revezamento","IND",""
+"2026-10-06","Rodadeira 01","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-06","Rodadeira 01","12:30","12:40","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-06","Rodadeira 01","12:40","13:45","IN033","Revezamento","IND",""
