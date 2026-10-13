@@ -15320,3 +15320,5 @@
 "2026-10-08","Dobra","08:15","08:30","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-08","Dobra","08:30","10:30","TU001","Produção","TU",""
 "2026-10-08","Dobra","10:30","10:45","IN024","Aguardando equipamento compartilhado","IND",""
+"2026-10-08","Dobra","10:45","11:00","IN024","Aguardando equipamento compartilhado","IND",""
+"2026-10-08","Dobra","11:00","12:10","TU001","Produção","TU",""
