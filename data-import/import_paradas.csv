@@ -15316,3 +15316,7 @@
 "2026-10-09","Perfil ""U"" BR200 Regiane","13:50","14:15","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-09","Perfil ""U"" BR200 Regiane","14:15","15:05","TU001","Produção","TU",""
 "2026-10-08","Dobra","07:00","07:55","TU001","Produção","TU",""
+"2026-10-08","Dobra","07:55","08:15","TU004","Retirada de Material","TU",""
+"2026-10-08","Dobra","08:15","08:30","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-08","Dobra","08:30","10:30","TU001","Produção","TU",""
+"2026-10-08","Dobra","10:30","10:45","IN024","Aguardando equipamento compartilhado","IND",""
