@@ -15342,3 +15342,8 @@
 "2026-10-09","Dobra","08:35","08:50","TU004","Retirada de Material","TU",""
 "2026-10-09","Dobra","08:50","09:15","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-09","Dobra","09:15","11:40","TU001","Produção","TU",""
+"2026-10-09","Dobra","11:40","11:55","TU004","Retirada de Material","TU",""
+"2026-10-09","Dobra","11:55","12:10","TU001","Produção","TU",""
+"2026-10-09","Dobra","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-09","Dobra","13:10","15:50","IN032","Manutenção Autônoma","IND",""
+"2026-10-09","Dobra","15:50","16:48","TU001","Produção","TU",""
