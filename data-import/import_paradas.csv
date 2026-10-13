@@ -15294,3 +15294,7 @@
 "2026-10-08","Perfil ""U"" ZL","08:00","09:00","TU001","Produção","TU",""
 "2026-10-08","Perfil ""U"" ZL","09:00","09:15","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-08","Perfil ""U"" ZL","09:15","10:15","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-08","Perfil ""U"" ZL","10:15","11:00","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-08","Perfil ""U"" ZL","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-08","Perfil ""U"" ZL","12:00","16:48","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-09","Perfil ""U"" ZL","07:00","07:25","IN001","Diálogo de Segurança do Trabalho (DDS)","IND",""
