@@ -15462,3 +15462,8 @@
 "2026-10-15","Perfil ""U"" BR200 Regiane","08:10","08:55","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-15","Perfil ""U"" BR200 Regiane","08:55","09:20","TU001","Produção","TU",""
 "2026-10-15","Perfil ""U"" BR200 Regiane","09:20","11:00","TU004","Retirada de Material","TU",""
+"2026-10-15","Perfil ""U"" BR200 Regiane","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-15","Perfil ""U"" BR200 Regiane","12:00","12:40","TU004","Retirada de Material","TU",""
+"2026-10-15","Perfil ""U"" BR200 Regiane","12:40","14:30","TU001","Produção","TU",""
+"2026-10-15","Perfil ""U"" BR200 Regiane","14:30","14:50","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-15","Perfil ""U"" BR200 Regiane","14:50","16:48","TU001","Produção","TU",""
