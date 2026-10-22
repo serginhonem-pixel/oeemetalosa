@@ -15645,3 +15645,6 @@
 "2026-10-20","Perfil ""U"" BR200 Regiane","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-10-20","Perfil ""U"" BR200 Regiane","12:00","16:05","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-10-20","Perfil ""U"" BR200 Regiane","16:05","16:48","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-20","Perfil ""U"" ZL","07:00","11:00","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-20","Perfil ""U"" ZL","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-20","Perfil ""U"" ZL","12:00","16:05","IN003","Setup (Preparação de Máquina)","IND",""
