@@ -15698,3 +15698,8 @@
 "2026-10-20","Corte","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-10-20","Corte","13:10","15:00","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-10-20","Corte","15:00","16:48","IN024","Aguardando equipamento compartilhado","IND",""
+"2026-10-20","Perfil ""U"" Marafon","07:00","09:45","RE008","Regulagem-Problema Equipamento","RET",""
+"2026-10-20","Perfil ""U"" Marafon","09:45","10:15","TU001","Produção","TU",""
+"2026-10-20","Perfil ""U"" Marafon","10:15","11:00","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-20","Perfil ""U"" Marafon","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-20","Perfil ""U"" Marafon","12:00","12:42","TU001","Produção","TU",""
