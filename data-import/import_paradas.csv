@@ -15836,3 +15836,5 @@
 "2026-10-27","Formadora de Tubos 1","13:10","15:40","TU001","Produção","TU",""
 "2026-10-27","Formadora de Tubos 1","15:40","16:30","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-10-27","Formadora de Tubos 1","16:30","16:48","TU001","Produção","TU",""
+"2026-10-23","Corte","07:00","07:20","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-23","Corte","07:20","08:00","IN003","Setup (Preparação de Máquina)","IND",""
