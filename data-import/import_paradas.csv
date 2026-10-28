@@ -15810,3 +15810,6 @@
 "2026-10-23","Perfil ""U"" Marafon","15:30","16:00","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-23","Perfil ""U"" Marafon","16:00","16:05","TU001","Produção","TU",""
 "2026-10-26","Perfil ""U"" BR200 Regiane","07:00","07:20","IN001","Diálogo de Segurança do Trabalho (DDS)","IND",""
+"2026-10-26","Perfil ""U"" BR200 Regiane","07:20","11:00","PP002","Manutenção Programada","PP",""
+"2026-10-26","Perfil ""U"" BR200 Regiane","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-26","Perfil ""U"" BR200 Regiane","12:00","16:48","PP002","Manutenção Programada","PP",""
