@@ -15954,3 +15954,8 @@
 "2026-10-28","Perfil ""U"" Marafon","09:36","10:10","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-28","Perfil ""U"" Marafon","10:10","10:40","TU001","Produção","TU",""
 "2026-10-28","Perfil ""U"" Marafon","10:40","11:00","TU004","Retirada de Material","TU",""
+"2026-10-28","Perfil ""U"" Marafon","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-28","Perfil ""U"" Marafon","12:00","12:37","TU004","Retirada de Material","TU",""
+"2026-10-28","Perfil ""U"" Marafon","12:37","12:40","TU001","Produção","TU",""
+"2026-10-28","Perfil ""U"" Marafon","12:40","13:05","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-28","Perfil ""U"" Marafon","13:05","14:30","TU001","Produção","TU",""
