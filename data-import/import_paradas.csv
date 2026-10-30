@@ -16016,3 +16016,7 @@
 "2026-10-29","Dobra","13:55","14:00","TU002","Carregamento de bobina/matéria prima","IND",""
 "2026-10-29","Dobra","14:00","14:10","TU004","Retirada de Material","TU",""
 "2026-10-29","Dobra","14:10","16:48","TU001","Produção","TU",""
+"2026-10-29","Perfil ""U"" ZL","07:00","07:30","TU001","Produção","TU",""
+"2026-10-29","Perfil ""U"" ZL","07:30","11:00","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-29","Perfil ""U"" ZL","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-29","Perfil ""U"" ZL","12:00","16:48","IN003","Setup (Preparação de Máquina)","IND",""
