@@ -15992,3 +15992,7 @@
 "2026-10-29","Corte","10:00","10:23","IN007","Treinamento / Reunião Geral","IND",""
 "2026-10-29","Corte","10:23","11:00","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-10-29","Corte","11:00","11:30","TU001","Produção","TU",""
+"2026-10-29","Corte","11:30","12:10","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-29","Corte","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-29","Corte","13:10","14:00","IN003","Setup (Preparação de Máquina)","IND",""
+"2026-10-29","Corte","14:00","16:48","IN033","Revezamento","IND",""
