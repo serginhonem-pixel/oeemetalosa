@@ -15996,3 +15996,5 @@
 "2026-10-29","Corte","12:10","13:10","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-10-29","Corte","13:10","14:00","IN003","Setup (Preparação de Máquina)","IND",""
 "2026-10-29","Corte","14:00","16:48","IN033","Revezamento","IND",""
+"2026-10-29","Corte","07:00","08:40","TU001","Produção","TU",""
+"2026-10-29","Corte","08:40","10:30","IN021","Organização do setor - 5S","IND",""
