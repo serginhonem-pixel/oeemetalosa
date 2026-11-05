@@ -16508,3 +16508,12 @@
 "2026-10-21","Prensa 500 ton","12:30","15:00","TU001","Produção","TU",""
 "2026-10-21","Prensa 500 ton","08:30","10:25","RE008","Regulagem-Problema Equipamento","RET","Máquina parada das 08:30 às 10:25.
 Problema na água."
+"2026-10-21","Rodadeira 02","07:00","09:00","TU001","Produção","TU",""
+"2026-10-21","Rodadeira 02","09:00","09:25","IN033","Revezamento","IND",""
+"2026-10-21","Rodadeira 02","07:00","10:30","TU001","Produção","TU",""
+"2026-10-21","Rodadeira 02","10:30","11:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-21","Rodadeira 02","11:30","12:30","TU001","Produção","TU",""
+"2026-10-21","Rodadeira 02","12:30","15:50","RE005","Regulagem-Problema Ferramental","RET",""
+"2026-10-21","Rodadeira 02","15:50","16:48","TU001","Produção","TU",""
+"2026-10-21","Prensa Estampa 04","05:00","06:45","TU001","Produção","TU",""
+"2026-10-21","Prensa Estampa 04","06:45","07:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
