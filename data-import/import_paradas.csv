@@ -16161,3 +16161,6 @@
 "2026-10-07","Rodadeira 02","07:00","11:30","TU001","Produção","TU",""
 "2026-10-07","Rodadeira 02","11:30","12:30","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
 "2026-10-07","Rodadeira 02","12:30","16:48","IN033","Revezamento","IND",""
+"2026-10-07","Prensa Recorte 01","07:00","07:30","TU001","Produção","TU",""
+"2026-10-07","Prensa Recorte 01","07:30","07:35","TU002","Carregamento de bobina/matéria prima","IND",""
+"2026-10-07","Prensa Recorte 01","07:35","08:35","TU001","Produção","TU",""
