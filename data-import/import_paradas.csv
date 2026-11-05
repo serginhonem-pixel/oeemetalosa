@@ -16150,3 +16150,8 @@
 "2026-11-03","Dobra","16:30","16:48","IN007","Treinamento / Reunião Geral","IND",""
 "2026-10-07","Rodadeira 02","07:00","11:00","TU001","Produção","TU",""
 "2026-10-07","Rodadeira 02","11:00","12:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-07","Rodadeira 02","12:00","12:45","IN005","Manutenção Corretiva","IND",""
+"2026-10-07","Rodadeira 02","12:45","16:48","TU001","Produção","TU",""
+"2026-10-07","Prensa Estampa 09","05:00","06:40","TU001","Produção","TU",""
+"2026-10-07","Prensa Estampa 09","06:40","07:00","PP006","Refeição (Almoço, Jantar e Lanche)","PP",""
+"2026-10-07","Prensa Estampa 09","07:00","16:48","TU001","Produção","TU",""
