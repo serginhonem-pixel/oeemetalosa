@@ -1049,12 +1049,24 @@ const ProcessosScreen = () => {
     };
 
     // Valor total compacto no topo de cada barra (única informação sobre a barra)
-    const ComparacaoValorLabel = ({ x, y, width, value }) => {
+    const ComparacaoValorLabel = ({ x, y, width, height, value, ano }) => {
         const n = Number(value);
         if (!Number.isFinite(n) || n <= 0) return null;
+        const inteiro = n.toLocaleString('pt-BR');
+        const cx = x + width / 2;
+        // Número inteiro na vertical dentro da barra; se a barra for baixa, vai curto por cima
+        if (height >= 110) {
+            return (
+                <text x={cx} y={y + 14} transform={`rotate(-90, ${cx}, ${y + 14})`}
+                    textAnchor="end" dominantBaseline="central"
+                    fill={ano === '2026' ? '#06222B' : '#FFFFFF'} fontSize={18} fontWeight={800}
+                    style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {inteiro}
+                </text>
+            );
+        }
         return (
-            <text x={x + width / 2} y={y - 8} fill="#E5E7EB" fontSize={13} fontWeight={700}
-                textAnchor="middle">
+            <text x={cx} y={y - 8} fill="#E5E7EB" fontSize={15} fontWeight={700} textAnchor="middle">
                 {fmtCompacto(n)}
             </text>
         );
@@ -1068,13 +1080,13 @@ const ProcessosScreen = () => {
         const txt = pct === null ? '' : `${pct > 0 ? '▲ +' : pct < 0 ? '▼ ' : '▶ '}${pct.toFixed(1)}%`;
         return (
             <g transform={`translate(${x},${y})`}>
-                <text y={20} textAnchor="middle" fill="#D1D5DB" fontSize={14} fontWeight={600}>
+                <text y={20} textAnchor="middle" fill="#D1D5DB" fontSize={16} fontWeight={600}>
                     {payload.value}
                 </text>
                 {txt && (
                     <>
-                        <rect x={-31} y={30} width={62} height={22} rx={11} fill={cor} fillOpacity={0.14} />
-                        <text y={45} textAnchor="middle" fill={cor} fontSize={12} fontWeight={800}>{txt}</text>
+                        <rect x={-34} y={30} width={68} height={23} rx={11} fill={cor} fillOpacity={0.14} />
+                        <text y={45} textAnchor="middle" fill={cor} fontSize={13} fontWeight={800}>{txt}</text>
                     </>
                 )}
                 {['2025', '2026'].map((ano, i) => {
@@ -1084,7 +1096,7 @@ const ProcessosScreen = () => {
                     if (!Number.isFinite(md) || md <= 0) md = Number(getMediaDiaByMesLabel(`${payload.value} ${ano}`, q).mediaDia);
                     if (!Number.isFinite(md) || md <= 0) return null;
                     return (
-                        <text key={ano} y={68 + i * 16} textAnchor="middle" fill={COR_ANO[ano]} fontSize={12} fontWeight={700}>
+                        <text key={ano} y={71 + i * 18} textAnchor="middle" fill={COR_ANO[ano]} fontSize={14} fontWeight={700}>
                             {md.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}/dia
                         </text>
                     );
@@ -1975,7 +1987,7 @@ const ProcessosScreen = () => {
                                                 <BarChart data={obterDadosFiltrados()} barGap={3} barCategoryGap="18%" margin={{ top: 30, right: 20, left: 10, bottom: visualizacao === 'comparacao' ? 20 : 80 }}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={visualizacao === 'comparacao' ? 1 : 2} vertical={visualizacao !== 'comparacao'} />
                                                     {visualizacao === 'comparacao' ? (
-                                                        <XAxis dataKey="mes" stroke="#4B5563" tickLine={false} interval={0} height={110} tick={<ComparacaoTick />} />
+                                                        <XAxis dataKey="mes" stroke="#4B5563" tickLine={false} interval={0} height={116} tick={<ComparacaoTick />} />
                                                     ) : (
                                                         <XAxis
                                                             dataKey="mes"
@@ -2046,7 +2058,7 @@ const ProcessosScreen = () => {
                                                                 radius={[4, 4, 0, 0]}
                                                                 isAnimationActive={!exportandoPptx}
                                                             >
-                                                                <LabelList dataKey="quantidade_2025" content={ComparacaoValorLabel} />
+                                                                <LabelList dataKey="quantidade_2025" content={(p) => <ComparacaoValorLabel {...p} ano="2025" />} />
                                                             </Bar>
                                                             <Bar
                                                                 dataKey="quantidade_2026"
@@ -2054,7 +2066,7 @@ const ProcessosScreen = () => {
                                                                 radius={[4, 4, 0, 0]}
                                                                 isAnimationActive={!exportandoPptx}
                                                             >
-                                                                <LabelList dataKey="quantidade_2026" content={ComparacaoValorLabel} />
+                                                                <LabelList dataKey="quantidade_2026" content={(p) => <ComparacaoValorLabel {...p} ano="2026" />} />
                                                             </Bar>
                                                         </>
                                                     ) : (
