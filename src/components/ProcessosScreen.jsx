@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import PptxGenJS from 'pptxgenjs';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LabelList, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LabelList, LineChart, Line, ComposedChart } from 'recharts';
 
 const ProcessosScreen = () => {
     const [processo, setProcesso] = useState('');
@@ -1239,6 +1239,87 @@ const ProcessosScreen = () => {
         return { total, media, mediaDia, maiorMes, maiorMesNome, menorMes, menorMesNome };
     };
 
+    // Projeção de fechamento do ano: realizado + estimativa dos meses restantes
+    const calcularProjecaoFechamento = () => {
+        const NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        const hoje = new Date();
+        const ano = hoje.getFullYear();
+        const mesAtual = hoje.getMonth();
+
+        const porAno = (a) => {
+            const arr = Array(12).fill(null);
+            dadosComVariacao.forEach(d => {
+                const [nome, anoItem] = String(d.mes || '').split(' ');
+                if (Number(anoItem) !== a) return;
+                const idx = NOMES.indexOf(nome);
+                if (idx >= 0) arr[idx] = (arr[idx] || 0) + Number(d.quantidade || 0);
+            });
+            return arr;
+        };
+        const atual = porAno(ano);
+        const anterior = porAno(ano - 1);
+
+        // meses fechados = anteriores ao mês corrente, com lançamento
+        let fechados = atual.map((v, i) => (v !== null && v > 0 && i < mesAtual ? i : -1)).filter(i => i >= 0);
+        if (fechados.length === 0) fechados = atual.map((v, i) => (v !== null && v > 0 ? i : -1)).filter(i => i >= 0);
+        if (fechados.length === 0) return null;
+
+        const somaFechados = fechados.reduce((s, i) => s + atual[i], 0);
+        const mediaMensal = somaFechados / fechados.length;
+        const somaAnteriorMesmos = fechados.reduce((s, i) => s + (anterior[i] || 0), 0);
+        const ritmo = somaAnteriorMesmos > 0 ? somaFechados / somaAnteriorMesmos : null;
+
+        const ultimoFechado = Math.max(...fechados);
+        const primeiroAberto = Math.min(ultimoFechado + 1, 11);
+
+        const meses = NOMES.map((nome, i) => {
+            const real = atual[i];
+            const aberto = i >= primeiroAberto;
+            const estMedia = aberto ? mediaMensal : null;
+            const estSazonal = aberto && ritmo !== null && anterior[i] ? anterior[i] * ritmo : null;
+            return {
+                mes: nome.slice(0, 3),
+                mesCompleto: nome,
+                anterior: anterior[i],
+                realizado: real,
+                aberto,
+                estMedia,
+                estSazonal
+            };
+        });
+
+        const totalCom = (chave) => meses.reduce((s, m) => {
+            const real = m.realizado || 0;
+            if (!m.aberto) return s + real;
+            const est = m[chave] ?? m.estMedia ?? 0;
+            return s + Math.max(real, est);
+        }, 0);
+
+        const realizadoYTD = atual.reduce((s, v) => s + (v || 0), 0);
+        const totalMedia = totalCom('estMedia');
+        const totalSazonal = ritmo !== null ? totalCom('estSazonal') : null;
+        const totalAnterior = anterior.reduce((s, v) => s + (v || 0), 0);
+        const metodoGrafico = totalSazonal !== null ? 'estSazonal' : 'estMedia';
+
+        const dadosGrafico = meses.map(m => {
+            const real = m.realizado || 0;
+            const est = m.aberto ? (m[metodoGrafico] ?? m.estMedia ?? 0) : 0;
+            return {
+                mes: m.mes,
+                anterior: m.anterior,
+                realizado: real,
+                projetado: m.aberto ? Math.max(est - real, 0) : 0
+            };
+        });
+
+        return {
+            ano, realizadoYTD, totalMedia, totalSazonal, totalAnterior, ritmo, mediaMensal,
+            mesesFechados: fechados.length, mesesRestantes: 11 - ultimoFechado,
+            primeiroAbertoNome: NOMES[primeiroAberto], ultimoFechadoNome: NOMES[ultimoFechado],
+            dadosGrafico, metodoGrafico
+        };
+    };
+
     const calcularKPIsPorAno = () => {
         const anoAtual = anoSelecionado;
         const anoAnterior = anoAtual - 1;
@@ -1337,6 +1418,7 @@ const ProcessosScreen = () => {
     };
 
     const dadosGraficoFiltrados = obterDadosFiltrados();
+    const projecaoFechamento = calcularProjecaoFechamento();
 
     const getTop5Processos = () => {
         const tipoMap = {};
@@ -2202,6 +2284,68 @@ const ProcessosScreen = () => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Projeção de Fechamento do Ano */}
+                            {projecaoFechamento && (() => {
+                                const p = projecaoFechamento;
+                                const fmt = (n) => Math.round(n).toLocaleString('pt-BR');
+                                const principal = p.totalSazonal ?? p.totalMedia;
+                                const vsAnterior = p.totalAnterior > 0 ? ((principal - p.totalAnterior) / p.totalAnterior) * 100 : null;
+                                const sinal = (v) => (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%';
+                                return (
+                                    <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-6">
+                                        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+                                            <h3 className="text-2xl font-bold text-white">Projeção de Fechamento {p.ano}</h3>
+                                            <span className="text-sm text-gray-400">
+                                                Base: {p.mesesFechados} {p.mesesFechados === 1 ? 'mês fechado' : 'meses fechados'} (até {p.ultimoFechadoNome}) · {p.mesesRestantes} {p.mesesRestantes === 1 ? 'mês' : 'meses'} a projetar
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                            <div className="bg-zinc-800/70 border border-white/10 rounded-xl p-4">
+                                                <div className="text-gray-300 text-sm font-bold mb-2 tracking-wide">REALIZADO ATÉ AGORA</div>
+                                                <div className="text-white text-3xl font-black">{fmt(p.realizadoYTD)}</div>
+                                                <div className="text-gray-400 text-xs font-semibold mt-1">Acumulado {p.ano}</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border-2 border-emerald-500/50 rounded-xl p-4">
+                                                <div className="text-emerald-300 text-sm font-bold mb-2 tracking-wide">PROJEÇÃO DO ANO</div>
+                                                <div className="text-white text-3xl font-black">{fmt(principal)}</div>
+                                                <div className="text-emerald-400 text-xs font-semibold mt-1">
+                                                    {p.totalSazonal !== null ? 'Ritmo × sazonalidade' : 'Média mensal'}
+                                                    {vsAnterior !== null && ` · ${sinal(vsAnterior)} vs ${p.ano - 1}`}
+                                                </div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-cyan-900/60 to-cyan-800/30 border-2 border-cyan-500/50 rounded-xl p-4">
+                                                <div className="text-cyan-300 text-sm font-bold mb-2 tracking-wide">PELA MÉDIA MENSAL</div>
+                                                <div className="text-white text-3xl font-black">{fmt(p.totalMedia)}</div>
+                                                <div className="text-cyan-400 text-xs font-semibold mt-1">Média de {fmt(p.mediaMensal)}/mês</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-amber-900/50 to-amber-800/20 border-2 border-amber-500/40 rounded-xl p-4">
+                                                <div className="text-amber-300 text-sm font-bold mb-2 tracking-wide">FECHOU {p.ano - 1}</div>
+                                                <div className="text-white text-3xl font-black">{fmt(p.totalAnterior)}</div>
+                                                <div className="text-amber-400 text-xs font-semibold mt-1">
+                                                    {p.ritmo !== null ? `Ritmo ${p.ano}: ${sinal((p.ritmo - 1) * 100)} vs ${p.ano - 1}` : 'Sem base de comparação'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <ResponsiveContainer width="100%" height={340}>
+                                            <ComposedChart data={p.dadosGrafico} margin={{ top: 20, right: 20, left: 10, bottom: 10 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                                                <XAxis dataKey="mes" stroke="#9CA3AF" tick={{ fill: '#D1D5DB', fontSize: 15, fontWeight: 700 }} tickLine={false} />
+                                                <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF', fontSize: 13 }} tickFormatter={(v) => v.toLocaleString('pt-BR')} width={60} />
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: 8 }}
+                                                    labelStyle={{ color: '#fff', fontWeight: 700 }}
+                                                    formatter={(v, name) => [Math.round(v).toLocaleString('pt-BR'), name]}
+                                                />
+                                                <Legend wrapperStyle={{ color: '#D1D5DB', fontSize: 13 }} />
+                                                <Bar dataKey="realizado" name={`Realizado ${p.ano}`} stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} />
+                                                <Bar dataKey="projetado" name="Projetado" stackId="a" fill="#10B981" fillOpacity={0.3} stroke="#10B981" strokeDasharray="4 3" radius={[4, 4, 0, 0]} />
+                                                <Line dataKey="anterior" name={`${p.ano - 1}`} stroke="#F59E0B" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                                            </ComposedChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                );
+                            })()}
 
                             {/* KPI Cards - Análise de Desempenho */}
                             {analiseDesempenho && (
