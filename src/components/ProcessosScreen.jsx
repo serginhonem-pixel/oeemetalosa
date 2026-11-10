@@ -1033,146 +1033,102 @@ const ProcessosScreen = () => {
         );
     };
 
-    // Label customizado para gráfico empilhado - mostra total da coluna e variação
-    const ComparisonMonthBarShape = ({ x, y, width, height, fill, payload, value, index, ano, mostrarComparacaoAno = false }) => {
-        if (!payload || !Number.isFinite(Number(value))) return null;
+    // ── Comparação 2025 × 2026 ─────────────────────────────────────────────
+    const COR_ANO = { '2025': '#8B5CF6', '2026': '#06B6D4' };
+    const fmtCompacto = (n) => {
+        const v = Number(n) || 0;
+        if (Math.abs(v) >= 1e6) return `${(v / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mi`;
+        if (Math.abs(v) >= 1e3) return `${(v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil`;
+        return v.toLocaleString('pt-BR');
+    };
+    const deltaAno = (d) => {
+        const a = Number(d?.quantidade_2025) || 0;
+        const b = Number(d?.quantidade_2026) || 0;
+        if (a <= 0 || b <= 0) return null;
+        return ((b - a) / a) * 100;
+    };
 
-        let mediaDia = Number(payload[`mediaDia_${ano}`]);
-        if (!Number.isFinite(mediaDia) || mediaDia === 0) {
-            const computed = getMediaDiaByMesLabel(`${payload.mes} ${ano}`, Number(value));
-            if (Number.isFinite(computed.mediaDia) && computed.mediaDia > 0) mediaDia = computed.mediaDia;
-        }
-        const dadosComparacao = obterDadosFiltrados();
-        const prevItem = index > 0 ? dadosComparacao?.[index - 1] : null;
-        let prevMediaDia = prevItem ? Number(prevItem[`mediaDia_${ano}`]) : null;
-        if (prevItem && (!Number.isFinite(prevMediaDia) || prevMediaDia === 0)) {
-            const computed = getMediaDiaByMesLabel(`${prevItem.mes} ${ano}`, Number(prevItem[`quantidade_${ano}`]));
-            if (Number.isFinite(computed.mediaDia) && computed.mediaDia > 0) prevMediaDia = computed.mediaDia;
-        }
-        const mediaDiaDiffPct = (
-            Number.isFinite(mediaDia) &&
-            Number.isFinite(prevMediaDia) &&
-            prevMediaDia !== 0
-        )
-            ? ((mediaDia - prevMediaDia) / prevMediaDia) * 100
-            : null;
-
-        const formatted = Number(value).toLocaleString('pt-BR');
-        const mediaDiaText = Number.isFinite(mediaDia)
-            ? `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia`
-            : '';
-        const hasTrend = Number.isFinite(mediaDiaDiffPct);
-        const trendText = hasTrend ? `${mediaDiaDiffPct > 0 ? '+' : ''}${mediaDiaDiffPct.toFixed(1)}%` : '';
-        const trendColor = mediaDiaDiffPct > 0 ? '#22c55e' : mediaDiaDiffPct < 0 ? '#ef4444' : '#9CA3AF';
-
-        const valor2025 = Number(payload.quantidade_2025) || 0;
-        const valor2026 = Number(payload.quantidade_2026) || 0;
-        const percentual = valor2025 > 0 ? ((valor2026 - valor2025) / valor2025) * 100 : null;
-        const pctText = Number.isFinite(percentual) ? `${percentual > 0 ? '+' : ''}${percentual.toFixed(1)}%` : '';
-        const pctColor = percentual > 0 ? '#22c55e' : percentual < 0 ? '#ef4444' : '#9CA3AF';
-        const pctArrow = percentual > 0 ? '▲' : percentual < 0 ? '▼' : '▶';
-
-        const numValue = Number(value);
-        const hasValue = numValue > 0;
-        const barBottom = y + height;
-        const centerX   = x + width / 2;
-
-        if (ano === '2025') {
-            // 2025 renderiza só o rect — rótulos ficam no shape do 2026 (que renderiza por cima)
-            return <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />;
-        }
-
-        // ── 2026: renderiza rect + todos os rótulos (fica no topo do z-order) ──
-
-        // Recalcular posição Y da barra 2025 usando a escala linear
-        const val25 = Number(payload.quantidade_2025) || 0;
-        const height25 = (numValue > 0 && val25 > 0) ? height * (val25 / numValue) : 0;
-        const y25  = barBottom - height25;
-        const has25 = val25 > 0;
-        const has26 = numValue > 0;
-
-        // Centro aproximado da barra 2025 (um barWidth + 4px de gap à esquerda)
-        const cx25   = x - width / 2 - 4;
-        const cx26   = centerX;
-        const pairCX = (cx25 + cx26) / 2;
-
-        // Topo mais alto do par → rótulos vão acima disso
-        const topY = has26 ? y : (has25 ? y25 : barBottom);
-        const valY = topY - 13;
-        const pctY = topY - 38;
-
-        // Média/dia
-        let md25 = Number(payload.mediaDia_2025);
-        if (!Number.isFinite(md25) || md25 === 0) {
-            const c = getMediaDiaByMesLabel(`${payload.mes} 2025`, val25);
-            if (Number.isFinite(c.mediaDia) && c.mediaDia > 0) md25 = c.mediaDia;
-        }
-        const md25Text = (Number.isFinite(md25) && md25 > 0)
-            ? `${md25.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia` : null;
-        const md26Text = (Number.isFinite(mediaDia) && mediaDia > 0)
-            ? `${mediaDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia` : null;
-
-        // Tendência (mediaDia mês a mês)
-        const trendColor26 = mediaDiaDiffPct > 0 ? '#22c55e' : mediaDiaDiffPct < 0 ? '#ef4444' : '#9CA3AF';
-
-        // Centro vertical de cada barra para o texto rotacionado
-        const midY25 = y25 + height25 / 2;
-        const midY26 = y  + height  / 2;
-
+    // Valor total compacto no topo de cada barra (única informação sobre a barra)
+    const ComparacaoValorLabel = ({ x, y, width, value }) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return null;
         return (
-            <g>
-                <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={fill} />
+            <text x={x + width / 2} y={y - 8} fill="#E5E7EB" fontSize={13} fontWeight={700}
+                textAnchor="middle">
+                {fmtCompacto(n)}
+            </text>
+        );
+    };
 
-                {/* % ano-a-ano centralizado acima do par */}
-                {has25 && has26 && Number.isFinite(percentual) && (
-                    <text x={pairCX} y={pctY} fill={pctColor} fontSize={20} fontWeight={900}
-                        textAnchor="middle" stroke="#000" strokeWidth="0.5" paintOrder="stroke">
-                        {pctArrow} {pctText}
-                    </text>
+    // Eixo X: mês na horizontal + variação ano a ano em "pílula" abaixo
+    const ComparacaoTick = ({ x, y, payload }) => {
+        const d = obterDadosFiltrados().find(i => i.mes === payload.value);
+        const pct = deltaAno(d);
+        const cor = pct > 0 ? '#22c55e' : pct < 0 ? '#f87171' : '#9CA3AF';
+        const txt = pct === null ? '' : `${pct > 0 ? '▲ +' : pct < 0 ? '▼ ' : '▶ '}${pct.toFixed(1)}%`;
+        return (
+            <g transform={`translate(${x},${y})`}>
+                <text y={20} textAnchor="middle" fill="#D1D5DB" fontSize={14} fontWeight={600}>
+                    {payload.value}
+                </text>
+                {txt && (
+                    <>
+                        <rect x={-31} y={30} width={62} height={22} rx={11} fill={cor} fillOpacity={0.14} />
+                        <text y={45} textAnchor="middle" fill={cor} fontSize={12} fontWeight={800}>{txt}</text>
+                    </>
                 )}
-
-                {/* Valor 2025 — cresce para a esquerda a partir da borda esquerda do 2026 */}
-                {has25 && (
-                    <text x={x - 4} y={valY} fill="#F9FAFB" fontSize={21} fontWeight={900}
-                        textAnchor="end" stroke="#000" strokeWidth="0.5" paintOrder="stroke">
-                        {val25.toLocaleString('pt-BR')}
-                    </text>
-                )}
-
-                {/* Valor 2026 — cresce para a direita a partir da borda esquerda do 2026 */}
-                {has26 && (
-                    <text x={x + 4} y={valY} fill="#F9FAFB" fontSize={21} fontWeight={900}
-                        textAnchor="start" stroke="#000" strokeWidth="0.5" paintOrder="stroke">
-                        {numValue.toLocaleString('pt-BR')}
-                    </text>
-                )}
-
-                {/* Média/dia 2025 — rotacionado 90° no centro da barra */}
-                {has25 && md25Text && height25 > 40 && (
-                    <text
-                        x={cx25} y={midY25}
-                        fill="#CBD5E1" fontSize={21} fontWeight={800}
-                        textAnchor="middle" dominantBaseline="central"
-                        transform={`rotate(-90, ${cx25}, ${midY25})`}
-                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
-                        {md25Text}
-                    </text>
-                )}
-
-                {/* Média/dia 2026 — rotacionado 90° no centro da barra */}
-                {has26 && md26Text && height > 40 && (
-                    <text
-                        x={cx26} y={midY26}
-                        fill="#CBD5E1" fontSize={21} fontWeight={800}
-                        textAnchor="middle" dominantBaseline="central"
-                        transform={`rotate(-90, ${cx26}, ${midY26})`}
-                        stroke="#000" strokeWidth="0.4" paintOrder="stroke">
-                        {md26Text}
-                    </text>
-                )}
+                {['2025', '2026'].map((ano, i) => {
+                    const q = Number(d?.[`quantidade_${ano}`]) || 0;
+                    if (q <= 0) return null;
+                    let md = Number(d?.[`mediaDia_${ano}`]);
+                    if (!Number.isFinite(md) || md <= 0) md = Number(getMediaDiaByMesLabel(`${payload.value} ${ano}`, q).mediaDia);
+                    if (!Number.isFinite(md) || md <= 0) return null;
+                    return (
+                        <text key={ano} y={68 + i * 16} textAnchor="middle" fill={COR_ANO[ano]} fontSize={12} fontWeight={700}>
+                            {md.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}/dia
+                        </text>
+                    );
+                })}
             </g>
         );
     };
+
+    // Tooltip: os dois anos lado a lado com média/dia
+    const ComparacaoTooltip = ({ active, payload, label }) => {
+        if (!active || !payload?.length) return null;
+        const d = payload[0].payload;
+        const pct = deltaAno(d);
+        const linha = (ano) => {
+            const q = Number(d[`quantidade_${ano}`]) || 0;
+            const md = Number(d[`mediaDia_${ano}`]);
+            return (
+                <div key={ano} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: COR_ANO[ano] }} />
+                    <span style={{ color: '#9CA3AF', width: 36 }}>{ano}</span>
+                    <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{q > 0 ? q.toLocaleString('pt-BR') : '—'}</strong>
+                    {q > 0 && Number.isFinite(md) && md > 0 && (
+                        <span style={{ color: '#9CA3AF', fontSize: 12 }}>
+                            · {md.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}/dia
+                        </span>
+                    )}
+                </div>
+            );
+        };
+        return (
+            <div style={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 10, padding: '12px 14px', color: '#F9FAFB', fontSize: 14 }}>
+                <div style={{ fontWeight: 700 }}>{label}</div>
+                {linha('2025')}
+                {linha('2026')}
+                {pct !== null && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #374151', fontWeight: 700, color: pct >= 0 ? '#22c55e' : '#f87171' }}>
+                        {pct > 0 ? '+' : ''}{pct.toFixed(1)}% vs 2025
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+
 
 
     const CustomStackedLabel = ({ x, y, width, payload }) => {
@@ -2002,25 +1958,47 @@ const ProcessosScreen = () => {
                                                     MODO MOCK ATIVO
                                                 </div>
                                             )}
-                                            <ResponsiveContainer width="100%" height={720}>
-                                                <BarChart data={obterDadosFiltrados()} margin={{ top: 50, right: 20, left: 20, bottom: 80 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={2} />
-                                                    <XAxis
-                                                        dataKey="mes"
-                                                        stroke="#9CA3AF"
-                                                        fontSize={20}
-                                                        fontWeight={700}
-                                                        angle={-45}
-                                                        textAnchor="end"
-                                                        height={100}
-                                                    />
+                                            {visualizacao === 'comparacao' && (
+                                                <div className="mb-2 flex items-center gap-5 text-sm font-semibold text-gray-300">
+                                                    {['2025', '2026'].map(ano => (
+                                                        <span key={ano} className="inline-flex items-center gap-2">
+                                                            <span className="h-3 w-3 rounded-sm" style={{ background: COR_ANO[ano] }} />
+                                                            {ano}
+                                                        </span>
+                                                    ))}
+                                                    <span className="ml-auto text-xs font-normal text-gray-500">
+                                                        % = 2026 vs 2025 · /dia = média por dia útil
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <ResponsiveContainer width="100%" height={visualizacao === 'comparacao' ? 560 : 720}>
+                                                <BarChart data={obterDadosFiltrados()} barGap={3} barCategoryGap="18%" margin={{ top: 30, right: 20, left: 10, bottom: visualizacao === 'comparacao' ? 20 : 80 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={visualizacao === 'comparacao' ? 1 : 2} vertical={visualizacao !== 'comparacao'} />
+                                                    {visualizacao === 'comparacao' ? (
+                                                        <XAxis dataKey="mes" stroke="#4B5563" tickLine={false} interval={0} height={110} tick={<ComparacaoTick />} />
+                                                    ) : (
+                                                        <XAxis
+                                                            dataKey="mes"
+                                                            stroke="#9CA3AF"
+                                                            fontSize={20}
+                                                            fontWeight={700}
+                                                            angle={-45}
+                                                            textAnchor="end"
+                                                            height={100}
+                                                        />
+                                                    )}
                                                     <YAxis
                                                         stroke="#9CA3AF"
-                                                        fontSize={18}
-                                                        fontWeight={700}
-                                                        tickFormatter={(value) => value.toLocaleString('pt-BR')}
+                                                        fontSize={visualizacao === 'comparacao' ? 13 : 18}
+                                                        fontWeight={visualizacao === 'comparacao' ? 500 : 700}
+                                                        width={visualizacao === 'comparacao' ? 70 : undefined}
+                                                        axisLine={visualizacao !== 'comparacao'}
+                                                        tickLine={visualizacao !== 'comparacao'}
+                                                        tickFormatter={(value) => visualizacao === 'comparacao' ? fmtCompacto(value) : value.toLocaleString('pt-BR')}
                                                     />
-                                                    <Tooltip 
+                                                    <Tooltip
+                                                        {...(visualizacao === 'comparacao' ? { content: <ComparacaoTooltip />, cursor: { fill: 'rgba(255,255,255,0.05)' } } : {})}
+
                                                         contentStyle={{
                                                             backgroundColor: '#1F2937',
                                                             border: '2px solid #374151',
@@ -2064,18 +2042,20 @@ const ProcessosScreen = () => {
                                                         <>
                                                             <Bar
                                                                 dataKey="quantidade_2025"
-                                                                fill="#8B5CF6"
+                                                                fill={COR_ANO['2025']}
                                                                 radius={[4, 4, 0, 0]}
                                                                 isAnimationActive={!exportandoPptx}
-                                                                shape={(props) => <ComparisonMonthBarShape {...props} ano="2025" />}
-                                                            />
+                                                            >
+                                                                <LabelList dataKey="quantidade_2025" content={ComparacaoValorLabel} />
+                                                            </Bar>
                                                             <Bar
                                                                 dataKey="quantidade_2026"
-                                                                fill="#06B6D4"
+                                                                fill={COR_ANO['2026']}
                                                                 radius={[4, 4, 0, 0]}
                                                                 isAnimationActive={!exportandoPptx}
-                                                                shape={(props) => <ComparisonMonthBarShape {...props} ano="2026" mostrarComparacaoAno />}
-                                                            />
+                                                            >
+                                                                <LabelList dataKey="quantidade_2026" content={ComparacaoValorLabel} />
+                                                            </Bar>
                                                         </>
                                                     ) : (
                                                         <Bar dataKey="quantidade" fill="#8B5CF6" radius={[4, 4, 0, 0]} isAnimationActive={!exportandoPptx}>
