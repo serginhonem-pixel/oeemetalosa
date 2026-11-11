@@ -1265,7 +1265,11 @@ const ProcessosScreen = () => {
         if (fechados.length === 0) return null;
 
         const somaFechados = fechados.reduce((s, i) => s + atual[i], 0);
-        const mediaMensal = somaFechados / fechados.length;
+        // Usa a MESMA média (arredondada) exibida no card MÉDIA MENSAL, para a conta bater na conferência
+        const doAno = dadosComVariacao.filter(d => String(d.mes || '').includes(String(ano)));
+        const mediaMensal = doAno.length > 0
+            ? Math.round(doAno.reduce((s, d) => s + Number(d.quantidade || 0), 0) / doAno.length)
+            : Math.round(somaFechados / fechados.length);
         const somaAnteriorMesmos = fechados.reduce((s, i) => s + (anterior[i] || 0), 0);
         const ritmo = somaAnteriorMesmos > 0 ? somaFechados / somaAnteriorMesmos : null;
 
@@ -2226,7 +2230,7 @@ const ProcessosScreen = () => {
                                             <div className="text-white text-6xl font-black mb-1 leading-none">{kpisPorAno.atual ? kpisPorAno.atual.total.toLocaleString('pt-BR') : '--'}</div>
                                         </div>
                                         {projecaoFechamento && projecaoFechamento.ano === kpisPorAno.anoAtual && (() => {
-                                            const pr = projecaoFechamento.totalSazonal ?? projecaoFechamento.totalMedia;
+                                            const pr = projecaoFechamento.totalMedia;
                                             const dif = projecaoFechamento.totalAnterior > 0 ? ((pr - projecaoFechamento.totalAnterior) / projecaoFechamento.totalAnterior) * 100 : null;
                                             return (
                                                 <div className="mt-3 pt-3 border-t border-blue-500/30">
