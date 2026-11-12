@@ -856,6 +856,8 @@ export default function App() {
     'pcp5@metalosa.com.br',
     'superprod01@metalosa.com.br',
     'industria@metalosa.com.br',
+    'superprod02@metalosa.com.br',
+    'superprod03@metalosa.com.br',
   ]);
   const isAdminUser =
     authUser?.email && adminEmails.has(authUser.email.toLowerCase());
