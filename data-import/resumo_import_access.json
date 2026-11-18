@@ -1,17 +1,17 @@
 ﻿{
     "accessPath":  "C:\\DadosVBA\\BDMETALOSA.accdb",
-    "geradoEm":  "2026-11-18T10:08:42",
+    "geradoEm":  "2026-11-18T10:13:19",
     "producao":  {
-                     "total":  3868,
+                     "total":  3869,
                      "arquivo":  "data-import\\import_producao.csv",
                      "minData":  "2023-04-23",
-                     "maxData":  "2026-11-16",
-                     "totalPecas":  1790676
+                     "maxData":  "2026-11-17",
+                     "totalPecas":  1791096
                  },
     "paradas":  {
-                    "total":  17662,
+                    "total":  17666,
                     "arquivo":  "data-import\\import_paradas.csv",
                     "minData":  "2025-11-03",
-                    "maxData":  "2026-11-16"
+                    "maxData":  "2026-11-17"
                 }
 }
