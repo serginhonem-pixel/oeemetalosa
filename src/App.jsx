@@ -64,6 +64,7 @@ import GlobalScreen from './components/GlobalScreen';
 
 // --- DADOS ---
 import { CATALOGO_PRODUTOS } from './data/catalogoProdutos';
+import { codCatalogo } from './data/deParaSankhya';
 import { DICIONARIO_PARADAS } from './data/dicionarioParadas';
 import { CATALOGO_MAQUINAS } from './data/catalogoMaquinas';
 import logoMetalosa from './data/logo metalosa.bmp';
@@ -1610,7 +1611,9 @@ const loadAccessOeeFromCsv = async () => {
   const producao = prodRows
     .map((row, idx) => {
       const data = toISODate(row.DATA || row.data || row.Date || "");
-      const cod = String(row.CODIGO || row.cod || row.COD || "").trim();
+      // O Access grava o código Sankhya; o catálogo/estoque usam o código antigo.
+      const codOrigem = String(row.CODIGO || row.cod || row.COD || "").trim();
+      const cod = codCatalogo(codOrigem);
       const qtd = Number(row.QTD || row.qtd || 0) || 0;
       if (!data || !cod || qtd <= 0) return null;
       const maquinaNome = String(row.MAQUINA || row.maquina || "").trim();
@@ -1625,6 +1628,7 @@ const loadAccessOeeFromCsv = async () => {
         id: `acc_prod_${data}_${cod}_${qtd}___${idx}`.replace(/[^a-zA-Z0-9_\-]/g, ""),
         data,
         cod,
+        codSankhya: codOrigem !== cod ? codOrigem : "",
         qtd,
         desc: String(row.DESCRICAO || row.desc || "").trim() || "Item s/ descricao",
         destino: String(row.DESTINO || row.destino || "Estoque").trim() || "Estoque",

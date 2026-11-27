@@ -4,6 +4,7 @@ import { CATALOGO_PERFIL } from './catalogoPerfil';
 import { CATALOGO_TELHAS } from './catalogoTelhas';
 import { GRUPOS_MAQUINAS } from './gruposMaquinas';
 import { CATALOGO_MAQUINAS } from './catalogoMaquinas';
+import { codCatalogo } from './deParaSankhya';
 
 // -----------------------------------------------------------------------------
 // 1) CATÁLOGO ÚNICO DE PRODUTOS ACABADOS (PA)
@@ -18,7 +19,8 @@ export const CATALOGO_PA = [
 // 2) MAPA RÁPIDO POR CÓDIGO (PRODUTOS)
 // -----------------------------------------------------------------------------
 
-const normalizeCod = (cod) => String(cod ?? '').trim();
+// Aceita tanto o código do catálogo quanto o código Sankhya (ver deParaSankhya.js)
+const normalizeCod = (cod) => codCatalogo(cod);
 
 const MAPA_PA_POR_COD = CATALOGO_PA.reduce((acc, item) => {
   const key = normalizeCod(item.cod);
